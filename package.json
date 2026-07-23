@@ -1,0 +1,22 @@
+{
+  "name": "legal-compliance-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hypha-based legal compliance agent V0 and V1 business project",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "demo:key": "node scripts/generate-session-key.cjs",
+    "demo:v0": "node scripts/demo-v0.cjs",
+    "demo:web": "node scripts/demo-web.cjs",
+    "demo:web:deepseek": "powershell -NoProfile -File scripts/demo-web-deepseek.ps1",
+    "audit:law-corpus": "node scripts/audit-law-corpus.cjs",
+    "audit:law-coverage": "node scripts/audit-law-coverage.cjs",
+    "audit:law-sources": "node scripts/audit-law-sources.cjs",
+    "verify:baseline": "node scripts/verify-baseline.cjs",
+    "verify:domain": "node scripts/verify-domain-pack.cjs",
+    "test": "node --test",
+    "verify": "npm run verify:baseline && npm run verify:domain && npm test"
+  }
+}

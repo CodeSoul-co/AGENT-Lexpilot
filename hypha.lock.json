@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/CodeSoul-co/Hypha.git",
+  "localPath": "../Hypha",
+  "branch": "execution",
+  "commit": "992df1fb1b93325b0ddba069758e6d6bf20bbf21",
+  "compatibilityMode": "exact-or-clean-descendant-with-unchanged-scope",
+  "capturedAt": "2026-07-23",
+  "runtime": {
+    "node": "v22.22.3",
+    "npm": "10.9.8"
+  },
+  "requiredBuildOutputs": [
+    "packages/core/dist/index.js",
+    "packages/fsm/dist/index.js",
+    "packages/domain/dist/index.js",
+    "packages/inference/dist/index.js",
+    "packages/kernel/dist/index.js",
+    "packages/models/dist/index.js"
+  ],
+  "lockedScope": [
+    "packages/core",
+    "packages/fsm",
+    "packages/domain",
+    "packages/inference",
+    "packages/kernel",
+    "packages/models",
+    "packages/mcp",
+    "packages/memory",
+    "packages/skills",
+    "packages/tools"
+  ]
+}

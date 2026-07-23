@@ -1,0 +1,760 @@
+{
+  "id": "domain.legal-compliance.v0-v1",
+  "version": "0.16.0",
+  "name": "Legal Compliance Agent V0 and V1",
+  "description": "Business DomainPack for the legal compliance V0 and V1 agent.",
+  "taskSchemas": [
+    {
+      "id": "task.legal-self-check",
+      "version": "0.16.0",
+      "taskType": "legal_self_check",
+      "inputSchema": {
+        "type": "object",
+        "required": ["userText", "privacyConsent", "privacyPolicyVersion"],
+        "properties": {
+          "userText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "privacyConsent": {
+            "type": "boolean"
+          },
+          "privacyPolicyVersion": {
+            "type": "string",
+            "const": "legal-compliance-privacy-v0.1"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputContractRef": "output.legal-self-check",
+      "defaultWorkflowRef": "workflow.legal-self-check"
+    }
+  ],
+  "outputContracts": [
+    {
+      "id": "output.legal-self-check",
+      "version": "0.16.0",
+      "schema": {
+        "type": "object",
+        "required": ["status", "domainPackVersion", "piiRedacted", "trace"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "rejected",
+              "failed",
+              "needs_domain_clarification",
+              "needs_clarification",
+              "information_ready",
+              "unsupported_domain",
+              "clarification_limit_reached",
+              "completed",
+              "professional_query_identified"
+            ]
+          },
+          "authorizationStatus": {
+            "type": "string",
+            "enum": ["granted", "refused", "not_recorded"]
+          },
+          "privacyPolicyVersion": {
+            "type": "string"
+          },
+          "authorizationRecordedAt": {
+            "type": "string"
+          },
+          "domainPackVersion": {
+            "type": "string"
+          },
+          "piiRedacted": {
+            "type": "boolean"
+          },
+          "redactedText": {
+            "type": "string"
+          },
+          "redactionSummary": {
+            "type": "object"
+          },
+          "taskType": {
+            "type": "string",
+            "enum": ["legal_self_check", "professional_data_query"]
+          },
+          "taskTypeLabel": {
+            "type": "string"
+          },
+          "taskTypeRecognition": {
+            "type": "object",
+            "required": ["status", "confidence", "matchedSignals", "classificationMethod"],
+            "properties": {
+              "status": { "type": "string", "enum": ["classified"] },
+              "confidence": {
+                "type": "string",
+                "enum": ["conservative_default", "medium", "high"]
+              },
+              "matchedSignals": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "classificationMethod": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "legalDomain": {
+            "type": "string"
+          },
+          "legalDomainLabel": {
+            "type": "string"
+          },
+          "knownFacts": {
+            "type": "object"
+          },
+          "missingFields": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "questions": {
+            "type": "array",
+            "maxItems": 2,
+            "items": { "type": "string" }
+          },
+          "lawReferences": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "lawRetrievalStatus": {
+            "type": "string",
+            "enum": ["not_run", "matched", "no_match", "failed"]
+          },
+          "lawCorpus": {
+            "type": "object"
+          },
+          "lawReferenceDisclaimer": {
+            "type": "string"
+          },
+          "legalConclusionGenerated": {
+            "type": "boolean"
+          },
+          "lawRetrievalError": {
+            "type": "object"
+          },
+          "lawComparisonStatus": {
+            "type": "string",
+            "enum": ["not_run", "no_reference", "completed", "failed"]
+          },
+          "lawComparisons": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "lawComparisonError": {
+            "type": "object"
+          },
+          "resultCardStatus": {
+            "type": "string",
+            "enum": ["not_run", "no_match", "completed", "failed"]
+          },
+          "resultCards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "cardId",
+                "findingStatus",
+                "findingLabel",
+                "userExcerpt",
+                "lawReferenceId",
+                "lawName",
+                "articleNumber",
+                "articleText",
+                "articleTextSha256",
+                "lawVersionDate",
+                "officialSource",
+                "unresolvedElements",
+                "legalConclusionGenerated"
+              ],
+              "properties": {
+                "cardId": { "type": "string" },
+                "findingStatus": { "type": "string", "enum": ["potential_match"] },
+                "findingLabel": { "type": "string" },
+                "userExcerpt": { "type": "string" },
+                "lawReferenceId": { "type": "string" },
+                "lawName": { "type": "string" },
+                "articleNumber": { "type": "string" },
+                "articleText": { "type": "string" },
+                "articleTextSha256": { "type": "string" },
+                "lawVersionDate": { "type": "string" },
+                "officialSource": {
+                  "type": "object",
+                  "required": ["authority", "url"],
+                  "properties": {
+                    "authority": { "type": "string" },
+                    "url": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                },
+                "unresolvedElements": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "legalConclusionGenerated": { "type": "boolean", "enum": [false] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "resultCardError": {
+            "type": "object"
+          },
+          "clarificationRound": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "object"
+          },
+          "trace": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ],
+  "sessionProfiles": [
+    {
+      "id": "session.legal-single-user",
+      "version": "0.16.0",
+      "defaultMetadata": {
+        "runtimeMode": "single-user",
+        "storeRawUserText": false,
+        "encryptedAtRest": true,
+        "ownerScopedHistory": true,
+        "inactiveRetentionDays": 90,
+        "retentionAction": "physical-delete",
+        "cleanupOnStartup": true,
+        "privacyPolicyVersion": "legal-compliance-privacy-v0.1",
+        "privacyConsentHumanReviewRequired": true,
+        "localDemoEntrypoint": "scripts/demo-v0.cjs",
+        "sensitiveInputTransport": "stdin",
+        "encryptionKeySource": "required-environment-variable",
+        "lawCorpusId": "law-corpus.cn.v0-minimal",
+        "lawCorpusVersion": "0.1.0",
+        "lawCorpusVerifiedAt": "2026-07-20",
+        "maxClarificationRounds": 5
+      },
+      "defaultPolicyRefs": [
+        "policy.pii-before-inference",
+        "policy.user-owned-session-write",
+        "policy.automatic-session-retention"
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "id": "workflow.legal-self-check",
+      "version": "0.16.0",
+      "initialState": "Intake",
+      "terminalStates": ["Completed", "Failed"],
+      "states": [
+        {
+          "id": "Intake",
+          "goal": "Validate the shared V0 and V1 business query envelope."
+        },
+        {
+          "id": "PrivacyConsent",
+          "goal": "Require explicit consent to the current privacy-policy version before processing user text."
+        },
+        {
+          "id": "RedactInput",
+          "goal": "Remove supported personal identifiers before any downstream inference.",
+          "allowedTools": ["tool.pii-redactor"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "SaveSession",
+          "goal": "Store the owner-bound authorization record, sanitized messages, and current clarification round in the encrypted user-owned session.",
+          "allowedTools": ["tool.session-history-store"],
+          "policyRefs": ["policy.user-owned-session-write"]
+        },
+        {
+          "id": "ClassifyTask",
+          "goal": "Classify sanitized text as a V0 legal self-check or V1 professional structured-data query without executing either route.",
+          "allowedTools": ["tool.task-type-classifier"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "ClassifyDomain",
+          "goal": "Classify sanitized text into one of the five supported legal domains.",
+          "allowedTools": ["tool.legal-domain-classifier"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "CheckInformation",
+          "goal": "Compare sanitized facts with the minimum information contract.",
+          "allowedTools": ["tool.clarification-planner"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "Clarify",
+          "goal": "Ask no more than two plain-language questions in the current round.",
+          "allowedTools": ["tool.clarification-planner"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "RetrieveLaw",
+          "goal": "Retrieve integrity-pinned articles from the verified local corpus using structured domain and topic tags only.",
+          "allowedTools": ["tool.verified-law-retriever"],
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "AnalyzeLaw",
+          "goal": "Compare sanitized structured facts with each candidate article, retaining unresolved legal elements and producing no legal conclusion.",
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "BuildResult",
+          "goal": "Build source-exact legal self-check cards only for potential matches, with a fixed no-conclusion and no-action-advice disclaimer.",
+          "policyRefs": ["policy.pii-before-inference"]
+        },
+        {
+          "id": "Completed",
+          "goal": "Return verified V0 self-check cards, a safe empty result, or a V1 query handoff without prematurely generating SQL."
+        },
+        {
+          "id": "Failed",
+          "goal": "Record a structured failure without running business logic."
+        }
+      ],
+      "transitions": [
+        {
+          "from": "Intake",
+          "to": "PrivacyConsent",
+          "guard": "input.valid == true"
+        },
+        {
+          "from": "Intake",
+          "to": "Failed"
+        },
+        {
+          "from": "PrivacyConsent",
+          "to": "RedactInput",
+          "guard": "input.privacyConsent == true && input.privacyPolicyVersion == 'legal-compliance-privacy-v0.1'"
+        },
+        {
+          "from": "PrivacyConsent",
+          "to": "Failed"
+        },
+        {
+          "from": "RedactInput",
+          "to": "SaveSession",
+          "guard": "output.piiRedacted == true"
+        },
+        {
+          "from": "RedactInput",
+          "to": "Failed"
+        },
+        {
+          "from": "SaveSession",
+          "to": "ClassifyTask",
+          "guard": "output.sessionSaved == true"
+        },
+        {
+          "from": "SaveSession",
+          "to": "Failed"
+        },
+        {
+          "from": "ClassifyTask",
+          "to": "ClassifyDomain",
+          "guard": "output.taskType == legal_self_check"
+        },
+        {
+          "from": "ClassifyTask",
+          "to": "Completed",
+          "guard": "output.taskType == professional_data_query"
+        },
+        {
+          "from": "ClassifyTask",
+          "to": "Failed",
+          "guard": "output.status == failed"
+        },
+        {
+          "from": "ClassifyDomain",
+          "to": "CheckInformation",
+          "guard": "output.domainStatus == classified"
+        },
+        {
+          "from": "ClassifyDomain",
+          "to": "Clarify",
+          "guard": "output.domainStatus == ambiguous"
+        },
+        {
+          "from": "ClassifyDomain",
+          "to": "Failed"
+        },
+        {
+          "from": "CheckInformation",
+          "to": "RetrieveLaw",
+          "guard": "output.informationReady == true"
+        },
+        {
+          "from": "CheckInformation",
+          "to": "Clarify",
+          "guard": "output.missingFieldCount > 0 && context.clarificationRound < 5"
+        },
+        {
+          "from": "CheckInformation",
+          "to": "Failed"
+        },
+        {
+          "from": "RetrieveLaw",
+          "to": "AnalyzeLaw",
+          "guard": "output.lawRetrievalStatus == matched"
+        },
+        {
+          "from": "RetrieveLaw",
+          "to": "Completed",
+          "guard": "output.lawRetrievalStatus == no_match"
+        },
+        {
+          "from": "RetrieveLaw",
+          "to": "Failed",
+          "guard": "output.lawRetrievalStatus == failed"
+        },
+        {
+          "from": "AnalyzeLaw",
+          "to": "BuildResult",
+          "guard": "output.lawComparisonStatus == completed"
+        },
+        {
+          "from": "AnalyzeLaw",
+          "to": "Failed",
+          "guard": "output.lawComparisonStatus == failed"
+        },
+        {
+          "from": "BuildResult",
+          "to": "Completed",
+          "guard": "output.resultCardStatus == completed || output.resultCardStatus == no_match"
+        },
+        {
+          "from": "BuildResult",
+          "to": "Failed",
+          "guard": "output.resultCardStatus == failed"
+        },
+        {
+          "from": "Clarify",
+          "to": "RedactInput",
+          "guard": "input.answerReceived == true"
+        },
+        {
+          "from": "Clarify",
+          "to": "Failed",
+          "guard": "context.clarificationRound >= 5"
+        }
+      ]
+    }
+  ],
+  "defaultWorkflow": "workflow.legal-self-check",
+  "tools": [
+    {
+      "id": "tool.task-type-classifier",
+      "version": "0.16.0",
+      "description": "Classify PII-redacted input as a V0 legal self-check or V1 professional structured-data query using deterministic signals.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["piiRedacted", "redactedText"],
+        "properties": {
+          "piiRedacted": { "type": "boolean", "enum": [true] },
+          "redactedText": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["status", "taskType", "classificationMethod"],
+        "properties": {
+          "status": { "type": "string", "enum": ["classified"] },
+          "taskType": {
+            "type": "string",
+            "enum": ["legal_self_check", "professional_data_query"]
+          },
+          "classificationMethod": { "type": "string" }
+        }
+      },
+      "sideEffectLevel": "none",
+      "source": "local"
+    },
+    {
+      "id": "tool.pii-redactor",
+      "version": "0.3.0",
+      "description": "Replace supported identity, contact, self-reported name, structured street address, and labeled bank-card identifiers with stable placeholders.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["redactedText", "piiRedacted"],
+        "properties": {
+          "redactedText": { "type": "string" },
+          "piiRedacted": { "type": "boolean" }
+        }
+      },
+      "sideEffectLevel": "none",
+      "source": "local"
+    },
+    {
+      "id": "tool.legal-domain-classifier",
+      "version": "0.3.0",
+      "description": "Classify sanitized text into a supported legal domain.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["redactedText"],
+        "properties": {
+          "redactedText": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["status", "candidates"],
+        "properties": {
+          "status": { "type": "string" },
+          "domain": { "type": "string" },
+          "candidates": { "type": "array" }
+        }
+      },
+      "sideEffectLevel": "none",
+      "source": "local"
+    },
+    {
+      "id": "tool.clarification-planner",
+      "version": "0.4.0",
+      "description": "Check minimum facts and produce at most two questions that pass the five-domain plain-language terminology contract.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["redactedText", "clarificationRound"],
+        "properties": {
+          "redactedText": { "type": "string" },
+          "clarificationRound": { "type": "integer", "minimum": 0, "maximum": 5 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["status", "questions"],
+        "properties": {
+          "status": { "type": "string" },
+          "questions": { "type": "array", "maxItems": 2 }
+        }
+      },
+      "sideEffectLevel": "none",
+      "source": "local"
+    },
+    {
+      "id": "tool.session-history-store",
+      "version": "0.16.0",
+      "description": "Create, update, list, read, or physically delete encrypted user-owned sessions containing sanitized messages and result cards; user-initiated deletion requires explicit confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["operation", "ownerId"],
+        "properties": {
+          "operation": { "type": "string", "enum": ["create", "list", "read", "update", "delete"] },
+          "ownerId": { "type": "string", "minLength": 1 },
+          "sessionId": { "type": "string" },
+          "confirmed": { "type": "boolean" },
+          "redactedText": { "type": "string" },
+          "clarificationRound": { "type": "integer", "minimum": 0, "maximum": 5 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["success"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "deleted", "not_found", "confirmation_required"]
+          },
+          "sessionId": { "type": "string" }
+        }
+      },
+      "sideEffectLevel": "write",
+      "source": "local"
+    },
+    {
+      "id": "tool.session-retention-cleaner",
+      "version": "0.16.0",
+      "description": "Physically delete encrypted sessions inactive beyond the configured retention boundary.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["inactiveBefore"],
+        "properties": {
+          "inactiveBefore": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["deletedCount", "failedCount"],
+        "properties": {
+          "deletedCount": { "type": "integer", "minimum": 0 },
+          "failedCount": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "sideEffectLevel": "write",
+      "source": "local"
+    },
+    {
+      "id": "tool.verified-law-retriever",
+      "version": "0.16.0",
+      "description": "Retrieve integrity-pinned effective articles from a verified local official-source corpus.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["legalDomain"],
+        "properties": {
+          "legalDomain": { "type": "string" },
+          "topics": { "type": "array", "items": { "type": "string" } },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 10 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["status", "corpusVersion", "results"],
+        "properties": {
+          "status": { "type": "string", "enum": ["matched", "no_match"] },
+          "corpusVersion": { "type": "string" },
+          "results": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "sideEffectLevel": "none",
+      "source": "local"
+    }
+  ],
+  "policies": [
+    {
+      "id": "policy.pii-before-inference",
+      "version": "0.2.0",
+      "defaultEffect": "deny",
+      "rules": [
+        {
+          "id": "policy.rule.allow-pii-redaction",
+          "version": "0.2.0",
+          "effect": "allow",
+          "sideEffectLevels": ["none"]
+        }
+      ]
+    },
+    {
+      "id": "policy.user-owned-session-write",
+      "version": "0.16.0",
+      "defaultEffect": "deny",
+      "rules": [
+        {
+          "id": "policy.rule.allow-sanitized-session-write",
+          "version": "0.16.0",
+          "effect": "allow",
+          "sideEffectLevels": ["write"]
+        }
+      ]
+    },
+    {
+      "id": "policy.automatic-session-retention",
+      "version": "0.16.0",
+      "defaultEffect": "deny",
+      "rules": [
+        {
+          "id": "policy.rule.allow-expired-session-delete",
+          "version": "0.16.0",
+          "effect": "allow",
+          "sideEffectLevels": ["write"]
+        }
+      ]
+    }
+  ],
+  "evaluationProfiles": [
+    {
+      "id": "evaluation.legal-domainpack-contract",
+      "version": "0.1.0",
+      "type": "output_contract",
+      "deterministic": true
+    }
+  ],
+  "regressionCases": [
+    {
+      "id": "regression.legal-domainpack-loads",
+      "version": "0.1.0",
+      "fixtureRefs": [
+        {
+          "id": "fixture.legal-domainpack-skeleton",
+          "version": "0.1.0"
+        }
+      ],
+      "requiredChecks": ["state_path", "output_contract"]
+    }
+  ],
+  "metadata": {
+    "stage": "task-002-v0-v1-routing",
+    "implemented": false,
+    "implementedCapabilities": [
+      "privacy-consent-gate",
+      "pii-redaction",
+      "pii-safe-trace",
+      "five-domain-classification",
+      "minimum-information-check",
+      "bounded-clarification-plan",
+      "sanitized-multiturn-session",
+      "terminal-session-control",
+      "aes-256-gcm-session-persistence",
+      "owner-scoped-history",
+      "physical-session-deletion",
+      "ninety-day-inactivity-retention",
+      "startup-retention-cleanup",
+      "pii-safe-cleanup-trace",
+      "environment-validated-bootstrap",
+      "stdin-only-sensitive-input",
+      "cross-process-local-cli-demo",
+      "official-source-law-corpus",
+      "integrity-pinned-law-text",
+      "structured-local-law-retrieval",
+      "safe-fact-to-law-topic-mapping",
+      "session-law-reference-integration",
+      "candidate-only-law-reference-disclaimer",
+      "no-match-without-cross-domain-fallback",
+      "deterministic-fact-law-element-comparison",
+      "sanitized-fact-excerpt-selection",
+      "unresolved-legal-element-reporting",
+      "comparison-failure-closed",
+      "verified-source-result-cards",
+      "fixed-result-card-disclaimer",
+      "no-action-advice-output-boundary",
+      "encrypted-result-card-history",
+      "completed-session-result",
+      "task-009-encrypted-history",
+      "task-010-confirmed-physical-delete",
+      "task-010-ninety-day-automatic-cleanup",
+      "pii-safe-v0-v1-task-routing",
+      "professional-query-handoff-without-execution",
+      "task-classification-failure-closed",
+      "hypha-react-agent-runtime-adapter",
+      "pii-gated-agent-inference",
+      "bounded-agent-output-verifier",
+      "unified-v0-v1-agent-router"
+    ],
+    "sourcePrd": "internal-product-specification"
+  }
+}

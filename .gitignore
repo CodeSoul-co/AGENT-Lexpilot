@@ -1,0 +1,49 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime state and generated artifacts
+data/
+logs/
+artifacts/
+sessions/
+*.log
+
+# Temporary files and caches
+.tmp-visual-qa*
+.tmp-*
+tmp/
+temp/
+.cache/
+
+# Editors, operating systems, and local agent metadata
+.vscode/
+.idea/
+.codex/
+.agents/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Read-only local framework checkout/reference
+Hypha/
+
+# Local presentation material; may contain unrelated project screenshots
+案例展示/
+
+# Internal requirements, contracts, audits, and product-planning documents
+01_法律合规审查.md
+法律合规审查智能助手（v0+ v1）.pdf
+docs/

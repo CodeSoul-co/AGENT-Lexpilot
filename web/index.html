@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>法律合规审查智能助手 - 本地 Demo</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">律</div>
+          <div>
+            <strong>合规智能助手</strong>
+            <span>本地安全工作台</span>
+          </div>
+        </div>
+
+        <button class="primary-button new-session" id="new-session" type="button">
+          <span>＋</span> 新建 Agent 任务
+        </button>
+
+        <div class="sidebar-heading">
+          <span>最近会话</span>
+          <button class="icon-button" id="refresh-history" type="button" aria-label="刷新历史">↻</button>
+        </div>
+        <div class="history-list" id="history-list">
+          <p class="muted compact">暂无历史会话</p>
+        </div>
+
+        <div class="sidebar-note">
+          <span class="safe-dot"></span>
+          会话仅保存在本机并加密
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div class="topbar-heading">
+            <div class="mode-switch" role="tablist" aria-label="任务模式">
+              <button class="mode-tab active" data-mode="v0" type="button" role="tab">法律自检</button>
+              <button class="mode-tab" data-mode="v1" type="button" role="tab">专业数据分析</button>
+            </div>
+            <h1 id="page-title">开始一次新的自检</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="runtime-status"><span id="runtime-dot"></span><span id="runtime-text">正在连接</span></div>
+            <button class="ghost-button" id="open-schema" type="button">数据源</button>
+            <button class="danger-ghost hidden" id="delete-session" type="button">删除会话</button>
+          </div>
+        </header>
+
+        <section class="chat-scroll" id="chat-scroll">
+          <div class="welcome" id="welcome">
+            <div class="welcome-icon" id="welcome-icon">§</div>
+            <p class="eyebrow" id="welcome-eyebrow">法律信息辅助</p>
+            <h2 id="welcome-title">把事情说清楚，先完成一次法律自检</h2>
+            <p class="welcome-copy" id="welcome-copy">统一 Agent 会先脱敏，再判断所属领域；信息不足时每轮最多追问两个问题。结果只引用本地已核验法条，不构成法律意见。</p>
+            <div class="sample-grid">
+              <button class="sample-card" type="button" data-mode="v0" data-sample="老板让我明天不用来了。">
+                <span>劳动用工</span>
+                <strong>“老板让我明天不用来了”</strong>
+              </button>
+              <button class="sample-card" type="button" data-mode="v0" data-sample="我在公司工作3年，没有签劳动合同，老板辞退我。">
+                <span>快速核对演示</span>
+                <strong>直接生成法条核对卡片</strong>
+              </button>
+              <button class="sample-card" type="button" data-mode="v0" data-sample="朋友借钱后一直没有归还。">
+                <span>民间借贷</span>
+                <strong>“朋友借钱一直没有归还”</strong>
+              </button>
+              <button class="sample-card hidden" type="button" data-mode="v1" data-sample="统计近三年案例库中未签劳动合同案件的胜诉率和赔偿中位数，生成图表和分析文档。">
+                <span>完整分析演示</span>
+                <strong>查询计划、表格、图表与文档</strong>
+              </button>
+              <button class="sample-card hidden" type="button" data-mode="v1" data-sample="查询案例库近三年未签劳动合同案件数量和胜诉率。">
+                <span>只读数据查询</span>
+                <strong>固定演示 Schema 安全执行</strong>
+              </button>
+              <button class="sample-card hidden" type="button" data-mode="v1" data-sample="删除案例库中的全部数据。">
+                <span>安全边界演示</span>
+                <strong>写操作会被 Agent 拒绝</strong>
+              </button>
+            </div>
+            <div class="scope-banner" id="scope-banner">当前法规库为 Demo 最小样本；未匹配不代表不存在相关法律。</div>
+          </div>
+          <div class="conversation" id="conversation" aria-live="polite"></div>
+        </section>
+
+        <form class="composer" id="composer">
+          <label class="sr-only" for="message-input">描述任务或补充回答</label>
+          <textarea id="message-input" maxlength="5000" rows="2" placeholder="请描述发生了什么，避免粘贴不必要的敏感信息……"></textarea>
+          <div class="composer-footer">
+            <span><span id="character-count">0</span> / 5000 · Enter 发送，Shift+Enter 换行</span>
+            <button class="send-button" id="send-button" type="submit">发送 <span>↑</span></button>
+          </div>
+        </form>
+      </main>
+
+      <aside class="inspector">
+        <section class="inspector-section">
+          <p class="eyebrow">Agent Runtime</p>
+          <div class="agent-card">
+            <div class="agent-card-top"><strong id="agent-name">等待连接</strong><span id="agent-provider">—</span></div>
+            <div class="agent-flow"><span>脱敏</span><i>→</i><span>路由</span><i>→</i><span id="agent-route">待识别</span></div>
+          </div>
+        </section>
+
+        <section class="inspector-section">
+          <p class="eyebrow">会话进度</p>
+          <div class="status-card">
+            <span class="status-orb" id="session-orb"></span>
+            <div>
+              <strong id="session-status">等待任务</strong>
+              <span id="session-round">最多追问 5 轮</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="inspector-section">
+          <div class="inspector-title"><p class="eyebrow">任务上下文</p><span id="domain-label">未识别</span></div>
+          <dl class="facts-list" id="facts-list">
+            <div><dt>状态</dt><dd>等待输入</dd></div>
+          </dl>
+        </section>
+
+        <section class="inspector-section trust-panel">
+          <p class="eyebrow">安全边界</p>
+          <ul>
+            <li>原始个人信息先脱敏</li>
+            <li>会话 AES-256-GCM 加密</li>
+            <li>法条只来自固定语料库</li>
+            <li>专业数据分析当前使用匿名合成演示数据</li>
+          </ul>
+        </section>
+
+        <section class="inspector-section hidden" id="artifacts-section">
+          <p class="eyebrow">产物</p>
+          <div class="artifact-list" id="artifact-list">
+            <p class="muted compact">本次会话暂无产物</p>
+          </div>
+        </section>
+
+        <section class="inspector-section hidden" id="logs-section">
+          <div class="inspector-title">
+            <p class="eyebrow">执行日志</p>
+            <select class="log-filter" id="log-filter" aria-label="按状态筛选执行日志">
+              <option value="">全部</option>
+              <option value="completed">completed</option>
+              <option value="rejected">rejected</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </div>
+          <div class="log-list" id="log-list">
+            <p class="muted compact">暂无执行日志</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <div class="modal-backdrop" id="privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
+      <section class="privacy-card">
+        <div class="privacy-symbol">隐私</div>
+        <p class="eyebrow">首次使用确认</p>
+        <h2 id="privacy-title">在开始前，请确认数据处理方式</h2>
+        <p>输入会在进入后续处理前进行确定性脱敏，姓名、手机号、身份证号、邮箱、详细地址和银行卡号会替换为占位符。脱敏后的会话加密保存在本机，您可以随时物理删除。</p>
+        <div class="privacy-points">
+          <div><span>01</span><strong>本机存储</strong><small>不接入远程账号系统</small></div>
+          <div><span>02</span><strong>主动删除</strong><small>历史会话可确认后删除</small></div>
+          <div><span>03</span><strong>非法律意见</strong><small>结果仅用于信息自检</small></div>
+        </div>
+        <label class="consent-row">
+          <input type="checkbox" id="privacy-consent">
+          <span>我已阅读并同意当前隐私政策及数据脱敏说明</span>
+        </label>
+        <button class="primary-button privacy-accept" id="privacy-accept" type="button" disabled>同意并开始</button>
+        <p class="policy-version" id="policy-version">正在读取政策版本……</p>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <section class="privacy-card confirm-card">
+        <div class="privacy-symbol">只读</div>
+        <p class="eyebrow">执行确认</p>
+        <h2 id="confirm-title">确认执行该查询计划？</h2>
+        <p id="confirm-explanation"></p>
+        <div class="sql-panel">
+          <div class="sql-toolbar">只读 SQL 计划 · Schema 已校验</div>
+          <pre id="confirm-sql"></pre>
+        </div>
+        <p class="confirm-note">查询仅读取固定演示 Schema 的匿名合成数据，确认后才会执行，不会产生任何写操作。</p>
+        <div class="confirm-actions">
+          <button class="ghost-button" id="confirm-cancel" type="button">取消</button>
+          <button class="primary-button confirm-accept" id="confirm-accept" type="button">确认执行</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="schema-modal" role="dialog" aria-modal="true" aria-labelledby="schema-title">
+      <section class="privacy-card schema-card">
+        <div class="privacy-symbol">演示</div>
+        <p class="eyebrow">数据源</p>
+        <h2 id="schema-title">演示数据源 Schema</h2>
+        <p id="schema-description">正在读取数据源说明……</p>
+        <div class="table-wrap schema-table-wrap">
+          <table class="data-table" id="schema-table">
+            <thead>
+              <tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+            </thead>
+            <tbody id="schema-table-body"></tbody>
+          </table>
+        </div>
+        <p class="policy-version">固定演示 Schema · 匿名合成数据</p>
+        <button class="primary-button schema-close" id="schema-close" type="button">关闭</button>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

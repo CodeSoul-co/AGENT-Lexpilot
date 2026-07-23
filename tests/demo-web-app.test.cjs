@@ -1,0 +1,565 @@
+const assert = require('node:assert/strict');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const http = require('node:http');
+const net = require('node:net');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+const { PRIVACY_POLICY_VERSION } = require('../src/v0/contracts.cjs');
+const { LegalSelfCheckConversationService } = require('../src/v0/conversation-service.cjs');
+const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
+const { MAX_JSON_BODY_BYTES, createDemoWebServer } = require('../src/web/demo-web-app.cjs');
+
+function createService() {
+  let nextId = 1;
+  return new LegalSelfCheckConversationService({
+    store: new InMemoryLegalSessionStore(),
+    ownerId: 'web-demo-test-user',
+    idFactory: () => `web-session-${nextId++}`,
+    clock: () => '2026-07-21T03:00:00.000Z',
+    autoCleanup: false
+  });
+}
+
+async function withServer(run) {
+  const server = createDemoWebServer({ service: createService() });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  try {
+    await run(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function jsonRequest(url, options) {
+  const response = await fetch(url, options);
+  return { response, body: await response.json() };
+}
+
+// fetch 不允许伪造 Host 头，这里用原始 http.request 构造可控制 Host 的请求。
+async function rawRequest(baseUrl, { method = 'GET', pathname, headers = {}, body } = {}) {
+  const url = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: pathname,
+        method,
+        headers,
+        setHost: false
+      },
+      (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({ response, text: Buffer.concat(chunks).toString('utf8') })
+        );
+      }
+    );
+    request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+async function findFreePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+test('exposes a localhost health contract with defensive browser headers', async () => {
+  await withServer(async (baseUrl) => {
+    const { response, body } = await jsonRequest(`${baseUrl}/api/health`);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, 'ok');
+    assert.equal(body.demoMode, true);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  });
+});
+
+test('serves the local web shell and its fixed static assets', async () => {
+  await withServer(async (baseUrl) => {
+    const page = await fetch(`${baseUrl}/`);
+    const script = await fetch(`${baseUrl}/app.js`);
+    const styles = await fetch(`${baseUrl}/styles.css`);
+
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get('content-type'), /text\/html/);
+    assert.match(await page.text(), /法律合规审查智能助手/);
+    const pageText = await (await fetch(`${baseUrl}/`)).text();
+    assert.match(pageText, />法律自检</);
+    assert.match(pageText, />专业数据分析</);
+    assert.doesNotMatch(pageText, />\s*V[01]\b/);
+    assert.equal(script.status, 200);
+    assert.match(script.headers.get('content-type'), /text\/javascript/);
+    const scriptText = await script.text();
+    assert.match(scriptText, /privacyPolicyVersion/);
+    assert.match(scriptText, /sourceCaseCount/);
+    assert.match(scriptText, /matchedCaseCount/);
+    assert.match(scriptText, /mode === 'demo'/);
+    assert.match(scriptText, /Provider 未识别/);
+    assert.equal(styles.status, 200);
+    assert.match(styles.headers.get('content-type'), /text\/css/);
+    const stylesheet = await styles.text();
+    assert.match(stylesheet, /--green:/);
+    assert.match(stylesheet, /\.app-shell\s*\{[^}]*height:\s*100dvh/s);
+    assert.match(stylesheet, /\.workspace\s*\{[^}]*min-height:\s*0/s);
+    assert.match(stylesheet, /\.chat-scroll\s*\{[^}]*min-height:\s*0/s);
+    assert.match(stylesheet, /\.v1-board\s*\{/);
+    assert.match(stylesheet, /\.mode-switch\s*\{/);
+  });
+});
+
+test('runs start, history, detail, and confirmed deletion through the web API', async () => {
+  await withServer(async (baseUrl) => {
+    const started = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '我在公司工作3年，没有签劳动合同，老板辞退我。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(started.response.status, 200);
+    assert.equal(started.body.status, 'completed');
+    assert.equal(started.body.resultCards.length, 1);
+    assert.equal(started.body.legalConclusionGenerated, false);
+
+    const history = await jsonRequest(`${baseUrl}/api/sessions`);
+    assert.equal(history.body.sessions.length, 1);
+    assert.equal(Object.hasOwn(history.body.sessions[0], 'messages'), false);
+
+    const detail = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}`
+    );
+    assert.equal(detail.body.session.messages.length, 1);
+    assert.equal(detail.body.session.resultCards.length, 1);
+
+    const unconfirmed = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}`,
+      {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: false })
+      }
+    );
+    assert.equal(unconfirmed.response.status, 400);
+
+    const deleted = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}`,
+      {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(deleted.response.status, 200);
+    assert.equal(deleted.body.deleted, true);
+  });
+});
+
+test('supports a clarification answer without accepting undeclared request fields', async () => {
+  await withServer(async (baseUrl) => {
+    const started = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '老板让我明天不用来了。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(started.body.status, 'needs_clarification');
+    assert.ok(started.body.questions.length <= 2);
+
+    const answered = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/answers`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userText: '我工作了3年，没有签合同。' })
+      }
+    );
+    assert.equal(answered.body.status, 'completed');
+
+    const invalid = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '测试',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+        rawDebugText: 'not allowed'
+      })
+    });
+    assert.equal(invalid.response.status, 400);
+    assert.equal(invalid.body.error.code, 'INVALID_REQUEST');
+
+    const emptyText = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(emptyText.response.status, 200);
+    assert.equal(emptyText.body.error.code, 'INVALID_USER_TEXT');
+  });
+});
+
+test('rejects invalid JSON and oversized bodies without exposing server details', async () => {
+  await withServer(async (baseUrl) => {
+    const invalidJson = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{invalid'
+    });
+    assert.equal(invalidJson.response.status, 400);
+    assert.equal(invalidJson.body.error.code, 'INVALID_JSON');
+
+    const oversized = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'x'.repeat(MAX_JSON_BODY_BYTES + 1) })
+    });
+    assert.equal(oversized.response.status, 413);
+    assert.equal(oversized.body.error.code, 'REQUEST_BODY_TOO_LARGE');
+
+    const missing = await jsonRequest(`${baseUrl}/api/not-real`);
+    assert.equal(missing.response.status, 404);
+    assert.equal(JSON.stringify(missing.body).includes('D:\\'), false);
+  });
+});
+
+test('rejects forged or missing Host headers on every route including static assets', async () => {
+  await withServer(async (baseUrl) => {
+    const { port } = new URL(baseUrl);
+
+    const forgedApi = await rawRequest(baseUrl, {
+      pathname: '/api/sessions',
+      headers: { host: `evil.com:${port}` }
+    });
+    assert.equal(forgedApi.response.statusCode, 403);
+    assert.equal(JSON.parse(forgedApi.text).error.code, 'FORBIDDEN_HOST');
+
+    const forgedStatic = await rawRequest(baseUrl, {
+      pathname: '/',
+      headers: { host: `evil.com:${port}` }
+    });
+    assert.equal(forgedStatic.response.statusCode, 403);
+    assert.equal(JSON.parse(forgedStatic.text).error.code, 'FORBIDDEN_HOST');
+
+    const missingHost = await rawRequest(baseUrl, { pathname: '/api/health' });
+    // Node HTTP 服务器对缺失 Host 的 HTTP/1.1 请求直接返回 400；
+    // 到达 handler 的（如 HTTP/1.0）则由白名单返回 403 FORBIDDEN_HOST。
+    assert.ok([400, 403].includes(missingHost.response.statusCode));
+    if (missingHost.response.statusCode === 403) {
+      assert.equal(JSON.parse(missingHost.text).error.code, 'FORBIDDEN_HOST');
+    }
+
+    const localhost = await rawRequest(baseUrl, {
+      pathname: '/api/health',
+      headers: { host: `localhost:${port}` }
+    });
+    assert.equal(localhost.response.statusCode, 200);
+
+    const loopback = await rawRequest(baseUrl, {
+      pathname: '/api/health',
+      headers: { host: `127.0.0.1:${port}` }
+    });
+    assert.equal(loopback.response.statusCode, 200);
+  });
+});
+
+test('requires application/json content type for API write requests', async () => {
+  await withServer(async (baseUrl) => {
+    const plainText = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({
+        userText: '测试',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(plainText.response.status, 415);
+    assert.equal(plainText.body.error.code, 'UNSUPPORTED_MEDIA_TYPE');
+
+    const plainTextDelete = await jsonRequest(`${baseUrl}/api/sessions/web-session-1`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ confirmed: true })
+    });
+    assert.equal(plainTextDelete.response.status, 415);
+    assert.equal(plainTextDelete.body.error.code, 'UNSUPPORTED_MEDIA_TYPE');
+
+    const withCharset = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({
+        userText: '我在公司工作3年，没有签劳动合同，老板辞退我。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(withCharset.response.status, 200);
+    assert.equal(withCharset.body.status, 'completed');
+
+    const getWithoutContentType = await jsonRequest(`${baseUrl}/api/sessions`);
+    assert.equal(getWithoutContentType.response.status, 200);
+  });
+});
+
+test('starts the documented web demo process and serves localhost health', async () => {
+  const port = await findFreePort();
+  const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-web-demo-'));
+  const child = spawn(process.execPath, [path.resolve(__dirname, '..', 'scripts', 'demo-web.cjs')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: {
+      ...process.env,
+      LEGAL_SESSION_KEY_BASE64: Buffer.alloc(32, 9).toString('base64'),
+      LEGAL_SESSION_OWNER_ID: 'web-process-test-user',
+      LEGAL_SESSION_DATA_DIR: dataDirectory,
+      LEGAL_DEMO_PORT: String(port),
+      LEGAL_AGENT_PROVIDER: 'demo',
+      LEGAL_AGENT_BASE_URL: '',
+      LEGAL_AGENT_MODEL: '',
+      LEGAL_AGENT_API_KEY: '',
+      LEGAL_AGENT_FALLBACK: 'none'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  const stderr = [];
+  child.stderr.on('data', (chunk) => stderr.push(chunk));
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('web demo start timeout')), 10_000);
+      child.stdout.on('data', (chunk) => {
+        if (chunk.toString('utf8').includes(`http://127.0.0.1:${port}`)) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      child.once('exit', (code) => {
+        clearTimeout(timeout);
+        reject(new Error(`web demo exited early: ${code}`));
+      });
+    });
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`);
+    assert.equal(response.status, 200, Buffer.concat(stderr).toString('utf8'));
+    const health = await response.json();
+    assert.equal(health.status, 'ok');
+    assert.equal(health.productScope, 'V0 + V1');
+    assert.equal(health.agent.agentId, 'agent.legal-compliance');
+    assert.equal(health.agent.inference.mode, 'demo');
+  } finally {
+    if (child.exitCode === null) {
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.kill();
+      await exited;
+    }
+    fs.rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+const { createDemoExecutionLog } = require('../src/v1/demo-execution-log.cjs');
+const { createV1DemoQueryRuntime } = require('../src/v1/demo-query-runtime.cjs');
+
+async function withV1Server(run) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-web-v1-test-'));
+  let nextId = 1;
+  const service = new LegalSelfCheckConversationService({
+    store: new InMemoryLegalSessionStore(),
+    ownerId: 'web-demo-test-user',
+    idFactory: () => `web-v1-session-${nextId++}`,
+    clock: () => '2026-07-21T03:00:00.000Z',
+    autoCleanup: false,
+    v1Runtime: createV1DemoQueryRuntime(),
+    executionLog: createDemoExecutionLog({
+      filePath: path.join(directory, 'v1-execution-log.jsonl')
+    })
+  });
+  const server = createDemoWebServer({
+    service,
+    v1Descriptor: createV1DemoQueryRuntime().describe()
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  try {
+    await run(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test('runs the V1 plan-confirm-execute flow and exposes the execution log', async () => {
+  await withV1Server(async (baseUrl) => {
+    const started = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '统计近三年案例库未签劳动合同的胜诉率和赔偿中位数。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    assert.equal(started.response.status, 200);
+    assert.equal(started.body.status, 'awaiting_confirmation');
+    assert.match(started.body.v1.plan.sql, /^SELECT/);
+    assert.equal(started.body.v1.plan.requiresConfirmation, true);
+    assert.equal(started.body.v1.result, null);
+
+    const config = await jsonRequest(`${baseUrl}/api/config`);
+    assert.equal(config.response.status, 200);
+    assert.equal(config.body.v1DemoDataSource, 'demo.labor_cases');
+    assert.equal(config.body.v1DemoSchema.dataSource, 'demo.labor_cases');
+    assert.equal(config.body.v1DemoSchema.displayName, '匿名劳动争议案例库');
+    assert.ok(Array.isArray(config.body.v1DemoSchema.columns));
+    assert.ok(config.body.v1DemoSchema.columns.length > 0);
+    assert.equal(typeof config.body.v1DemoSchema.columns[0].name, 'string');
+    assert.equal(typeof config.body.v1DemoSchema.columns[0].type, 'string');
+    assert.equal(typeof config.body.v1DemoSchema.columns[0].description, 'string');
+
+    const invalidType = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: 'yes' })
+      }
+    );
+    assert.equal(invalidType.response.status, 400);
+    assert.equal(invalidType.body.error.code, 'INVALID_REQUEST');
+
+    const extraKey = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true, comment: 'not allowed' })
+      }
+    );
+    assert.equal(extraKey.response.status, 400);
+
+    const confirmed = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(confirmed.response.status, 200);
+    assert.equal(confirmed.body.status, 'completed');
+    assert.equal(confirmed.body.v1.result.rows.length, 3);
+    assert.equal(confirmed.body.v1.artifact.type, 'analysis-document');
+
+    const repeated = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(repeated.body.error.code, 'V1_EXECUTION_NOT_AWAITING_CONFIRMATION');
+
+    const logs = await jsonRequest(`${baseUrl}/api/v1/logs`);
+    assert.equal(logs.response.status, 200);
+    assert.equal(logs.body.logs.length, 1);
+    assert.equal(logs.body.logs[0].status, 'completed');
+    assert.equal(logs.body.logs[0].operationType, 'execute');
+    assert.equal(logs.body.logs[0].sessionId, started.body.sessionId);
+
+    const emptyFilter = await jsonRequest(`${baseUrl}/api/v1/logs?status=cancelled`);
+    assert.equal(emptyFilter.body.logs.length, 0);
+
+    const invalidLimit = await jsonRequest(`${baseUrl}/api/v1/logs?limit=abc`);
+    assert.equal(invalidLimit.response.status, 400);
+
+    const second = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '统计近三年案例库未签劳动合同的胜诉率和赔偿中位数。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+      })
+    });
+    const cancelled = await jsonRequest(
+      `${baseUrl}/api/sessions/${second.body.sessionId}/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: false })
+      }
+    );
+    assert.equal(cancelled.body.status, 'cancelled');
+    const cancelledLogs = await jsonRequest(`${baseUrl}/api/v1/logs?status=cancelled&limit=10`);
+    assert.equal(cancelledLogs.body.logs.length, 1);
+    assert.equal(cancelledLogs.body.logs[0].operationType, 'cancel');
+  });
+});
+
+test('returns 501 when the service does not expose V1 execution capabilities', async () => {
+  const legacyService = {
+    start() {},
+    answer() {},
+    listHistory() {
+      return [];
+    },
+    getHistory() {
+      return null;
+    },
+    deleteSession() {
+      return { deleted: false };
+    }
+  };
+  const server = createDemoWebServer({ service: legacyService });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  try {
+    const confirmation = await jsonRequest(
+      `${baseUrl}/api/sessions/web-session-1/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(confirmation.response.status, 501);
+    assert.equal(confirmation.body.error.code, 'V1_CONFIRMATION_UNAVAILABLE');
+
+    const logs = await jsonRequest(`${baseUrl}/api/v1/logs`);
+    assert.equal(logs.response.status, 501);
+    assert.equal(logs.body.error.code, 'V1_EXECUTION_LOG_UNAVAILABLE');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
