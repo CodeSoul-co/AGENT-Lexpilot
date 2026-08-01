@@ -12,6 +12,12 @@ test-results/
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+.npmrc
+.pypirc
+credentials*.json
+service-account*.json
 
 # Runtime state and generated artifacts
 data/
@@ -19,6 +25,9 @@ logs/
 artifacts/
 sessions/
 *.log
+*.db
+*.sqlite
+*.sqlite3
 
 # Temporary files and caches
 .tmp-visual-qa*
@@ -47,3 +56,16 @@ Hypha/
 01_法律合规审查.md
 法律合规审查智能助手（v0+ v1）.pdf
 docs/
+dev_tmp_docs/
+
+# Private document exports and local sharing archives
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.zip
+*.7z
+*.rar

@@ -1,4 +1,6 @@
-# 法律合规审查智能助手
+# AGENT-lexpilot
+
+**中文名：LexPilot 法律智能体**
 
 基于 [Hypha](https://github.com/CodeSoul-co/Hypha) 框架构建的法律合规业务 Agent，提供两项核心能力：
 
