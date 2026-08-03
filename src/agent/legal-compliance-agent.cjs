@@ -43,8 +43,12 @@ async function createLegalComplianceAgent(options = {}) {
     modelAlias: options.v0ModelAlias
   });
   const v1Runtime = options.v1Runtime;
-  if (v1Runtime !== undefined && typeof v1Runtime.run !== 'function') {
-    throw new TypeError('v1Runtime must expose run(input).');
+  if (
+    v1Runtime !== undefined &&
+    typeof v1Runtime.plan !== 'function' &&
+    typeof v1Runtime.run !== 'function'
+  ) {
+    throw new TypeError('v1Runtime must expose plan(input) or run(input).');
   }
 
   return Object.freeze({
@@ -99,7 +103,15 @@ async function createLegalComplianceAgent(options = {}) {
       }
 
       if (v1Runtime) {
-        const result = await v1Runtime.run(input);
+        const result =
+          typeof v1Runtime.plan === 'function'
+            ? await v1Runtime.plan(input)
+            : await v1Runtime.run(input);
+        if (result?.executionAttempted === true) {
+          const error = new Error('Direct Agent routing cannot execute V1 before confirmation.');
+          error.code = 'V1_CONFIRMATION_GATE_BYPASSED';
+          throw error;
+        }
         return {
           ...result,
           agentId: AGENT_ID,

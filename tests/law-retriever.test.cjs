@@ -11,7 +11,7 @@ test('loads six integrity-pinned official articles across every supported legal 
 
   assert.equal(corpus.corpusId, 'law-corpus.cn.v0-minimal');
   assert.equal(corpus.version, '0.2.0');
-  assert.equal(corpus.verifiedAt, '2026-07-21');
+  assert.equal(corpus.verifiedAt, '2026-08-03');
   assert.equal(corpus.entries.length, 6);
   assert.deepEqual(domains, new Set(Object.values(LEGAL_DOMAINS)));
   for (const entry of corpus.entries) {

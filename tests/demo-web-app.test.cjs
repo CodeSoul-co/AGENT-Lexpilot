@@ -488,10 +488,13 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
 
     const logs = await jsonRequest(`${baseUrl}/api/v1/logs`);
     assert.equal(logs.response.status, 200);
-    assert.equal(logs.body.logs.length, 1);
+    assert.equal(logs.body.logs.length, 2);
     assert.equal(logs.body.logs[0].status, 'completed');
     assert.equal(logs.body.logs[0].operationType, 'execute');
     assert.equal(logs.body.logs[0].sessionId, started.body.sessionId);
+    assert.equal(logs.body.logs[1].operationType, 'plan');
+    assert.equal(logs.body.integrity.status, 'verified');
+    assert.equal(logs.body.integrity.recordCount, 2);
 
     const emptyFilter = await jsonRequest(`${baseUrl}/api/v1/logs?status=cancelled`);
     assert.equal(emptyFilter.body.logs.length, 0);

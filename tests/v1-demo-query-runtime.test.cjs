@@ -22,6 +22,14 @@ test('V1 demo produces a verified read-only plan, table, chart, and artifact', a
   assert.equal(result.plan.readOnly, true);
   assert.equal(result.plan.schemaVerified, true);
   assert.match(result.plan.sql, /^SELECT/);
+  assert.match(result.plan.sql, /:start_year/);
+  assert.deepEqual(result.plan.parameters, {
+    start_year: 2023,
+    end_year: 2025,
+    issue_type: '未签劳动合同'
+  });
+  assert.match(result.plan.schemaFingerprint, /^[0-9a-f]{64}$/);
+  assert.match(result.plan.planHash, /^[0-9a-f]{64}$/);
   assert.equal(result.result.rows.length, 3);
   assert.equal(DEMO_CASES.length, 720);
   assert.equal(result.result.sourceCaseCount, 720);
@@ -33,6 +41,7 @@ test('V1 demo produces a verified read-only plan, table, chart, and artifact', a
   );
   assert.equal(result.chart.labels.length, 3);
   assert.equal(result.artifact.type, 'analysis-document');
+  assert.match(result.artifact.contentSha256, /^[0-9a-f]{64}$/);
   assert.match(result.artifact.content, /720 条匿名合成演示案例/);
   assert.match(result.artifact.content, /本次查询匹配：672 条/);
   assert.equal(result.sqlExecutionProvider, 'not_available_in_current_hypha');

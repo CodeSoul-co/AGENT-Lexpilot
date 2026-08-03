@@ -1,7 +1,9 @@
 const { createHash } = require('node:crypto');
+const { validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
 
 const DEMO_SCHEMA = Object.freeze({
   dataSource: 'demo.labor_cases',
+  tableName: 'labor_cases',
   displayName: '匿名劳动争议案例库',
   description: '仅用于本地产品演示的匿名合成劳动争议案例统计表',
   columns: Object.freeze([
@@ -109,7 +111,8 @@ function buildArtifact(runId, rows) {
     type: 'analysis-document',
     fileName: '案例统计分析.md',
     mimeType: 'text/markdown; charset=utf-8',
-    content
+    content,
+    contentSha256: createHash('sha256').update(content, 'utf8').digest('hex')
   };
 }
 
@@ -118,9 +121,15 @@ const DEMO_QUERY_SQL = [
   "  ROUND(100.0 * SUM(CASE WHEN outcome = 'employee_win' THEN 1 ELSE 0 END) / COUNT(*), 1) AS employee_win_rate,",
   "  MEDIAN(CASE WHEN outcome = 'employee_win' THEN compensation_amount END) AS median_compensation",
   'FROM labor_cases',
-  "WHERE year BETWEEN 2023 AND 2025 AND issue_type = '未签劳动合同'",
+  'WHERE year BETWEEN :start_year AND :end_year AND issue_type = :issue_type',
   'GROUP BY year ORDER BY year;'
 ].join('\n');
+
+const DEMO_QUERY_PARAMETERS = Object.freeze({
+  start_year: 2023,
+  end_year: 2025,
+  issue_type: '未签劳动合同'
+});
 
 function rejectWriteOperation(input) {
   if (!WRITE_PATTERN.test(input.redactedText)) {
@@ -137,18 +146,23 @@ function rejectWriteOperation(input) {
   };
 }
 
-function buildDemoQueryPlan(requiresConfirmation) {
+function buildDemoQueryPlan(requiresConfirmation, policy) {
   return {
     status: 'verified',
     sql: DEMO_QUERY_SQL,
+    parameters: DEMO_QUERY_PARAMETERS,
     explanation: '按年份聚合未签劳动合同案例，计算案例数、劳动者胜诉率和胜诉赔偿中位数。',
+    operationType: policy.operationType,
     readOnly: true,
     schemaVerified: true,
+    policyVersion: policy.policyVersion,
+    schemaFingerprint: policy.schemaFingerprint,
+    planHash: policy.planHash,
     requiresConfirmation
   };
 }
 
-function buildCompletedResult(input, { requiresConfirmation, confirmationTrace }) {
+function buildCompletedResult(input, { requiresConfirmation, confirmationTrace, schema, policy }) {
   const rows = buildYearlyRows();
   const matchedCaseCount = rows.reduce((total, row) => total + row.case_count, 0);
 
@@ -159,8 +173,8 @@ function buildCompletedResult(input, { requiresConfirmation, confirmationTrace }
     executionAttempted: true,
     executionMode: 'fixed-schema-controlled-evaluator',
     sqlExecutionProvider: 'not_available_in_current_hypha',
-    schema: DEMO_SCHEMA,
-    plan: buildDemoQueryPlan(requiresConfirmation),
+    schema,
+    plan: buildDemoQueryPlan(requiresConfirmation, policy),
     result: {
       columns: ['year', 'case_count', 'employee_win_rate', 'median_compensation'],
       rows,
@@ -180,11 +194,20 @@ function buildCompletedResult(input, { requiresConfirmation, confirmationTrace }
       readOnly: true,
       writeAttempted: false,
       schemaVerified: true,
+      schemaFingerprint: policy.schemaFingerprint,
+      planHash: policy.planHash,
       dataClassification: 'anonymous-synthetic-demo-data'
     },
     trace: [
-      safeTrace('v1.schema.loaded', { dataSource: DEMO_SCHEMA.dataSource }),
-      safeTrace('v1.query.plan.verified', { readOnly: true, schemaVerified: true }),
+      safeTrace('v1.schema.loaded', {
+        dataSource: schema.dataSource,
+        schemaFingerprint: policy.schemaFingerprint
+      }),
+      safeTrace('v1.query.plan.verified', {
+        readOnly: true,
+        schemaVerified: true,
+        planHash: policy.planHash
+      }),
       ...confirmationTrace,
       safeTrace('v1.query.executed', {
         rowCount: rows.length,
@@ -196,13 +219,61 @@ function buildCompletedResult(input, { requiresConfirmation, confirmationTrace }
   };
 }
 
-function createV1DemoQueryRuntime() {
+function createV1DemoQueryRuntime(options = {}) {
+  const schemaProvider = options.schemaProvider ?? (() => DEMO_SCHEMA);
+  if (typeof schemaProvider !== 'function') {
+    throw new TypeError('schemaProvider must be a function.');
+  }
+
+  function currentPlan(requiresConfirmation) {
+    const schema = schemaProvider();
+    const policy = validateReadOnlySqlPlan({
+      sql: DEMO_QUERY_SQL,
+      parameters: DEMO_QUERY_PARAMETERS,
+      schema
+    });
+    if (!policy.ok) {
+      return { schema, policy };
+    }
+    return { schema, policy, plan: buildDemoQueryPlan(requiresConfirmation, policy) };
+  }
+
+  function rejectPolicy(input, policy) {
+    return {
+      status: 'rejected',
+      runtime: 'business-demo-readonly',
+      runId: input.runId,
+      executionAttempted: false,
+      reason: policy.message,
+      safety: { readOnly: true, writeAttempted: false, schemaVerified: false },
+      trace: [safeTrace('v1.query.policy.rejected', { code: policy.code })]
+    };
+  }
+
+  function rejectDrift(input, policy) {
+    return {
+      status: 'rejected',
+      runtime: 'business-demo-readonly',
+      runId: input.runId,
+      executionAttempted: false,
+      reason: '确认时查询计划或数据源 Schema 已发生变化，请重新生成并确认执行计划。',
+      safety: {
+        readOnly: true,
+        writeAttempted: false,
+        schemaVerified: true,
+        confirmationRequired: true
+      },
+      trace: [safeTrace('v1.query.plan-drift.rejected', { reason: 'plan_or_schema_mismatch' })]
+    };
+  }
+
   return Object.freeze({
     describe() {
+      const schema = schemaProvider();
       return {
         runtime: 'business-demo-readonly',
-        dataSource: DEMO_SCHEMA.dataSource,
-        schema: DEMO_SCHEMA,
+        dataSource: schema.dataSource,
+        schema,
         schemaMode: 'fixed-demo-schema',
         executionProvider: 'local-controlled-evaluator',
         hyphaSqlExecutionAvailable: false
@@ -214,6 +285,10 @@ function createV1DemoQueryRuntime() {
       if (rejected) {
         return rejected;
       }
+      const { schema, policy, plan } = currentPlan(true);
+      if (!policy.ok) {
+        return rejectPolicy(input, policy);
+      }
       return {
         status: 'awaiting_confirmation',
         runtime: 'business-demo-readonly',
@@ -221,18 +296,27 @@ function createV1DemoQueryRuntime() {
         executionAttempted: false,
         executionMode: 'fixed-schema-controlled-evaluator',
         sqlExecutionProvider: 'not_available_in_current_hypha',
-        schema: DEMO_SCHEMA,
-        plan: buildDemoQueryPlan(true),
+        schema,
+        plan,
         safety: {
           readOnly: true,
           writeAttempted: false,
           schemaVerified: true,
+          schemaFingerprint: policy.schemaFingerprint,
+          planHash: policy.planHash,
           confirmationRequired: true,
           dataClassification: 'anonymous-synthetic-demo-data'
         },
         trace: [
-          safeTrace('v1.schema.loaded', { dataSource: DEMO_SCHEMA.dataSource }),
-          safeTrace('v1.query.plan.verified', { readOnly: true, schemaVerified: true }),
+          safeTrace('v1.schema.loaded', {
+            dataSource: schema.dataSource,
+            schemaFingerprint: policy.schemaFingerprint
+          }),
+          safeTrace('v1.query.plan.verified', {
+            readOnly: true,
+            schemaVerified: true,
+            planHash: policy.planHash
+          }),
           safeTrace('v1.query.plan.awaiting_confirmation', { requiresConfirmation: true })
         ]
       };
@@ -243,9 +327,21 @@ function createV1DemoQueryRuntime() {
       if (rejected) {
         return rejected;
       }
+      const { schema, policy } = currentPlan(true);
+      if (!policy.ok) {
+        return rejectPolicy(input, policy);
+      }
+      if (
+        input.expectedPlanHash !== policy.planHash ||
+        input.expectedSchemaFingerprint !== policy.schemaFingerprint
+      ) {
+        return rejectDrift(input, policy);
+      }
       return buildCompletedResult(input, {
         requiresConfirmation: true,
-        confirmationTrace: [safeTrace('v1.query.confirmation.recorded', { confirmed: true })]
+        confirmationTrace: [safeTrace('v1.query.confirmation.recorded', { confirmed: true })],
+        schema,
+        policy
       });
     },
 
@@ -254,9 +350,15 @@ function createV1DemoQueryRuntime() {
       if (rejected) {
         return rejected;
       }
+      const { schema, policy } = currentPlan(false);
+      if (!policy.ok) {
+        return rejectPolicy(input, policy);
+      }
       return buildCompletedResult(input, {
         requiresConfirmation: false,
-        confirmationTrace: []
+        confirmationTrace: [],
+        schema,
+        policy
       });
     }
   });

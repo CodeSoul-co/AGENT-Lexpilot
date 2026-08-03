@@ -124,6 +124,27 @@ test('a connected V1 runtime remains behind the same Agent identity and router',
   assert.doesNotMatch(JSON.stringify(result.trace), /数据库|案件数量/);
 });
 
+test('the unified Agent refuses a V1 runtime that bypasses confirmation', async () => {
+  const agent = await createLegalComplianceAgent({
+    projectRoot,
+    inference: v0Inference(),
+    v1Runtime: {
+      async run() {
+        return { status: 'completed', executionAttempted: true, trace: [] };
+      }
+    }
+  });
+
+  await assert.rejects(
+    agent.run({
+      runId: 'run_unified_v1_bypass',
+      piiRedacted: true,
+      redactedText: '统计数据库中近三年的案件数量。'
+    }),
+    (error) => error.code === 'V1_CONFIRMATION_GATE_BYPASSED'
+  );
+});
+
 test('the unified Agent privacy gate runs before either task route', async () => {
   const agent = await createLegalComplianceAgent({ projectRoot, inference: v0Inference() });
 

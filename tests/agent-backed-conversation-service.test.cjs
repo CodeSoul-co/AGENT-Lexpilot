@@ -44,7 +44,7 @@ test('V0 web conversation is executed by the unified Hypha Agent', async () => {
   assert.ok(result.questions.length <= 2);
 });
 
-test('V1 web conversation uses the same Agent and returns demonstrable artifacts', async () => {
+test('V1 web conversation uses the same Agent but cannot execute before confirmation', async () => {
   const service = await createService();
   const result = await service.start(
     request('统计近三年案例库未签劳动合同的胜诉率和赔偿中位数，生成图表。')
@@ -52,10 +52,11 @@ test('V1 web conversation uses the same Agent and returns demonstrable artifacts
 
   assert.equal(result.taskType, 'professional_data_query');
   assert.equal(result.agentExecution.agentId, 'agent.legal-compliance');
-  assert.equal(result.v1.status, 'completed');
+  assert.equal(result.v1.status, 'awaiting_confirmation');
+  assert.equal(result.v1.executionAttempted, false);
   assert.equal(result.v1.plan.readOnly, true);
-  assert.equal(result.v1.result.rows.length, 3);
-  assert.equal(result.v1.artifact.type, 'analysis-document');
+  assert.equal(result.v1.result, undefined);
+  assert.equal(result.v1.artifact, undefined);
   assert.doesNotMatch(result.assistantMessage, /\bV[01]\b/);
 });
 

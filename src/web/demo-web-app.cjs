@@ -214,7 +214,11 @@ function createDemoWebHandler(options = {}) {
           status: statusParam ?? undefined,
           limit
         });
-        sendJson(response, 200, { status: 'ok', logs });
+        const integrity =
+          typeof service.getV1ExecutionLogIntegrity === 'function'
+            ? await service.getV1ExecutionLogIntegrity()
+            : { status: 'unavailable' };
+        sendJson(response, 200, { status: 'ok', integrity, logs });
         return;
       }
 

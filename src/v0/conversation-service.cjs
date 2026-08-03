@@ -199,9 +199,15 @@ class LegalSelfCheckConversationService {
     if (
       this.executionLog !== null &&
       (typeof this.executionLog.append !== 'function' ||
-        typeof this.executionLog.list !== 'function')
+        typeof this.executionLog.list !== 'function' ||
+        typeof this.executionLog.verifyIntegrity !== 'function')
     ) {
-      throw new TypeError('executionLog must expose append(entry) and list(filter).');
+      throw new TypeError(
+        'executionLog must expose append(entry), list(filter), and verifyIntegrity().'
+      );
+    }
+    if (this.v1Runtime !== null && this.executionLog === null) {
+      throw new TypeError('V1 runtime requires an append-only executionLog.');
     }
     this.lastCleanup = this.autoCleanup ? this.cleanupInactiveSessions() : null;
     this.lastCleanupAt = this.autoCleanup ? this.clock() : null;
@@ -572,6 +578,8 @@ class LegalSelfCheckConversationService {
       result: null,
       chart: null,
       artifact: null,
+      planLogId: null,
+      executionLogId: null,
       confirmedAt: null,
       cancelledAt: null
     };
@@ -593,12 +601,15 @@ class LegalSelfCheckConversationService {
       planEvent,
       sessionEvent
     ];
-    if (planned.status === 'rejected') {
-      this.appendV1ExecutionLog(session, {
+    try {
+      const planLog = this.appendV1ExecutionLog(session, {
         operationType: 'plan',
-        status: 'rejected',
+        status: planned.status,
         error: planned.reason
       });
+      session.v1.planLogId = planLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, false);
     }
     this.store.create(session);
     return { ...publicResult(session), v1: session.v1 };
@@ -634,7 +645,15 @@ class LegalSelfCheckConversationService {
       });
       session.trace.push(cancelEvent);
       session.latestTrace = [cancelEvent];
-      this.appendV1ExecutionLog(session, { operationType: 'cancel', status: 'cancelled' });
+      try {
+        const cancelLog = this.appendV1ExecutionLog(session, {
+          operationType: 'cancel',
+          status: 'cancelled'
+        });
+        session.v1.executionLogId = cancelLog.entryId;
+      } catch {
+        this.failV1ForAuditLog(session, false);
+      }
       this.store.save(session, this.ownerId);
       return { ...publicResult(session), v1: session.v1 };
     }
@@ -647,7 +666,9 @@ class LegalSelfCheckConversationService {
       piiRedacted: true,
       redactedText: session.messages.map((message) => message.redactedText).join('\n'),
       clarificationRound: 0,
-      knownFacts: {}
+      knownFacts: {},
+      expectedPlanHash: session.v1.plan.planHash,
+      expectedSchemaFingerprint: session.v1.plan.schemaFingerprint
     });
     const durationMs = Date.now() - startedAt;
     session.status = executed.status === 'completed' ? 'completed' : 'rejected';
@@ -666,13 +687,20 @@ class LegalSelfCheckConversationService {
     });
     session.trace.push(...(executed.trace ?? []), executedEvent);
     session.latestTrace = [...(executed.trace ?? []), executedEvent];
-    this.appendV1ExecutionLog(session, {
-      operationType: 'execute',
-      status: executed.status,
-      durationMs,
-      rowCount: executed.result?.rowCount ?? 0,
-      error: executed.reason
-    });
+    try {
+      const executionLog = this.appendV1ExecutionLog(session, {
+        operationType: 'execute',
+        status: executed.status,
+        durationMs,
+        rowCount: executed.result?.rowCount ?? 0,
+        artifactId: executed.artifact?.artifactId,
+        artifactSha256: executed.artifact?.contentSha256,
+        error: executed.reason
+      });
+      session.v1.executionLogId = executionLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, executed.executionAttempted === true);
+    }
     this.store.save(session, this.ownerId);
     return { ...publicResult(session), v1: session.v1 };
   }
@@ -684,22 +712,42 @@ class LegalSelfCheckConversationService {
     return this.executionLog.list(filter);
   }
 
+  getV1ExecutionLogIntegrity() {
+    if (!this.executionLog) {
+      return { status: 'unavailable', recordCount: 0, verifiedCount: 0, legacyCount: 0 };
+    }
+    return this.executionLog.verifyIntegrity();
+  }
+
   appendV1ExecutionLog(session, entry) {
     if (!this.executionLog) {
-      return;
+      throw new Error('V1 execution log is unavailable.');
     }
-    try {
-      this.executionLog.append({
-        sessionId: session.id,
-        runId: session.v1?.runId,
-        sql: session.v1?.plan?.sql,
-        ...entry
-      });
-    } catch {
-      session.trace.push(
-        safeEvent('v1.execution-log.append.failed', { sessionId: session.id })
-      );
-    }
+    return this.executionLog.append({
+      sessionId: session.id,
+      runId: session.v1?.runId,
+      sql: session.v1?.plan?.sql,
+      planHash: session.v1?.plan?.planHash,
+      schemaFingerprint: session.v1?.plan?.schemaFingerprint,
+      ...entry
+    });
+  }
+
+  failV1ForAuditLog(session, resultMayHaveExecuted) {
+    session.status = 'failed';
+    session.v1.status = 'failed';
+    session.v1.reason = resultMayHaveExecuted
+      ? '查询已执行，但审计日志写入失败，结果已停止发布。'
+      : '审计日志写入失败，本次操作未继续。';
+    session.v1.result = null;
+    session.v1.chart = null;
+    session.v1.artifact = null;
+    const failedEvent = safeEvent('v1.execution-log.append.failed', {
+      sessionId: session.id,
+      resultMayHaveExecuted
+    });
+    session.trace.push(failedEvent);
+    session.latestTrace = [failedEvent];
   }
 
   deleteSession(sessionId, confirmation = {}) {

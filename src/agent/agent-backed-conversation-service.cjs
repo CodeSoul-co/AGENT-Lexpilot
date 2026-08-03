@@ -250,6 +250,13 @@ class AgentBackedConversationService {
     }
     return this.service.listV1ExecutionLogs(filter);
   }
+
+  getV1ExecutionLogIntegrity() {
+    if (typeof this.service.getV1ExecutionLogIntegrity !== 'function') {
+      return { status: 'unavailable', recordCount: 0, verifiedCount: 0, legacyCount: 0 };
+    }
+    return this.service.getV1ExecutionLogIntegrity();
+  }
 }
 
 module.exports = { AgentBackedConversationService };

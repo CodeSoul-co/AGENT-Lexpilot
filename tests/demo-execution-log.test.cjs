@@ -3,7 +3,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { createDemoExecutionLog } = require('../src/v1/demo-execution-log.cjs');
+const {
+  ExecutionLogIntegrityError,
+  createDemoExecutionLog
+} = require('../src/v1/demo-execution-log.cjs');
 
 function withTemporaryLog(run) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v1-execution-log-test-'));
@@ -43,6 +46,10 @@ test('appends jsonl entries and lists them newest first', () => {
     assert.equal(first.loggedAt, '2026-07-21T03:00:00.000Z');
     assert.equal(first.sessionId, 'session-a');
     assert.equal(first.operationType, 'execute');
+    assert.equal(first.schemaVersion, 1);
+    assert.equal(first.sequence, 1);
+    assert.match(first.entryId, /^[0-9a-f-]{36}$/);
+    assert.match(first.entryHash, /^[0-9a-f]{64}$/);
 
     const all = log.list();
     assert.equal(all.length, 2);
@@ -65,10 +72,15 @@ test('drops undeclared entry fields so user text never reaches the log', () => {
     const [record] = log.list();
     assert.deepEqual(Object.keys(record).sort(), [
       'durationMs',
+      'entryHash',
+      'entryId',
       'loggedAt',
       'operationType',
+      'previousHash',
       'rowCount',
       'runId',
+      'schemaVersion',
+      'sequence',
       'sessionId',
       'sql',
       'status'
@@ -101,7 +113,7 @@ test('returns an empty list when the log file does not exist', () => {
   assert.deepEqual(log.list(), []);
 });
 
-test('skips damaged lines without failing the whole read', () => {
+test('fails closed when a damaged line is found', () => {
   withTemporaryLog((filePath) => {
     fs.writeFileSync(
       filePath,
@@ -115,22 +127,65 @@ test('skips damaged lines without failing the whole read', () => {
       'utf8'
     );
     const log = createDemoExecutionLog({ filePath });
-    const records = log.list();
-    assert.equal(records.length, 2);
-    assert.equal(records[0].sessionId, 'ok-2');
-    assert.equal(records[1].sessionId, 'ok-1');
+    assert.throws(
+      () => log.list(),
+      (error) => error instanceof ExecutionLogIntegrityError && error.code === 'INVALID_JSON'
+    );
+    assert.throws(() => log.append(entry()), ExecutionLogIntegrityError);
   });
 });
 
-test('exposes only append and list with no mutation interface', () => {
+test('exposes append, list, and integrity verification with no mutation interface', () => {
   withTemporaryLog((filePath) => {
     const log = createDemoExecutionLog({ filePath });
     assert.equal(Object.isFrozen(log), true);
-    assert.deepEqual(Object.keys(log).sort(), ['append', 'list']);
+    assert.deepEqual(Object.keys(log).sort(), ['append', 'list', 'verifyIntegrity']);
     assert.equal(log.delete, undefined);
     assert.equal(log.update, undefined);
     assert.equal(log.remove, undefined);
     assert.equal(log.clear, undefined);
     assert.throws(() => log.append({ operationType: 'execute', status: 'completed' }), /sessionId/);
+  });
+});
+
+test('detects record tampering and missing records inside the hash chain', () => {
+  withTemporaryLog((filePath) => {
+    const log = createDemoExecutionLog({ filePath });
+    log.append(entry({ sessionId: 'session-a' }));
+    log.append(entry({ sessionId: 'session-b' }));
+
+    const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n');
+    const tampered = JSON.parse(lines[0]);
+    tampered.status = 'failed';
+    fs.writeFileSync(filePath, `${JSON.stringify(tampered)}\n${lines[1]}\n`, 'utf8');
+    assert.throws(
+      () => log.verifyIntegrity(),
+      (error) => error instanceof ExecutionLogIntegrityError && error.code === 'ENTRY_HASH_MISMATCH'
+    );
+
+    fs.writeFileSync(filePath, `${lines[1]}\n`, 'utf8');
+    assert.throws(
+      () => log.verifyIntegrity(),
+      (error) => error instanceof ExecutionLogIntegrityError && error.code === 'SEQUENCE_MISMATCH'
+    );
+  });
+});
+
+test('anchors readable legacy records when the first verified record is appended', () => {
+  withTemporaryLog((filePath) => {
+    fs.writeFileSync(
+      filePath,
+      '{"loggedAt":"2026-07-21T03:00:00.000Z","sessionId":"legacy","operationType":"execute","status":"completed"}\n',
+      'utf8'
+    );
+    const log = createDemoExecutionLog({ filePath });
+    assert.equal(log.verifyIntegrity().status, 'legacy_unverified');
+
+    log.append(entry({ sessionId: 'verified' }));
+    const integrity = log.verifyIntegrity();
+    assert.equal(integrity.status, 'verified_with_legacy_anchor');
+    assert.equal(integrity.legacyCount, 1);
+    assert.equal(integrity.verifiedCount, 1);
+    assert.equal(log.list().length, 2);
   });
 });

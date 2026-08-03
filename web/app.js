@@ -543,11 +543,24 @@ async function loadLogs() {
   const status = elements.logFilter.value;
   const query = status ? `?status=${encodeURIComponent(status)}&limit=50` : '?limit=50';
   const result = await api(`/api/v1/logs${query}`);
-  renderLogs(result.logs ?? []);
+  renderLogs(result.logs ?? [], result.integrity);
 }
 
-function renderLogs(logs) {
+function renderLogs(logs, integrity) {
   elements.logList.replaceChildren();
+  if (integrity) {
+    const integrityLabels = {
+      empty: '审计链为空',
+      verified: '审计链已校验',
+      legacy_unverified: '旧版日志尚未建立校验锚点',
+      verified_with_legacy_anchor: '审计链已校验（含旧版记录锚点）',
+      unavailable: '审计链校验不可用'
+    };
+    const label = integrityLabels[integrity.status] ?? `审计链：${integrity.status}`;
+    elements.logList.append(
+      node('p', 'muted compact', `${label} · ${integrity.recordCount ?? 0} 条记录`)
+    );
+  }
   if (!logs.length) { elements.logList.append(node('p', 'muted compact', '暂无执行日志')); return; }
   const operationLabels = { plan: '计划', execute: '执行', cancel: '取消' };
   for (const log of logs) {
@@ -560,6 +573,7 @@ function renderLogs(logs) {
     const meta = [log.loggedAt ? new Date(log.loggedAt).toLocaleString('zh-CN') : ''];
     if (typeof log.durationMs === 'number') meta.push(`${log.durationMs}ms`);
     if (typeof log.rowCount === 'number') meta.push(`${log.rowCount} 行`);
+    if (log.entryId) meta.push(`记录 ${log.entryId.slice(0, 8)}`);
     item.append(top, node('div', 'log-meta', meta.filter(Boolean).join(' · ')));
     if (log.error) item.append(node('div', 'log-error', log.error));
     elements.logList.append(item);
