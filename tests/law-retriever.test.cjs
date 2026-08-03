@@ -5,14 +5,14 @@ const { loadLawCorpus, sha256, validateLawCorpus } = require('../src/v0/law-corp
 const { LocalVerifiedLawRetriever } = require('../src/v0/law-retriever.cjs');
 const { LEGAL_DOMAINS } = require('../src/v0/legal-domain.cjs');
 
-test('loads sixteen integrity-pinned official articles across every supported legal domain', () => {
+test('loads twenty-one integrity-pinned official articles across every supported legal domain', () => {
   const corpus = loadLawCorpus();
   const domains = new Set(corpus.entries.map((entry) => entry.legalDomain));
 
   assert.equal(corpus.corpusId, 'law-corpus.cn.v0-minimal');
-  assert.equal(corpus.version, '0.4.0');
+  assert.equal(corpus.version, '0.5.0');
   assert.equal(corpus.verifiedAt, '2026-08-03');
-  assert.equal(corpus.entries.length, 16);
+  assert.equal(corpus.entries.length, 21);
   assert.deepEqual(domains, new Set(Object.values(LEGAL_DOMAINS)));
   for (const entry of corpus.entries) {
     assert.equal(entry.status, 'effective');
@@ -74,7 +74,20 @@ test('pins the verified law name, article number, and effective date for each sa
     ],
     'cn.patent-law.article-11': ['中华人民共和国专利法', '第十一条', '2021-06-01'],
     'cn.patent-law.article-71': ['中华人民共和国专利法', '第七十一条', '2021-06-01'],
-    'cn.patent-law.article-74': ['中华人民共和国专利法', '第七十四条', '2021-06-01']
+    'cn.patent-law.article-74': ['中华人民共和国专利法', '第七十四条', '2021-06-01'],
+    'cn.labor-contract-law.article-47': [
+      '中华人民共和国劳动合同法',
+      '第四十七条',
+      '2013-07-01'
+    ],
+    'cn.civil-code.article-1063': ['中华人民共和国民法典', '第一千零六十三条', '2021-01-01'],
+    'cn.civil-code.article-679': ['中华人民共和国民法典', '第六百七十九条', '2021-01-01'],
+    'cn.tax-collection-administration-law.article-63': [
+      '中华人民共和国税收征收管理法',
+      '第六十三条',
+      '2015-04-24'
+    ],
+    'cn.patent-law.article-75': ['中华人民共和国专利法', '第七十五条', '2021-06-01']
   });
 });
 
@@ -90,7 +103,12 @@ test('keeps staged corpus batches out of retrieval until dedicated regressions e
     'cn.tax-collection-administration-law.article-32',
     'cn.tax-collection-administration-law.article-62',
     'cn.patent-law.article-71',
-    'cn.patent-law.article-74'
+    'cn.patent-law.article-74',
+    'cn.labor-contract-law.article-47',
+    'cn.civil-code.article-1063',
+    'cn.civil-code.article-679',
+    'cn.tax-collection-administration-law.article-63',
+    'cn.patent-law.article-75'
   ];
   for (const id of stagedIds) {
     assert.equal(corpus.entries.find((entry) => entry.id === id)?.retrievalEnabled, false);
