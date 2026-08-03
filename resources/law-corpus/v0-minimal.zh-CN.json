@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -681,6 +681,101 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["prior_art_defense", "patent_infringement"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.labor-contract-law.article-38",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第三十八条",
+      "articleText": "用人单位有下列情形之一的，劳动者可以解除劳动合同:\n\n（一）未按照劳动合同约定提供劳动保护或者劳动条件的；\n\n（二）未及时足额支付劳动报酬的；\n\n（三）未依法为劳动者缴纳社会保险费的；\n\n（四）用人单位的规章制度违反法律、法规的规定，损害劳动者权益的；\n\n（五）因本法第二十六条第一款规定的情形致使劳动合同无效的；\n\n（六）法律、行政法规规定劳动者可以解除劳动合同的其他情形。\n\n用人单位以暴力、威胁或者非法限制人身自由的手段强迫劳动者劳动的，或者用人单位违章指挥、强令冒险作业危及劳动者人身安全的，劳动者可以立即解除劳动合同，不需事先告知用人单位。",
+      "articleTextSha256": "7b5c82b16de34a53847df579d8cebe7700f35e9bc88270380aae8eaa77adcf0d",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["employee_termination", "employer_breach", "immediate_termination"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1076",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零七十六条",
+      "articleText": "夫妻双方自愿离婚的，应当签订书面离婚协议，并亲自到婚姻登记机关申请离婚登记。\n\n离婚协议应当载明双方自愿离婚的意思表示和对子女抚养、财产以及债务处理等事项协商一致的意见。",
+      "articleTextSha256": "47cbb0b3bb224e1b03ecdfc2b68b81a24ada25d9e39efc00b6c1a420f914e363",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["divorce_agreement", "divorce_registration"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-671",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百七十一条",
+      "articleText": "贷款人未按照约定的日期、数额提供借款，造成借款人损失的，应当赔偿损失。\n\n借款人未按照约定的日期、数额收取借款的，应当按照约定的日期、数额支付利息。",
+      "articleTextSha256": "d62c851d6581c7fce1b7b2204925fc316ab5a7223101076f925f5a5eba7fcf5a",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["loan_disbursement_breach", "loan_receipt_breach"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.tax-collection-administration-law.article-67",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第六十七条",
+      "articleText": "以暴力、威胁方法拒不缴纳税款的，是抗税，除由税务机关追缴其拒缴的税款、滞纳金外，依法追究刑事责任。情节轻微，未构成犯罪的，由税务机关追缴其拒缴的税款、滞纳金，并处拒缴税款一倍以上五倍以下的罚款。",
+      "articleTextSha256": "2d0794b461748b1ea7e4b8b11ace5bb86f52db122018306f8f72f4490f11133c",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["tax_resistance", "tax_criminal_liability"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-66",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第六十六条",
+      "articleText": "专利侵权纠纷涉及新产品制造方法的发明专利的，制造同样产品的单位或者个人应当提供其产品制造方法不同于专利方法的证明。\n\n专利侵权纠纷涉及实用新型专利或者外观设计专利的，人民法院或者管理专利工作的部门可以要求专利权人或者利害关系人出具由国务院专利行政部门对相关实用新型或者外观设计进行检索、分析和评价后作出的专利权评价报告，作为审理、处理专利侵权纠纷的证据；专利权人、利害关系人或者被控侵权人也可以主动出具专利权评价报告。",
+      "articleTextSha256": "4e5e73b8048dbf5c244930a2ac5f407b4bdc7060fef240716d39d59be6253ba5",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["patent_burden_of_proof", "patent_evaluation_report"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
