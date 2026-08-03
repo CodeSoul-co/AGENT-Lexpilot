@@ -80,6 +80,9 @@ function fixture(options = {}) {
           }
         };
       },
+      async cancel(request) {
+        calls.push(['cancel', request]);
+      },
       async status() {
         calls.push('status');
         return record;
@@ -275,6 +278,80 @@ test('Provider failures fail closed and still remove the independent Workspace',
     } finally {
       value.cleanup();
     }
+  }
+});
+
+test('Docker provider collection failures retain normalized cleanup evidence', async () => {
+  const providerError = Object.assign(new Error('private provider failure'), {
+    normalizedError: {
+      code: 'EXECUTION_INTERNAL_ERROR',
+      message: 'Docker execution failed during collect.',
+      retryable: true,
+      details: {
+        phase: 'collect',
+        evidenceCode: 'UNEXPECTED',
+        cleanup: { complete: true, containerAbsent: true, stopAttempted: true }
+      }
+    }
+  });
+  const value = fixture({ executeError: providerError });
+  try {
+    const runtime = await runtimeFor(value);
+    const planned = await runtime.plan({
+      language: 'shell',
+      script: 'ln -s /etc/passwd /workspace/leak.txt',
+      runId: 'run-provider-cleanup-evidence',
+      sessionId: 'session-provider-cleanup-evidence'
+    });
+    const completed = await runtime.approve({
+      invocationId: planned.invocationId,
+      runId: 'run-provider-cleanup-evidence'
+    });
+    assert.equal(completed.status, 'failed');
+    assert.equal(completed.result.errorCode, 'EXECUTION_INTERNAL_ERROR');
+    assert.equal(completed.result.cleanupEvidence.executionContainerAbsent, true);
+    assert.equal(completed.result.cleanupEvidence.processTreeTerminationVerified, true);
+    assert.equal(JSON.stringify(completed).includes('private provider failure'), false);
+    assert.equal(value.calls.includes('terminate'), true);
+    assert.equal(value.calls.includes('cleanup'), true);
+    assert.deepEqual(fs.readdirSync(value.workspaceRoot), []);
+  } finally {
+    value.cleanup();
+  }
+});
+
+test('Project deadline cancels the Docker provider and reports timed_out', async () => {
+  const value = fixture();
+  try {
+    const runtime = await runtimeFor(value, {
+      scheduleTimeout(callback) {
+        callback();
+        return 'deadline-token';
+      },
+      clearScheduledTimeout(token) {
+        assert.equal(token, 'deadline-token');
+      }
+    });
+    const planned = await runtime.plan({
+      language: 'shell',
+      script: 'sleep 31',
+      runId: 'run-project-deadline',
+      sessionId: 'session-project-deadline'
+    });
+    const completed = await runtime.approve({
+      invocationId: planned.invocationId,
+      runId: 'run-project-deadline'
+    });
+    assert.equal(completed.status, 'timed_out');
+    assert.equal(completed.result.errorCode, 'EXECUTION_TIMEOUT');
+    assert.equal(completed.result.exitCode, null);
+    assert.equal(completed.result.cleanupEvidence.executionContainerAbsent, true);
+    const cancel = value.calls.find((call) => Array.isArray(call) && call[0] === 'cancel')[1];
+    assert.equal(cancel.executionId, 'execution.lexpilot.run-project-deadline');
+    assert.equal(cancel.expectedRevision, 2);
+    assert.equal(cancel.gracePeriodMs, 0);
+  } finally {
+    value.cleanup();
   }
 });
 

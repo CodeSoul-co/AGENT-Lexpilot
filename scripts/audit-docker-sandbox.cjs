@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { loadLocalEnv } = require('./load-env.cjs');
 const { createDockerSandboxPreflight } = require('../src/v1/docker-sandbox-preflight.cjs');
 const { createSandboxArtifactRepository } = require('../src/v1/sandbox-artifact-repository.cjs');
@@ -22,6 +23,17 @@ function emptyDirectory(directory) {
   return !fs.existsSync(directory) || fs.readdirSync(directory).length === 0;
 }
 
+function emitProgress(result) {
+  process.stderr.write(`${JSON.stringify({
+    status: 'case_completed',
+    id: result.id,
+    resultStatus: result.status,
+    errorCode: result.errorCode,
+    cleanupVerified: result.cleanupVerified,
+    generatedArtifactCount: result.generatedArtifactCount
+  })}\n`);
+}
+
 function requireGovernanceEvents(eventTypes, decision) {
   const required = [
     'human.review.requested',
@@ -35,13 +47,13 @@ function requireGovernanceEvents(eventTypes, decision) {
   }
 }
 
-async function rejectCase(runtime) {
-  const runId = 'sandbox-audit-unconfirmed-rejected';
+async function rejectCase(runtime, auditId) {
+  const runId = `sandbox-audit-unconfirmed-rejected-${auditId}`;
   const plan = await runtime.plan({
     language: 'python',
     script: "raise SystemExit('must-not-run')",
     runId,
-    sessionId: 'sandbox-audit-session'
+    sessionId: `sandbox-audit-session-${auditId}`
   });
   const result = await runtime.reject({ invocationId: plan.invocationId, runId });
   requireGovernanceEvents(result.governanceReceipt.eventTypes, 'rejected');
@@ -60,33 +72,35 @@ async function rejectCase(runtime) {
   };
 }
 
-async function executeCase(runtime, definition) {
-  const runId = `sandbox-audit-${definition.id}`;
+async function executeCase(runtime, definition, auditId) {
+  const runId = `sandbox-audit-${definition.id}-${auditId}`;
   const plan = await runtime.plan({
     language: definition.language,
     script: definition.script,
     runId,
-    sessionId: 'sandbox-audit-session'
+    sessionId: `sandbox-audit-session-${auditId}`
   });
   const result = await runtime.approve({
     invocationId: plan.invocationId,
     runId,
     approvedAt: new Date().toISOString()
   });
-  if (!definition.expectedStatuses.includes(result.status)) {
-    const error = new Error(`Sandbox audit case ${definition.id} returned an unexpected status.`);
-    error.code = 'SANDBOX_AUDIT_EXPECTATION_FAILED';
-    throw error;
-  }
-  requireGovernanceEvents(result.governanceReceipt.eventTypes, 'approved');
   const safeResult = {
     id: definition.id,
     status: result.status,
+    errorCode: result.result?.errorCode,
     eventTypes: result.governanceReceipt.eventTypes,
     cleanupVerified: result.result?.cleanupEvidence?.executionContainerAbsent === true,
     generatedArtifactCount: result.result?.generatedArtifactRefs?.length ?? 0,
     resourceEvidence: result.result?.resourceEvidence
   };
+  if (!definition.expectedStatuses.includes(result.status)) {
+    emitProgress(safeResult);
+    const error = new Error(`Sandbox audit case ${definition.id} returned an unexpected status.`);
+    error.code = 'SANDBOX_AUDIT_EXPECTATION_FAILED';
+    throw error;
+  }
+  requireGovernanceEvents(result.governanceReceipt.eventTypes, 'approved');
   if (!safeResult.cleanupVerified) {
     const error = new Error(`Sandbox audit case ${definition.id} did not prove cleanup.`);
     error.code = 'SANDBOX_AUDIT_CLEANUP_FAILED';
@@ -97,6 +111,9 @@ async function executeCase(runtime, definition) {
 }
 
 async function main() {
+  // Artifact identities include runId/executionId. A unique id keeps repeated
+  // acceptance runs independent without deleting evidence from earlier runs.
+  const auditId = randomUUID();
   const projectRoot = path.resolve(__dirname, '..');
   const workspaceRoot = path.resolve(
     process.env.LEGAL_V1_SANDBOX_WORKSPACE_ROOT ?? path.join(projectRoot, 'data', 'sandbox-workspaces')
@@ -203,8 +220,14 @@ async function main() {
         }
       }
     ];
-    const results = [await rejectCase(runtime)];
-    for (const definition of cases) results.push(await executeCase(runtime, definition));
+    const rejected = await rejectCase(runtime, auditId);
+    emitProgress(rejected);
+    const results = [rejected];
+    for (const definition of cases) {
+      const result = await executeCase(runtime, definition, auditId);
+      emitProgress(result);
+      results.push(result);
+    }
     if (!emptyDirectory(workspaceRoot)) {
       const error = new Error('Sandbox Workspace cleanup was incomplete.');
       error.code = 'SANDBOX_AUDIT_CLEANUP_FAILED';

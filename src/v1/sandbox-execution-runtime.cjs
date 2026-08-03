@@ -40,6 +40,25 @@ function safeProviderReceipt(receipt) {
   };
 }
 
+function safeProviderFailure(error) {
+  const normalized = error?.normalizedError;
+  const cleanup = normalized?.details?.cleanup;
+  if (!normalized || typeof normalized.code !== 'string' || !cleanup || typeof cleanup !== 'object') {
+    return undefined;
+  }
+  const containerAbsent = cleanup.containerAbsent === true;
+  return {
+    status: 'failed',
+    errorCode: normalized.code,
+    generatedArtifactRefs: [],
+    cleanupEvidence: {
+      executionContainerAbsent: containerAbsent,
+      processTreeTerminationVerified: cleanup.complete === true && containerAbsent
+    },
+    resourceEvidence: { accountingMode: 'unavailable' }
+  };
+}
+
 function sha256(value) {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
@@ -91,6 +110,8 @@ async function createSandboxExecutionRuntime(options = {}) {
   const { GovernedToolRunner, ToolRegistry } = loadHyphaTools();
   const events = options.eventStore ?? new InMemoryEventStore();
   const registry = new ToolRegistry();
+  const scheduleTimeout = options.scheduleTimeout ?? setTimeout;
+  const clearScheduledTimeout = options.clearScheduledTimeout ?? clearTimeout;
 
   async function executeApproved(input) {
     const request = requireSandboxRequest({
@@ -149,7 +170,9 @@ async function createSandboxExecutionRuntime(options = {}) {
         expectedRevision: sandbox.revision
       });
       const executionId = safeId('execution.lexpilot', input.runId);
-      const result = await provider.execute({
+      let deadlineExceeded = false;
+      let cancellation;
+      const execution = provider.execute({
         executionId,
         operationId: safeId('operation.execute', input.runId),
         principal,
@@ -165,6 +188,27 @@ async function createSandboxExecutionRuntime(options = {}) {
         captureArtifacts: true,
         captureFileMutations: true
       });
+      const deadline = scheduleTimeout(() => {
+        deadlineExceeded = true;
+        cancellation = Promise.resolve(provider.cancel({
+          operationId: safeId('operation.cancel', input.runId),
+          executionId,
+          principal,
+          expectedRevision: sandbox.revision,
+          reason: 'LexPilot Sandbox execution deadline exceeded.',
+          gracePeriodMs: 0
+        })).then(
+          () => undefined,
+          () => undefined
+        );
+      }, environment.defaultTimeoutMs);
+      let result;
+      try {
+        result = await execution;
+      } finally {
+        clearScheduledTimeout(deadline);
+        await cancellation;
+      }
       if (result.metadata?.cleanup?.complete !== true || result.metadata.cleanup.containerAbsent !== true) {
         throw new Error('Docker execution container cleanup could not be verified.');
       }
@@ -198,9 +242,9 @@ async function createSandboxExecutionRuntime(options = {}) {
         };
       }
       return {
-        status: result.status,
-        exitCode: result.exitCode,
-        errorCode: result.error?.code,
+        status: deadlineExceeded ? 'timed_out' : result.status,
+        exitCode: deadlineExceeded ? null : result.exitCode,
+        errorCode: deadlineExceeded ? 'EXECUTION_TIMEOUT' : result.error?.code,
         stdoutArtifactRef: result.stdoutArtifactRef,
         stderrArtifactRef: result.stderrArtifactRef,
         generatedArtifactRefs: [
@@ -222,6 +266,8 @@ async function createSandboxExecutionRuntime(options = {}) {
           : { accountingMode: result.metadata?.accountingMode ?? 'unavailable' }
       };
     } catch (error) {
+      const providerFailure = safeProviderFailure(error);
+      if (providerFailure) return providerFailure;
       operationError = error;
       throw error;
     } finally {
