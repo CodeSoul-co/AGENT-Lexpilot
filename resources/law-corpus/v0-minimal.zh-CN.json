@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -586,6 +586,101 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["patent_counterfeiting", "administrative_penalty"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.labor-contract-law.article-50",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第五十条",
+      "articleText": "用人单位应当在解除或者终止劳动合同时出具解除或者终止劳动合同的证明，并在十五日内为劳动者办理档案和社会保险关系转移手续。\n\n劳动者应当按照双方约定，办理工作交接。用人单位依照本法有关规定应当向劳动者支付经济补偿的，在办结工作交接时支付。\n\n用人单位对已经解除或者终止的劳动合同的文本，至少保存二年备查。",
+      "articleTextSha256": "708c824fbef770f2955e9207242a04e3fe5b6c042b4a9f2d62c3ea0061b5fb79",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["termination_certificate", "social_insurance_transfer", "contract_retention"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1066",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零六十六条",
+      "articleText": "婚姻关系存续期间，有下列情形之一的，夫妻一方可以向人民法院请求分割共同财产：\n\n（一）一方有隐藏、转移、变卖、毁损、挥霍夫妻共同财产或者伪造夫妻共同债务等严重损害夫妻共同财产利益的行为；\n\n（二）一方负有法定扶养义务的人患重大疾病需要医治，另一方不同意支付相关医疗费用。",
+      "articleTextSha256": "5c3536a47e00becd20d3a96f6a99432b7a5d2abbbdd4bbfaf823cd696ed42742",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["division_during_marriage", "concealed_marital_property"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-669",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百六十九条",
+      "articleText": "订立借款合同，借款人应当按照贷款人的要求提供与借款有关的业务活动和财务状况的真实情况。",
+      "articleTextSha256": "44b1f804b72ee300aee77a18380d5d78e1873fc2567ce3f6af5273cd2c49abc6",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["borrower_disclosure", "financial_information"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.tax-collection-administration-law.article-66",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第六十六条",
+      "articleText": "以假报出口或者其他欺骗手段，骗取国家出口退税款的，由税务机关追缴其骗取的退税款，并处骗取税款一倍以上五倍以下的罚款；构成犯罪的，依法追究刑事责任。\n\n对骗取国家出口退税款的，税务机关可以在规定期间内停止为其办理出口退税。",
+      "articleTextSha256": "60e5c139be5d37fb8746a1600475b48d3160a1d3be97e82a1fc440b63cb8c1fa",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["export_tax_refund_fraud", "export_refund_suspension"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-67",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第六十七条",
+      "articleText": "在专利侵权纠纷中，被控侵权人有证据证明其实施的技术或者设计属于现有技术或者现有设计的，不构成侵犯专利权。",
+      "articleTextSha256": "fc94a39b4121b226e1a0795626a723bebcb13662c4cabe2bc47885482880e130",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["prior_art_defense", "patent_infringement"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
