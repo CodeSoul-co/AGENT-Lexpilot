@@ -288,6 +288,52 @@ test('network data source uses the same governed plan-confirm-execute runtime co
   assert.equal(executed.providerReceipt.readOnly, true);
 });
 
+test('network runtime returns an allowlisted Schema difference before provider execution', async () => {
+  let schemaCalls = 0;
+  let queryCalls = 0;
+  const source = createSource(
+    'postgresql',
+    fakeClient({
+      async inspectTable() {
+        schemaCalls += 1;
+        return schemaCalls === 1
+          ? COLUMNS.map((column) => ({ ...column }))
+          : COLUMNS.map((column) =>
+              column.name === 'compensation_amount' ? { ...column, type: 'TEXT' } : { ...column }
+            );
+      },
+      async executeReadOnly() {
+        queryCalls += 1;
+        return [];
+      }
+    })
+  );
+  const runtime = await createV1SQLQueryRuntime({ dataSource: source });
+  const input = {
+    runId: 'network-drift-run',
+    sessionId: 'network-drift-session',
+    ownerId: 'network-drift-owner',
+    piiRedacted: true,
+    redactedText: '统计近三年未签劳动合同案件的胜诉率和赔偿中位数。',
+    clarificationRound: 0,
+    knownFacts: {}
+  };
+  const planned = runtime.plan(input);
+  const rejected = await runtime.execute({
+    ...input,
+    expectedPlanHash: planned.plan.planHash,
+    expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+    expectedSchemaSnapshot: planned.plan.schemaSnapshot
+  });
+  assert.equal(rejected.status, 'rejected');
+  assert.equal(rejected.errorCode, 'SCHEMA_DRIFT');
+  assert.equal(rejected.replanRequired, true);
+  assert.deepEqual(rejected.schemaDrift.affectedFields, ['labor_cases.compensation_amount']);
+  assert.equal(rejected.schemaDrift.tables[0].changedColumns[0].changes.type.after, 'TEXT');
+  assert.equal(queryCalls, 0);
+  assert.equal(JSON.stringify(rejected).includes('local-test-secret'), false);
+});
+
 for (const engine of ['postgresql', 'mysql']) {
   test(`${engine} acceptance command returns only reproducible non-secret evidence`, async () => {
     const prefix = engine === 'postgresql' ? 'LEGAL_V1_PG' : 'LEGAL_V1_MYSQL';

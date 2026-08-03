@@ -12,6 +12,9 @@ function safeAgentTrace(trace) {
 
 function assistantMessage(result) {
   if (result.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY) {
+    if (result.v1?.replanRequired === true && result.v1?.schemaDrift?.detected === true) {
+      return result.v1.schemaDrift.notification;
+    }
     if (result.v1?.status === 'completed') {
       return '专业数据分析已完成 Schema 校验、只读查询计划、演示执行与分析文档生成。';
     }
@@ -232,6 +235,23 @@ class AgentBackedConversationService {
       throw new TypeError('service must expose confirmV1Execution(sessionId, confirmation).');
     }
     const result = await this.service.confirmV1Execution(sessionId, confirmation);
+    if (result?.sessionId && result.status !== 'failed') {
+      const merged = { ...result, assistantMessage: assistantMessage(result) };
+      this.resultCache.set(result.sessionId, {
+        ...(this.resultCache.get(result.sessionId) ?? {}),
+        assistantMessage: merged.assistantMessage,
+        v1: merged.v1
+      });
+      return merged;
+    }
+    return result;
+  }
+
+  async replanV1Execution(sessionId) {
+    if (typeof this.service.replanV1Execution !== 'function') {
+      throw new TypeError('service must expose replanV1Execution(sessionId).');
+    }
+    const result = await this.service.replanV1Execution(sessionId);
     if (result?.sessionId && result.status !== 'failed') {
       const merged = { ...result, assistantMessage: assistantMessage(result) };
       this.resultCache.set(result.sessionId, {

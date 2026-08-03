@@ -76,10 +76,13 @@ function createPostgreSQLClient(profile, dependencies = {}) {
         query_timeout: profile.timeoutMs
       });
       const byName = new Map(result.rows.map((row) => [String(row.column_name), row]));
-      return allowedColumns.map((name) => {
-        if (!byName.has(name)) return null;
-        return normalizePostgresColumn(byName.get(name));
-      });
+      return {
+        tableAvailable: result.rows.length > 0,
+        columns: allowedColumns.map((name) => {
+          if (!byName.has(name)) return null;
+          return normalizePostgresColumn(byName.get(name));
+        })
+      };
     },
 
     async executeReadOnly(sql, parameters, maxRows) {
@@ -153,10 +156,13 @@ function createMySQLClient(profile, dependencies = {}) {
         [tableName]
       );
       const byName = new Map(rows.map((row) => [String(row.COLUMN_NAME), row]));
-      return allowedColumns.map((name) => {
-        if (!byName.has(name)) return null;
-        return normalizeMySQLColumn(byName.get(name));
-      });
+      return {
+        tableAvailable: rows.length > 0,
+        columns: allowedColumns.map((name) => {
+          if (!byName.has(name)) return null;
+          return normalizeMySQLColumn(byName.get(name));
+        })
+      };
     },
 
     async executeReadOnly(sql, parameters, maxRows) {

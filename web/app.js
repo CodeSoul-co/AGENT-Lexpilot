@@ -303,6 +303,33 @@ function addV1PlanCard(result) {
   board.append(heading, plan, explanation, badges, boundary); elements.conversation.append(board);
 }
 
+function addSchemaDriftCard(result) {
+  const drift = result.v1?.schemaDrift;
+  if (!drift?.detected) return;
+  const board = node('section', 'v1-board');
+  const heading = node('div', 'v1-heading');
+  const titleWrap = node('div');
+  titleWrap.append(node('span', 'message-label', 'Schema 变化通知'), node('h3', '', '旧查询计划已安全停止'));
+  heading.append(titleWrap, node('span', 'verified-badge', '需重新规划'));
+  const summary = drift.summary ?? {};
+  const detail = node('div', 'demo-boundary', drift.notification ?? '检测到 Schema 变化，旧计划未执行。');
+  const fields = node(
+    'p',
+    'plan-explanation',
+    drift.affectedFields?.length
+      ? `受影响字段：${drift.affectedFields.join('、')}`
+      : `差异摘要：新增字段 ${summary.addedColumns ?? 0}，移除字段 ${summary.removedColumns ?? 0}，变更字段 ${summary.changedColumns ?? 0}`
+  );
+  board.append(heading, detail, fields);
+  if (result.v1?.replanRequired === true) {
+    const button = node('button', 'primary-button', '基于当前 Schema 重新生成计划');
+    button.type = 'button';
+    button.addEventListener('click', replanExecution);
+    board.append(button);
+  }
+  elements.conversation.append(board);
+}
+
 function openConfirmModal(result) {
   const data = result?.v1;
   elements.confirmExplanation.textContent = data?.plan?.explanation ?? 'Agent 已生成固定演示 Schema 的只读查询计划，确认后才会执行。';
@@ -337,6 +364,9 @@ async function confirmExecution(confirmed) {
     else if (result.status === 'completed' && result.v1?.status === 'completed') {
       addMessage('assistant', result.assistantMessage ?? '专业数据分析已完成。', '智能助手');
       addV1Result(result);
+    } else if (result.v1?.schemaDrift?.detected) {
+      addMessage('assistant', result.assistantMessage ?? result.v1.schemaDrift.notification, 'Schema 变化');
+      addSchemaDriftCard(result);
     } else {
       addMessage('assistant', result.assistantMessage ?? '已按你的选择取消本次专业数据分析，查询未执行。', '安全边界');
     }
@@ -346,6 +376,33 @@ async function confirmExecution(confirmed) {
     elements.confirmCancel.disabled = false;
     addMessage('assistant', error.message, '请求失败');
   } finally { scrollBottom(); }
+}
+
+async function replanExecution() {
+  if (!state.activeSessionId || state.busy) return;
+  setBusy(true);
+  addMessage('user', '基于当前 Schema 重新生成查询计划。');
+  try {
+    const result = await api(`/api/sessions/${state.activeSessionId}/schema-replan`, {
+      method: 'POST',
+      body: JSON.stringify({ requested: true })
+    });
+    state.activeStatus = result.status;
+    renderStatus(result); renderFacts(result);
+    if (result.status === 'awaiting_confirmation') {
+      addMessage('assistant', result.assistantMessage ?? '已基于当前 Schema 生成新计划，请重新确认。', '重新规划完成');
+      addV1PlanCard(result);
+      openConfirmModal(result);
+    } else {
+      addMessage('assistant', result.assistantMessage ?? result.v1?.reason ?? '重新规划未完成。', '安全停止');
+      addSchemaDriftCard(result);
+    }
+    await loadHistory(); refreshV1Panels();
+  } catch (error) {
+    addMessage('assistant', error.message, '请求失败');
+  } finally {
+    setBusy(false); scrollBottom();
+  }
 }
 
 function downloadArtifact(artifact) {
@@ -562,7 +619,7 @@ function renderLogs(logs, integrity) {
     );
   }
   if (!logs.length) { elements.logList.append(node('p', 'muted compact', '暂无执行日志')); return; }
-  const operationLabels = { plan: '计划', execute: '执行', cancel: '取消' };
+  const operationLabels = { plan: '计划', replan: '重新规划', execute: '执行', cancel: '取消' };
   for (const log of logs) {
     const item = node('div', 'log-item');
     const top = node('div', 'log-item-top');
@@ -625,6 +682,9 @@ function renderResult(result) {
     } else if (result.status === 'cancelled') {
       addV1PlanCard(result);
       addMessage('assistant', result.assistantMessage ?? '已按你的选择取消本次专业数据分析，查询未执行。', '安全边界');
+    } else if (result.v1?.schemaDrift?.detected) {
+      addMessage('assistant', result.assistantMessage ?? result.v1.schemaDrift.notification, 'Schema 变化');
+      addSchemaDriftCard(result);
     } else addV1Result(result);
   }
   else if ((result.questions ?? []).length) addQuestions(result.questions);
@@ -654,7 +714,7 @@ async function submitText(text) {
 async function loadHistory() {
   const result = await api('/api/sessions'); elements.historyList.replaceChildren();
   if (!result.sessions.length) { elements.historyList.append(node('p', 'muted compact', '暂无历史会话')); return; }
-  const v1StatusLabels = { awaiting_confirmation: '等待确认', cancelled: '已取消', rejected: '已拒绝' };
+  const v1StatusLabels = { awaiting_confirmation: '等待确认', replanning: '重新规划中', cancelled: '已取消', rejected: '已拒绝' };
   for (const session of result.sessions) {
     const button = node('button', 'history-item'); button.type = 'button'; button.dataset.sessionId = session.sessionId;
     if (session.sessionId === state.activeSessionId) button.classList.add('active');

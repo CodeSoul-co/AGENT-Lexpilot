@@ -78,6 +78,10 @@ function parseSessionRoute(pathname) {
     /^\/api\/sessions\/([A-Za-z0-9-]{1,100})\/execution-confirmation$/
   );
   if (confirmationMatch) return { type: 'execution-confirmation', sessionId: confirmationMatch[1] };
+  const replanMatch = pathname.match(
+    /^\/api\/sessions\/([A-Za-z0-9-]{1,100})\/schema-replan$/
+  );
+  if (replanMatch) return { type: 'schema-replan', sessionId: replanMatch[1] };
   const detailMatch = pathname.match(/^\/api\/sessions\/([A-Za-z0-9-]{1,100})$/);
   if (detailMatch) return { type: 'detail', sessionId: detailMatch[1] };
   return null;
@@ -192,6 +196,20 @@ function createDemoWebHandler(options = {}) {
           200,
           await service.confirmV1Execution(route.sessionId, { confirmed: body.confirmed })
         );
+        return;
+      }
+
+      if (route?.type === 'schema-replan' && request.method === 'POST') {
+        if (typeof service.replanV1Execution !== 'function') {
+          sendError(response, 501, 'V1_REPLAN_UNAVAILABLE', '当前服务未接入 Schema 重新规划能力。');
+          return;
+        }
+        const body = await readJsonBody(request);
+        if (!requireExactKeys(body, ['requested']) || body.requested !== true) {
+          sendError(response, 400, 'INVALID_REQUEST', 'Schema 重新规划请求字段无效。');
+          return;
+        }
+        sendJson(response, 200, await service.replanV1Execution(route.sessionId));
         return;
       }
 

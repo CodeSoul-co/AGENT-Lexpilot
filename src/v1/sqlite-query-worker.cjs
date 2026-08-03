@@ -21,34 +21,41 @@ function normalizeRows(rows) {
   return rows.map((row) => ({ ...row }));
 }
 
-function inspectTable(database, tableName, allowedColumns) {
+function inspectTable(database, tableName, allowedColumns, allowMissing = false) {
   const columns = normalizeRows(
     database.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)});`).all()
   );
   if (columns.length === 0) {
+    if (allowMissing) {
+      return { tableName, tableAvailable: false, columns: [] };
+    }
     throw Object.assign(new Error('Configured table is unavailable.'), {
       code: 'TABLE_NOT_FOUND'
     });
   }
   const columnsByName = new Map(columns.map((column) => [String(column.name), column]));
   const missingColumns = allowedColumns.filter((column) => !columnsByName.has(column));
-  if (missingColumns.length > 0) {
+  if (missingColumns.length > 0 && !allowMissing) {
     throw Object.assign(new Error('Configured column is unavailable.'), {
       code: 'COLUMN_NOT_FOUND'
     });
   }
   return {
     tableName,
-    columns: allowedColumns.map((columnName) => columnsByName.get(columnName)).map((column) => ({
-      name: String(column.name),
-      type: String(column.type || 'UNKNOWN').toUpperCase(),
-      nullable: Number(column.notnull) !== 1,
-      primaryKeyPosition: Number(column.pk) || 0
-    }))
+    tableAvailable: true,
+    columns: allowedColumns
+      .map((columnName) => columnsByName.get(columnName))
+      .filter(Boolean)
+      .map((column) => ({
+        name: String(column.name),
+        type: String(column.type || 'UNKNOWN').toUpperCase(),
+        nullable: Number(column.notnull) !== 1,
+        primaryKeyPosition: Number(column.pk) || 0
+      }))
   };
 }
 
-function inspectSchema(database, allowedTables, allowedColumns) {
+function inspectSchema(database, allowedTables, allowedColumns, allowMissing = false) {
   const existingTables = new Set(
     normalizeRows(
       database
@@ -60,11 +67,14 @@ function inspectSchema(database, allowedTables, allowedColumns) {
   );
   return allowedTables.map((tableName) => {
     if (!existingTables.has(tableName)) {
+      if (allowMissing) {
+        return { tableName, tableAvailable: false, columns: [] };
+      }
       throw Object.assign(new Error('Configured table is unavailable.'), {
         code: 'TABLE_NOT_FOUND'
       });
     }
-    return inspectTable(database, tableName, allowedColumns);
+    return inspectTable(database, tableName, allowedColumns, allowMissing);
   });
 }
 
@@ -101,7 +111,12 @@ function run() {
     }
     if (workerData.operation === 'schema') {
       return {
-        tables: inspectSchema(database, workerData.allowedTables, workerData.allowedColumns)
+        tables: inspectSchema(
+          database,
+          workerData.allowedTables,
+          workerData.allowedColumns,
+          workerData.allowMissing === true
+        )
       };
     }
     if (workerData.operation === 'query') {

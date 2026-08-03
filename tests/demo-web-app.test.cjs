@@ -431,6 +431,28 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
     assert.equal(started.body.v1.plan.requiresConfirmation, true);
     assert.equal(started.body.v1.result, null);
 
+    const invalidReplan = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/schema-replan`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requested: false })
+      }
+    );
+    assert.equal(invalidReplan.response.status, 400);
+    assert.equal(invalidReplan.body.error.code, 'INVALID_REQUEST');
+
+    const unnecessaryReplan = await jsonRequest(
+      `${baseUrl}/api/sessions/${started.body.sessionId}/schema-replan`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requested: true })
+      }
+    );
+    assert.equal(unnecessaryReplan.response.status, 200);
+    assert.equal(unnecessaryReplan.body.error.code, 'V1_REPLAN_NOT_REQUIRED');
+
     const config = await jsonRequest(`${baseUrl}/api/config`);
     assert.equal(config.response.status, 200);
     assert.equal(config.body.v1DemoDataSource, 'demo.labor_cases');
@@ -558,6 +580,17 @@ test('returns 501 when the service does not expose V1 execution capabilities', a
     );
     assert.equal(confirmation.response.status, 501);
     assert.equal(confirmation.body.error.code, 'V1_CONFIRMATION_UNAVAILABLE');
+
+    const replan = await jsonRequest(
+      `${baseUrl}/api/sessions/web-session-1/schema-replan`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requested: true })
+      }
+    );
+    assert.equal(replan.response.status, 501);
+    assert.equal(replan.body.error.code, 'V1_REPLAN_UNAVAILABLE');
 
     const logs = await jsonRequest(`${baseUrl}/api/v1/logs`);
     assert.equal(logs.response.status, 501);

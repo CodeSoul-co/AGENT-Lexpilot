@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
-const { validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
+const { createSchemaFingerprint, validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
+const { createSchemaDrift } = require('./schema-drift.cjs');
 
 const SQLITE_QUERY_SQL = [
   'SELECT year, outcome, compensation_amount',
@@ -82,7 +83,8 @@ function reject(
   code,
   reason,
   traceType = 'v1.sql.query.rejected',
-  runtime = 'sql-readonly'
+  runtime = 'sql-readonly',
+  details = {}
 ) {
   return {
     status: 'rejected',
@@ -97,7 +99,8 @@ function reject(
       schemaVerified: false,
       confirmationRequired: true
     },
-    trace: [safeTrace(traceType, { code })]
+    trace: [safeTrace(traceType, { code })],
+    ...details
   };
 }
 
@@ -119,8 +122,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
   if (connection.status !== 'connected') {
     throw new Error('The configured SQLite data source is unavailable.');
   }
-  const snapshot = await dataSource.inspectSchema();
-  const policy = validateReadOnlySqlPlan({
+  let snapshot = await dataSource.inspectSchema();
+  let policy = validateReadOnlySqlPlan({
     sql: SQLITE_QUERY_SQL,
     parameters: SQLITE_QUERY_PARAMETERS,
     schema: snapshot.schema
@@ -134,21 +137,62 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     descriptor.engine === 'sqlite'
       ? 'hypha-adapters-local.loadSqlite'
       : `${descriptor.engine}.official-node-driver`;
+  const executionMode =
+    descriptor.engine === 'sqlite' ? 'worker-readonly-sqlite' : 'network-readonly-sql';
 
-  function buildPlan() {
+  function buildPlan(currentSnapshot = snapshot, currentPolicy = policy) {
     return Object.freeze({
       status: 'verified',
       sql: SQLITE_QUERY_SQL,
       parameters: SQLITE_QUERY_PARAMETERS,
       explanation: '按年份读取未签劳动合同案例，再计算案例数、劳动者胜诉率和胜诉赔偿中位数。',
-      operationType: policy.operationType,
+      operationType: currentPolicy.operationType,
       readOnly: true,
       schemaVerified: true,
-      policyVersion: policy.policyVersion,
-      schemaFingerprint: snapshot.schemaFingerprint,
-      planHash: policy.planHash,
+      policyVersion: currentPolicy.policyVersion,
+      schemaFingerprint: currentSnapshot.schemaFingerprint,
+      schemaSnapshot: currentSnapshot.schema,
+      planHash: currentPolicy.planHash,
       requiresConfirmation: true
     });
+  }
+
+  function buildPlannedResult(input, currentSnapshot = snapshot, currentPolicy = policy) {
+    const plan = buildPlan(currentSnapshot, currentPolicy);
+    return {
+      status: 'awaiting_confirmation',
+      runtime: runtimeName,
+      runId: input.runId,
+      executionAttempted: false,
+      executionMode,
+      sqlExecutionProvider: providerName,
+      schema: currentSnapshot.schema,
+      plan,
+      safety: {
+        readOnly: true,
+        writeAttempted: false,
+        schemaVerified: true,
+        schemaFingerprint: currentSnapshot.schemaFingerprint,
+        planHash: currentPolicy.planHash,
+        confirmationRequired: true,
+        dataClassification: 'configured-business-data'
+      },
+      trace: [
+        safeTrace('v1.sql.schema.loaded', {
+          dataSource: descriptor.id,
+          schemaFingerprint: currentSnapshot.schemaFingerprint
+        }),
+        safeTrace('v1.sql.query.plan.verified', {
+          readOnly: true,
+          planHash: currentPolicy.planHash
+        }),
+        safeTrace('v1.sql.query.plan.awaiting_confirmation', { requiresConfirmation: true })
+      ]
+    };
+  }
+
+  async function inspectCurrentSchema() {
+    return dataSource.inspectSchema({ allowMissing: true });
   }
 
   return Object.freeze({
@@ -187,45 +231,67 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           runtimeName
         );
       }
-      const plan = buildPlan();
+      return buildPlannedResult(input);
+    },
+
+    async replan(input) {
+      let currentSnapshot;
+      try {
+        currentSnapshot = await dataSource.inspectSchema();
+      } catch (error) {
+        const partialSnapshot = await inspectCurrentSchema();
+        const drift = createSchemaDrift(
+          input.expectedSchemaSnapshot ?? snapshot.schema,
+          partialSnapshot.schema
+        );
+        return reject(
+          input,
+          'SCHEMA_MISMATCH',
+          '当前 Schema 已不满足查询模板，无法生成新计划。请由管理员修复数据源字段配置。',
+          'v1.sql.query.replan.rejected',
+          runtimeName,
+          { schemaDrift: drift, replanRequired: true }
+        );
+      }
+      const currentPolicy = validateReadOnlySqlPlan({
+        sql: SQLITE_QUERY_SQL,
+        parameters: SQLITE_QUERY_PARAMETERS,
+        schema: currentSnapshot.schema
+      });
+      if (!currentPolicy.ok) {
+        return reject(
+          input,
+          currentPolicy.code,
+          '当前 Schema 无法生成安全的只读查询计划。',
+          'v1.sql.query.replan.rejected',
+          runtimeName,
+          { replanRequired: true }
+        );
+      }
+      snapshot = currentSnapshot;
+      policy = currentPolicy;
+      const replanned = buildPlannedResult(input, currentSnapshot, currentPolicy);
       return {
-        status: 'awaiting_confirmation',
-        runtime: runtimeName,
-        runId: input.runId,
-        executionAttempted: false,
-        executionMode: 'worker-readonly-sqlite',
-        sqlExecutionProvider: providerName,
-        schema: snapshot.schema,
-        plan,
-        safety: {
-          readOnly: true,
-          writeAttempted: false,
-          schemaVerified: true,
-          schemaFingerprint: snapshot.schemaFingerprint,
-          planHash: policy.planHash,
-          confirmationRequired: true,
-          dataClassification: 'configured-business-data'
-        },
+        ...replanned,
+        replanned: true,
         trace: [
-          safeTrace('v1.sql.schema.loaded', {
-            dataSource: descriptor.id,
-            schemaFingerprint: snapshot.schemaFingerprint
+          safeTrace('v1.sql.query.replan.completed', {
+            schemaFingerprint: currentSnapshot.schemaFingerprint,
+            requiresConfirmation: true
           }),
-          safeTrace('v1.sql.query.plan.verified', {
-            readOnly: true,
-            planHash: policy.planHash
-          }),
-          safeTrace('v1.sql.query.plan.awaiting_confirmation', { requiresConfirmation: true })
+          ...replanned.trace
         ]
       };
     },
 
     async execute(input) {
-      const planned = this.plan(input);
-      if (planned.status === 'rejected') return planned;
+      if (WRITE_PATTERN.test(input.redactedText) || !inputSupported(input.redactedText)) {
+        return this.plan(input);
+      }
+      const expectedSchema = input.expectedSchemaSnapshot ?? snapshot.schema;
       if (
-        input.expectedPlanHash !== policy.planHash ||
-        input.expectedSchemaFingerprint !== snapshot.schemaFingerprint
+        input.expectedSchemaFingerprint !== undefined &&
+        input.expectedSchemaFingerprint !== createSchemaFingerprint(expectedSchema)
       ) {
         return reject(
           input,
@@ -235,21 +301,69 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           runtimeName
         );
       }
+      let currentSnapshot;
+      try {
+        currentSnapshot = await inspectCurrentSchema();
+      } catch {
+        return reject(
+          input,
+          'SCHEMA_READ_FAILED',
+          '无法重新读取当前 Schema，本次查询已停止。',
+          'v1.sql.schema.read.failed',
+          runtimeName,
+          { replanRequired: true }
+        );
+      }
+      const schemaDrift = createSchemaDrift(expectedSchema, currentSnapshot.schema);
+      if (schemaDrift.detected) {
+        return reject(
+          input,
+          'SCHEMA_DRIFT',
+          schemaDrift.notification,
+          'v1.sql.schema-drift.detected',
+          runtimeName,
+          { schemaDrift, replanRequired: true }
+        );
+      }
+      const currentPolicy = validateReadOnlySqlPlan({
+        sql: SQLITE_QUERY_SQL,
+        parameters: SQLITE_QUERY_PARAMETERS,
+        schema: currentSnapshot.schema
+      });
+      if (!currentPolicy.ok || input.expectedPlanHash !== currentPolicy.planHash) {
+        return reject(
+          input,
+          'PLAN_DRIFT',
+          '确认时查询计划与已展示内容不一致，请重新生成计划。',
+          'v1.sql.query.plan-drift.rejected',
+          runtimeName
+        );
+      }
       let queryResult;
       try {
         queryResult = await dataSource.executeReadOnly({
           sql: SQLITE_QUERY_SQL,
           parameters: SQLITE_QUERY_PARAMETERS,
-          expectedSchemaFingerprint: snapshot.schemaFingerprint
+          expectedSchemaFingerprint: currentSnapshot.schemaFingerprint
         });
       } catch (error) {
         const code = typeof error?.code === 'string' ? error.code : 'SQLITE_EXECUTION_FAILED';
+        if (code === 'SCHEMA_DRIFT') {
+          const latestSnapshot = await inspectCurrentSchema();
+          const latestDrift = createSchemaDrift(expectedSchema, latestSnapshot.schema);
+          return reject(
+            input,
+            code,
+            latestDrift.notification,
+            'v1.sql.schema-drift.detected',
+            runtimeName,
+            { schemaDrift: latestDrift, replanRequired: true }
+          );
+        }
         return reject(
           input,
           code,
-          code === 'SCHEMA_DRIFT'
-            ? '确认后数据源 Schema 已变化，本次查询已停止，请重新生成计划。'
-            : `${descriptor.engine} 只读查询未完成，结果不会发布。`,
+          `${descriptor.engine} 只读查询未完成，结果不会发布。`,
           'v1.sql.query.execution.failed',
           runtimeName
         );
@@ -262,10 +376,10 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         runtime: runtimeName,
         runId: input.runId,
         executionAttempted: true,
-        executionMode: 'worker-readonly-sqlite',
+        executionMode,
         sqlExecutionProvider: providerName,
-        schema: snapshot.schema,
-        plan: buildPlan(),
+        schema: currentSnapshot.schema,
+        plan: buildPlan(currentSnapshot, currentPolicy),
         result: {
           columns: ['year', 'case_count', 'employee_win_rate', 'median_compensation'],
           rows,
@@ -284,8 +398,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           readOnly: true,
           writeAttempted: false,
           schemaVerified: true,
-          schemaFingerprint: snapshot.schemaFingerprint,
-          planHash: policy.planHash,
+          schemaFingerprint: currentSnapshot.schemaFingerprint,
+          planHash: currentPolicy.planHash,
           dataClassification: 'configured-business-data'
         },
         providerReceipt: {

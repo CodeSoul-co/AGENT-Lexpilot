@@ -154,13 +154,19 @@ function createSQLiteDataSource(options = {}) {
   const workerFile = path.join(__dirname, 'sqlite-query-worker.cjs');
   const basePayload = Object.freeze({ projectRoot, databasePath, allowedTables, allowedColumns });
 
-  async function inspectSchema() {
-    const result = await runWorker(workerFile, { ...basePayload, operation: 'schema' }, timeoutMs);
+  async function inspectSchema(options = {}) {
+    const allowMissing = options?.allowMissing === true;
+    const result = await runWorker(
+      workerFile,
+      { ...basePayload, operation: 'schema', allowMissing },
+      timeoutMs
+    );
     const table = result.tables[0];
     const schema = Object.freeze({
       dataSource: id,
       engine: 'sqlite',
       tableName: table.tableName,
+      ...(table.tableAvailable === false ? { tableAvailable: false } : {}),
       columns: Object.freeze(table.columns.map((column) => Object.freeze({ ...column })))
     });
     return Object.freeze({ schema, schemaFingerprint: createSchemaFingerprint(schema) });

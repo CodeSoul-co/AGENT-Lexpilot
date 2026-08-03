@@ -149,10 +149,11 @@ function createNetworkSQLDataSource(options = {}) {
     }
   }
 
-  async function inspectSchema() {
-    let columns;
+  async function inspectSchema(options = {}) {
+    const allowMissing = options?.allowMissing === true;
+    let inspected;
     try {
-      columns = await withTimeout(
+      inspected = await withTimeout(
         client.inspectTable(allowedTables[0], allowedColumns),
         timeoutMs,
         'Schema inspection'
@@ -165,7 +166,15 @@ function createNetworkSQLDataSource(options = {}) {
         { cause: error }
       );
     }
-    if (!Array.isArray(columns) || columns.length !== allowedColumns.length || columns.some((v) => !v)) {
+    const tableAvailable = Array.isArray(inspected) ? true : inspected?.tableAvailable !== false;
+    const columns = Array.isArray(inspected) ? inspected : inspected?.columns;
+    if (!Array.isArray(columns) || columns.length !== allowedColumns.length) {
+      throw new NetworkSQLDataSourceError(
+        'SCHEMA_INSPECTION_INVALID',
+        'SQL Schema inspection returned an invalid allowlisted snapshot.'
+      );
+    }
+    if ((!tableAvailable || columns.some((value) => !value)) && !allowMissing) {
       throw new NetworkSQLDataSourceError(
         'SCHEMA_ALLOWLIST_MISMATCH',
         'Configured table or column is unavailable.'
@@ -176,7 +185,10 @@ function createNetworkSQLDataSource(options = {}) {
       engine,
       ...(schemaName === null ? {} : { schemaName }),
       tableName: allowedTables[0],
-      columns: Object.freeze(columns.map((column) => Object.freeze({ ...column })))
+      ...(!tableAvailable ? { tableAvailable: false } : {}),
+      columns: Object.freeze(
+        columns.filter(Boolean).map((column) => Object.freeze({ ...column }))
+      )
     });
     return Object.freeze({ schema, schemaFingerprint: createSchemaFingerprint(schema) });
   }

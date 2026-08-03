@@ -158,6 +158,7 @@ function historyDetail(session) {
       session.taskType === TASK_TYPES.LEGAL_SELF_CHECK ? RESULT_CARD_DISCLAIMER : undefined,
     resultCardError: session.resultCardError,
     error: session.error,
+    v1: session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY ? session.v1 : undefined,
     messages: session.messages.map((message) => ({
       role: message.role,
       redactedText: message.redactedText,
@@ -600,7 +601,10 @@ class LegalSelfCheckConversationService {
       planLogId: null,
       executionLogId: null,
       confirmedAt: null,
-      cancelledAt: null
+      cancelledAt: null,
+      schemaDrift: null,
+      replanRequired: false,
+      replannedAt: null
     };
     const planEvent = safeEvent('v1.query.plan.presented', {
       sessionId: session.id,
@@ -687,7 +691,8 @@ class LegalSelfCheckConversationService {
       clarificationRound: 0,
       knownFacts: {},
       expectedPlanHash: session.v1.plan.planHash,
-      expectedSchemaFingerprint: session.v1.plan.schemaFingerprint
+      expectedSchemaFingerprint: session.v1.plan.schemaFingerprint,
+      expectedSchemaSnapshot: session.v1.plan.schemaSnapshot ?? session.v1.schema
     });
     if (execution && typeof execution.then === 'function') {
       session.status = 'executing';
@@ -711,6 +716,113 @@ class LegalSelfCheckConversationService {
       );
     }
     return this.finishV1Execution(session, execution, now, startedAt);
+  }
+
+  replanV1Execution(sessionId) {
+    const session = this.store.get(sessionId, this.ownerId);
+    if (!session) {
+      return this.sessionError(sessionId, V0_ERROR_CODES.SESSION_NOT_FOUND, '没有找到对应会话。');
+    }
+    if (
+      session.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY ||
+      session.status !== 'rejected' ||
+      session.v1?.replanRequired !== true ||
+      !session.v1?.plan ||
+      typeof this.v1Runtime?.replan !== 'function'
+    ) {
+      return this.sessionError(
+        sessionId,
+        'V1_REPLAN_NOT_REQUIRED',
+        '当前会话没有待处理的 Schema 变化，不能重新生成计划。'
+      );
+    }
+
+    const previousPlan = session.v1.plan;
+    const previousDrift = session.v1.schemaDrift;
+    const runId = randomUUID();
+    const replannedAt = this.clock();
+    const replanning = this.v1Runtime.replan({
+      runId,
+      sessionId: session.id,
+      ownerId: this.ownerId,
+      piiRedacted: true,
+      redactedText: session.messages.map((message) => message.redactedText).join('\n'),
+      clarificationRound: 0,
+      knownFacts: {},
+      expectedSchemaSnapshot: previousPlan.schemaSnapshot ?? session.v1.schema
+    });
+    if (replanning && typeof replanning.then === 'function') {
+      session.status = 'replanning';
+      session.v1.status = 'replanning';
+      this.store.save(session, this.ownerId);
+      return replanning.then(
+        (planned) => this.finishV1Replan(session, planned, previousPlan, previousDrift, replannedAt),
+        () => this.finishV1Replan(
+          session,
+          {
+            status: 'rejected',
+            reason: '重新读取 Schema 或生成查询计划失败，本次查询仍保持停止。',
+            replanRequired: true,
+            trace: [safeEvent('v1.query.replan.failed', { code: 'RUNTIME_REJECTED' })]
+          },
+          previousPlan,
+          previousDrift,
+          replannedAt
+        )
+      );
+    }
+    return this.finishV1Replan(session, replanning, previousPlan, previousDrift, replannedAt);
+  }
+
+  finishV1Replan(session, planned, previousPlan, previousDrift, replannedAt) {
+    const succeeded = planned.status === 'awaiting_confirmation' && planned.plan;
+    session.updatedAt = replannedAt;
+    session.status = succeeded ? 'awaiting_confirmation' : 'rejected';
+    session.v1.runId = succeeded ? planned.runId : session.v1.runId;
+    session.v1.status = planned.status;
+    session.v1.plan = succeeded ? planned.plan : previousPlan;
+    session.v1.schema = succeeded ? planned.schema : session.v1.schema;
+    session.v1.safety = succeeded ? planned.safety : session.v1.safety;
+    session.v1.reason = succeeded ? undefined : planned.reason;
+    session.v1.result = null;
+    session.v1.chart = null;
+    session.v1.artifact = null;
+    session.v1.confirmedAt = null;
+    session.v1.cancelledAt = null;
+    session.v1.replannedAt = succeeded ? replannedAt : null;
+    session.v1.replanRequired = !succeeded;
+    session.v1.schemaDrift = succeeded
+      ? { ...previousDrift, replanRequired: false, resolution: 'replanned', resolvedAt: replannedAt }
+      : planned.schemaDrift ?? previousDrift;
+    const replanEvent = safeEvent(
+      succeeded ? 'v1.query.replan.presented' : 'v1.query.replan.rejected',
+      {
+        sessionId: session.id,
+        previousSchemaFingerprint: previousPlan.schemaFingerprint,
+        currentSchemaFingerprint: planned.plan?.schemaFingerprint ?? planned.schemaDrift?.currentFingerprint,
+        requiresConfirmation: succeeded
+      }
+    );
+    session.trace.push(...(planned.trace ?? []), replanEvent);
+    session.latestTrace = [...(planned.trace ?? []), replanEvent];
+    try {
+      const replanLog = this.appendV1ExecutionLog(session, {
+        operationType: 'replan',
+        status: planned.status,
+        previousSchemaFingerprint: previousPlan.schemaFingerprint,
+        currentSchemaFingerprint: planned.plan?.schemaFingerprint ?? planned.schemaDrift?.currentFingerprint,
+        schemaDriftDetected: true,
+        affectedTableCount: previousDrift?.affectedTables?.length ?? 0,
+        affectedFieldCount: previousDrift?.affectedFields?.length ?? 0,
+        replanRequired: !succeeded,
+        error: planned.reason
+      });
+      session.v1.planLogId = replanLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, false);
+    }
+    this.store.save(session, this.ownerId);
+    return { ...publicResult(session), v1: session.v1 };
   }
 
   finishV1Execution(session, executed, confirmedAt, startedAt) {
@@ -793,6 +905,8 @@ class LegalSelfCheckConversationService {
     session.v1.chart = executed.chart ?? null;
     session.v1.artifact = executed.artifact ?? null;
     session.v1.confirmedAt = confirmedAt;
+    session.v1.schemaDrift = executed.schemaDrift ?? session.v1.schemaDrift ?? null;
+    session.v1.replanRequired = executed.replanRequired === true;
     const executedEvent = safeEvent('v1.query.execution.finished', {
       sessionId: session.id,
       runId: session.v1.runId,
@@ -817,6 +931,12 @@ class LegalSelfCheckConversationService {
         providerOutputBytes: executed.providerReceipt?.outputBytes,
         providerReadOnly: executed.providerReceipt?.readOnly,
         sourceRowCount: executed.providerReceipt?.sourceRowCount,
+        previousSchemaFingerprint: executed.schemaDrift?.previousFingerprint,
+        currentSchemaFingerprint: executed.schemaDrift?.currentFingerprint,
+        schemaDriftDetected: executed.schemaDrift?.detected,
+        affectedTableCount: executed.schemaDrift?.affectedTables?.length,
+        affectedFieldCount: executed.schemaDrift?.affectedFields?.length,
+        replanRequired: executed.replanRequired,
         error: executed.reason
       });
       session.v1.executionLogId = executionLog.entryId;

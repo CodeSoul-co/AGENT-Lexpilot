@@ -13,6 +13,12 @@ const ENTRY_KEYS = Object.freeze([
   'sql',
   'planHash',
   'schemaFingerprint',
+  'previousSchemaFingerprint',
+  'currentSchemaFingerprint',
+  'schemaDriftDetected',
+  'affectedTableCount',
+  'affectedFieldCount',
+  'replanRequired',
   'artifactId',
   'artifactSha256',
   'artifactStoreId',
@@ -82,7 +88,13 @@ function validateReceiptFields(record) {
       throw new TypeError('entry.executionProvider must not exceed 128 characters.');
     }
   }
-  for (const key of ['providerDurationMs', 'providerOutputBytes', 'sourceRowCount']) {
+  for (const key of [
+    'providerDurationMs',
+    'providerOutputBytes',
+    'sourceRowCount',
+    'affectedTableCount',
+    'affectedFieldCount'
+  ]) {
     if (
       record[key] !== undefined &&
       (!Number.isSafeInteger(record[key]) || record[key] < 0)
@@ -92,6 +104,16 @@ function validateReceiptFields(record) {
   }
   if (record.providerReadOnly !== undefined && record.providerReadOnly !== true) {
     throw new TypeError('entry.providerReadOnly must be true when present.');
+  }
+  for (const key of ['schemaDriftDetected', 'replanRequired']) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') {
+      throw new TypeError(`entry.${key} must be a boolean when present.`);
+    }
+  }
+  for (const key of ['previousSchemaFingerprint', 'currentSchemaFingerprint']) {
+    if (record[key] !== undefined && !/^[0-9a-f]{64}$/.test(record[key])) {
+      throw new TypeError(`entry.${key} must be a SHA-256 fingerprint.`);
+    }
   }
 }
 

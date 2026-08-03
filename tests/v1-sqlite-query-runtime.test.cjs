@@ -84,7 +84,8 @@ test('plans and executes the supported template against the configured SQLite da
     const executed = await runtime.execute({
       ...runtimeInput(),
       expectedPlanHash: planned.plan.planHash,
-      expectedSchemaFingerprint: planned.plan.schemaFingerprint
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
     });
     assert.equal(executed.status, 'completed');
     assert.equal(executed.executionAttempted, true);
@@ -145,12 +146,84 @@ test('stops confirmed execution when the live SQLite Schema drifts', async () =>
     const executed = await runtime.execute({
       ...runtimeInput(),
       expectedPlanHash: planned.plan.planHash,
-      expectedSchemaFingerprint: planned.plan.schemaFingerprint
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
     });
     assert.equal(executed.status, 'rejected');
     assert.equal(executed.errorCode, 'SCHEMA_DRIFT');
     assert.equal(executed.executionAttempted, false);
     assert.match(executed.reason, /Schema 已变化/);
+    assert.equal(executed.replanRequired, true);
+    assert.equal(executed.schemaDrift.detected, true);
+    assert.deepEqual(executed.schemaDrift.affectedTables, ['labor_cases']);
+    assert.deepEqual(executed.schemaDrift.affectedFields, ['labor_cases.compensation_amount']);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('notifies the session, records the drift, and requires confirmation after replanning', async () => {
+  const fixture = createFixture();
+  try {
+    const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
+    const executionLog = createDemoExecutionLog({
+      filePath: path.join(fixture.directory, 'schema-drift-log.jsonl')
+    });
+    const service = new LegalSelfCheckConversationService({
+      store: new InMemoryLegalSessionStore(),
+      ownerId: 'schema-drift-owner',
+      idFactory: () => 'schema-drift-session',
+      clock: () => '2026-08-03T09:00:00.000Z',
+      autoCleanup: false,
+      v1Runtime: runtime,
+      executionLog
+    });
+    const started = service.start({
+      userText: PROFESSIONAL_QUERY_TEXT,
+      privacyConsent: true,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION
+    });
+
+    const sqlite = loadHyphaAdaptersLocal(projectRoot).loadSqlite(true);
+    const writable = new sqlite.DatabaseSync(fixture.databasePath);
+    writable.exec(`
+      ALTER TABLE labor_cases RENAME TO labor_cases_previous;
+      CREATE TABLE labor_cases (
+        case_id TEXT PRIMARY KEY,
+        year INTEGER NOT NULL,
+        issue_type TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        compensation_amount TEXT
+      );
+      INSERT INTO labor_cases SELECT * FROM labor_cases_previous;
+      DROP TABLE labor_cases_previous;
+    `);
+    writable.close?.();
+
+    const rejected = await service.confirmV1Execution(started.sessionId, { confirmed: true });
+    assert.equal(rejected.status, 'rejected');
+    assert.equal(rejected.v1.replanRequired, true);
+    assert.deepEqual(rejected.v1.schemaDrift.affectedFields, [
+      'labor_cases.compensation_amount'
+    ]);
+    const rejectedLog = service.listV1ExecutionLogs().find((entry) => entry.operationType === 'execute');
+    assert.equal(rejectedLog.schemaDriftDetected, true);
+    assert.equal(rejectedLog.affectedFieldCount, 1);
+    assert.equal(rejectedLog.replanRequired, true);
+
+    const replanned = await service.replanV1Execution(started.sessionId);
+    assert.equal(replanned.status, 'awaiting_confirmation');
+    assert.equal(replanned.v1.replanRequired, false);
+    assert.equal(replanned.v1.schemaDrift.resolution, 'replanned');
+    assert.notEqual(replanned.v1.plan.schemaFingerprint, started.v1.plan.schemaFingerprint);
+
+    const duplicateReplan = service.replanV1Execution(started.sessionId);
+    assert.equal(duplicateReplan.error.code, 'V1_REPLAN_NOT_REQUIRED');
+    const completed = await service.confirmV1Execution(started.sessionId, { confirmed: true });
+    assert.equal(completed.status, 'completed');
+    assert.equal(completed.v1.result.sourceRowCount, 5);
+    assert.equal(service.listV1ExecutionLogs().filter((entry) => entry.operationType === 'replan').length, 1);
+    assert.equal(service.getV1ExecutionLogIntegrity().status, 'verified');
   } finally {
     fixture.cleanup();
   }
