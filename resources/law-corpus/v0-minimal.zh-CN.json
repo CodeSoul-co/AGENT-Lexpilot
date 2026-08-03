@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -396,6 +396,101 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["patent_infringement_exceptions", "prior_use"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.labor-contract-law.article-48",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第四十八条",
+      "articleText": "用人单位违反本法规定解除或者终止劳动合同，劳动者要求继续履行劳动合同的，用人单位应当继续履行；劳动者不要求继续履行劳动合同或者劳动合同已经不能继续履行的，用人单位应当依照本法第八十七条规定支付赔偿金。",
+      "articleTextSha256": "5e1d65b21fceeeaee74694937b9faef74fc08d141dcbd35cc1b3db70cf38dd50",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["unlawful_dismissal", "continued_performance", "compensation"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1064",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零六十四条",
+      "articleText": "夫妻双方共同签名或者夫妻一方事后追认等共同意思表示所负的债务，以及夫妻一方在婚姻关系存续期间以个人名义为家庭日常生活需要所负的债务，属于夫妻共同债务。\n\n夫妻一方在婚姻关系存续期间以个人名义超出家庭日常生活需要所负的债务，不属于夫妻共同债务；但是，债权人能够证明该债务用于夫妻共同生活、共同生产经营或者基于夫妻双方共同意思表示的除外。",
+      "articleTextSha256": "7701aa9307622771f4e88f46fa1261ac6bf046e4674d52cce672a24d6ad4cb02",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["marital_common_debt", "household_needs"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-670",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百七十条",
+      "articleText": "借款的利息不得预先在本金中扣除。利息预先在本金中扣除的，应当按照实际借款数额返还借款并计算利息。",
+      "articleTextSha256": "3796d2024a3f88e853474b5f7af19bf63dcdbd12ca13344e681680bb856d0401",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["interest_pre_deduction", "actual_principal"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.tax-collection-administration-law.article-64",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第六十四条",
+      "articleText": "纳税人、扣缴义务人编造虚假计税依据的，由税务机关责令限期改正，并处五万元以下的罚款。\n\n纳税人不进行纳税申报，不缴或者少缴应纳税款的，由税务机关追缴其不缴或者少缴的税款、滞纳金，并处不缴或者少缴的税款百分之五十以上五倍以下的罚款。",
+      "articleTextSha256": "6fb4e4111defac2d14e59b4fc3883828b83f5a3e3494725482bce43f8144b301",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["false_tax_basis", "non_filing_penalty"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-77",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第七十七条",
+      "articleText": "为生产经营目的使用、许诺销售或者销售不知道是未经专利权人许可而制造并售出的专利侵权产品，能证明该产品合法来源的，不承担赔偿责任。",
+      "articleTextSha256": "9c302e6185c62b5c383e5bc795d326577d2790ccd356d3e146c6f8d1dd67da50",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["legitimate_source_defense", "patent_infringement_products"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
