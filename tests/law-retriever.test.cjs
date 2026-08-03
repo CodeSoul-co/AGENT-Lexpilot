@@ -5,14 +5,14 @@ const { loadLawCorpus, sha256, validateLawCorpus } = require('../src/v0/law-corp
 const { LocalVerifiedLawRetriever } = require('../src/v0/law-retriever.cjs');
 const { LEGAL_DOMAINS } = require('../src/v0/legal-domain.cjs');
 
-test('loads eleven integrity-pinned official articles across every supported legal domain', () => {
+test('loads sixteen integrity-pinned official articles across every supported legal domain', () => {
   const corpus = loadLawCorpus();
   const domains = new Set(corpus.entries.map((entry) => entry.legalDomain));
 
   assert.equal(corpus.corpusId, 'law-corpus.cn.v0-minimal');
-  assert.equal(corpus.version, '0.3.0');
+  assert.equal(corpus.version, '0.4.0');
   assert.equal(corpus.verifiedAt, '2026-08-03');
-  assert.equal(corpus.entries.length, 11);
+  assert.equal(corpus.entries.length, 16);
   assert.deepEqual(domains, new Set(Object.values(LEGAL_DOMAINS)));
   for (const entry of corpus.entries) {
     assert.equal(entry.status, 'effective');
@@ -46,10 +46,17 @@ test('pins the verified law name, article number, and effective date for each sa
       '第三十九条',
       '2013-07-01'
     ],
+    'cn.labor-contract-law.article-46': [
+      '中华人民共和国劳动合同法',
+      '第四十六条',
+      '2013-07-01'
+    ],
     'cn.civil-code.article-1042': ['中华人民共和国民法典', '第一千零四十二条', '2021-01-01'],
     'cn.civil-code.article-1079': ['中华人民共和国民法典', '第一千零七十九条', '2021-01-01'],
+    'cn.civil-code.article-1062': ['中华人民共和国民法典', '第一千零六十二条', '2021-01-01'],
     'cn.civil-code.article-675': ['中华人民共和国民法典', '第六百七十五条', '2021-01-01'],
     'cn.civil-code.article-676': ['中华人民共和国民法典', '第六百七十六条', '2021-01-01'],
+    'cn.civil-code.article-680': ['中华人民共和国民法典', '第六百八十条', '2021-01-01'],
     'cn.tax-collection-administration-law.article-25': [
       '中华人民共和国税收征收管理法',
       '第二十五条',
@@ -60,19 +67,30 @@ test('pins the verified law name, article number, and effective date for each sa
       '第三十二条',
       '2015-04-24'
     ],
+    'cn.tax-collection-administration-law.article-62': [
+      '中华人民共和国税收征收管理法',
+      '第六十二条',
+      '2015-04-24'
+    ],
     'cn.patent-law.article-11': ['中华人民共和国专利法', '第十一条', '2021-06-01'],
-    'cn.patent-law.article-71': ['中华人民共和国专利法', '第七十一条', '2021-06-01']
+    'cn.patent-law.article-71': ['中华人民共和国专利法', '第七十一条', '2021-06-01'],
+    'cn.patent-law.article-74': ['中华人民共和国专利法', '第七十四条', '2021-06-01']
   });
 });
 
-test('keeps Batch 001 staged entries out of retrieval until dedicated regressions enable them', () => {
+test('keeps staged corpus batches out of retrieval until dedicated regressions enable them', () => {
   const corpus = loadLawCorpus();
   const stagedIds = [
     'cn.labor-contract-law.article-39',
+    'cn.labor-contract-law.article-46',
     'cn.civil-code.article-1079',
+    'cn.civil-code.article-1062',
     'cn.civil-code.article-676',
+    'cn.civil-code.article-680',
     'cn.tax-collection-administration-law.article-32',
-    'cn.patent-law.article-71'
+    'cn.tax-collection-administration-law.article-62',
+    'cn.patent-law.article-71',
+    'cn.patent-law.article-74'
   ];
   for (const id of stagedIds) {
     assert.equal(corpus.entries.find((entry) => entry.id === id)?.retrievalEnabled, false);

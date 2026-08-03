@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -67,6 +67,25 @@
       }
     },
     {
+      "id": "cn.labor-contract-law.article-46",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第四十六条",
+      "articleText": "有下列情形之一的，用人单位应当向劳动者支付经济补偿:\n\n（一）劳动者依照本法第三十八条规定解除劳动合同的；\n\n（二）用人单位依照本法第三十六条规定向劳动者提出解除劳动合同并与劳动者协商一致解除劳动合同的；\n\n（三）用人单位依照本法第四十条规定解除劳动合同的；\n\n（四）用人单位依照本法第四十一条第一款规定解除劳动合同的；\n\n（五）除用人单位维持或者提高劳动合同约定条件续订劳动合同，劳动者不同意续订的情形外，依照本法第四十四条第一项规定终止固定期限劳动合同的；\n\n（六）依照本法第四十四条第四项、第五项规定终止劳动合同的；\n\n（七）法律、行政法规规定的其他情形。",
+      "articleTextSha256": "9476f1c9f34df842aac747b3b00a145c0304d0a5a56bd7b5913e31a4d81ed07c",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["economic_compensation", "contract_termination"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
       "id": "cn.civil-code.article-1042",
       "legalDomain": "marriage_family",
       "lawName": "中华人民共和国民法典",
@@ -95,6 +114,25 @@
       "effectiveDate": "2021-01-01",
       "status": "effective",
       "topics": ["judicial_divorce", "marital_breakdown", "domestic_violence"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1062",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零六十二条",
+      "articleText": "夫妻在婚姻关系存续期间所得的下列财产，为夫妻的共同财产，归夫妻共同所有：\n\n（一）工资、奖金、劳务报酬；\n\n（二）生产、经营、投资的收益；\n\n（三）知识产权的收益；\n\n（四）继承或者受赠的财产，但是本法第一千零六十三条第三项规定的除外；\n\n（五）其他应当归共同所有的财产。\n\n夫妻对共同财产，有平等的处理权。",
+      "articleTextSha256": "b94017bc33214890cd06f6c8b08fc882781b48b8255309230fad51346c425cb2",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["marital_common_property", "equal_disposition"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
@@ -141,6 +179,25 @@
       }
     },
     {
+      "id": "cn.civil-code.article-680",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百八十条",
+      "articleText": "禁止高利放贷，借款的利率不得违反国家有关规定。\n\n借款合同对支付利息没有约定的，视为没有利息。\n\n借款合同对支付利息约定不明确，当事人不能达成补充协议的，按照当地或者当事人的交易方式、交易习惯、市场利率等因素确定利息；自然人之间借款的，视为没有利息。",
+      "articleTextSha256": "1e98d77beebb2b57f64f12058b6fc2bba060bd5dfa5fae7b1552d53200b37454",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["usury_prohibition", "interest_agreement"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
       "id": "cn.tax-collection-administration-law.article-25",
       "legalDomain": "taxation",
       "lawName": "中华人民共和国税收征收管理法",
@@ -178,6 +235,25 @@
       }
     },
     {
+      "id": "cn.tax-collection-administration-law.article-62",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第六十二条",
+      "articleText": "纳税人未按照规定的期限办理纳税申报和报送纳税资料的，或者扣缴义务人未按照规定的期限向税务机关报送代扣代缴、代收代缴税款报告表和有关资料的，由税务机关责令限期改正，可以处二千元以下的罚款；情节严重的，可以处二千元以上一万元以下的罚款。",
+      "articleTextSha256": "ccdd2bd1b0b6479af8b6cc46d28fa26a2fdabf38cb5ce429a0c1a929b7b1b7bd",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["late_tax_declaration", "tax_declaration_penalty"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
       "id": "cn.patent-law.article-11",
       "legalDomain": "intellectual_property",
       "lawName": "中华人民共和国专利法",
@@ -206,6 +282,25 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["patent_infringement_damages", "punitive_damages"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-74",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第七十四条",
+      "articleText": "侵犯专利权的诉讼时效为三年，自专利权人或者利害关系人知道或者应当知道侵权行为以及侵权人之日起计算。\n\n发明专利申请公布后至专利权授予前使用该发明未支付适当使用费的，专利权人要求支付使用费的诉讼时效为三年，自专利权人知道或者应当知道他人使用其发明之日起计算，但是，专利权人于专利权授予之日前即已知道或者应当知道的，自专利权授予之日起计算。",
+      "articleTextSha256": "05bafc1680fe82e3fe8abad53815c8307214f2ae924a453d7457307760b6a582",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["patent_limitation_period", "pre_grant_royalty"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
