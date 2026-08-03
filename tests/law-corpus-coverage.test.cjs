@@ -12,7 +12,7 @@ function corpusWithEntries(entries) {
   return { ...loadLawCorpus(), entries };
 }
 
-test('reports Batch 007 as 41/100 without exposing law text', () => {
+test('reports Batch 008 as 46/100 without exposing law text', () => {
   const corpus = loadLawCorpus();
   const report = auditLawCorpusCoverage(corpus);
   const serialized = JSON.stringify(report);
@@ -20,12 +20,12 @@ test('reports Batch 007 as 41/100 without exposing law text', () => {
   assert.equal(DEFAULT_TARGET_UNIQUE_ARTICLES, 100);
   assert.equal(report.ok, false);
   assert.equal(report.status, 'insufficient_coverage');
-  assert.equal(report.entryCount, 41);
-  assert.equal(report.uniqueArticleCount, 41);
+  assert.equal(report.entryCount, 46);
+  assert.equal(report.uniqueArticleCount, 46);
   assert.equal(report.duplicateCitationCount, 0);
-  assert.equal(report.missingUniqueArticleCount, 59);
+  assert.equal(report.missingUniqueArticleCount, 54);
   assert.deepEqual(report.missingDomains, []);
-  assert.deepEqual(Object.values(report.domainCounts), [9, 8, 8, 8, 8]);
+  assert.deepEqual(Object.values(report.domainCounts), [10, 9, 9, 9, 9]);
   assert.equal(serialized.includes('articleText'), false);
   assert.equal(serialized.includes(corpus.entries[0].lawName), false);
 });
@@ -40,9 +40,9 @@ test('does not count duplicate citations toward the 100-article gate', () => {
 
   assert.equal(report.status, 'insufficient_coverage');
   assert.equal(report.entryCount, 100);
-  assert.equal(report.uniqueArticleCount, 41);
-  assert.equal(report.duplicateCitationCount, 59);
-  assert.equal(report.missingUniqueArticleCount, 59);
+  assert.equal(report.uniqueArticleCount, 46);
+  assert.equal(report.duplicateCitationCount, 54);
+  assert.equal(report.missingUniqueArticleCount, 54);
 });
 
 test('normalizes citation whitespace and full-width characters before deduplication', () => {
@@ -106,14 +106,14 @@ test('rejects invalid coverage targets', () => {
   }
 });
 
-test('provides a local command that fails honestly at the current 41/100 coverage', () => {
+test('provides a local command that fails honestly at the current 46/100 coverage', () => {
   const script = path.resolve(__dirname, '..', 'scripts', 'audit-law-coverage.cjs');
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   const report = JSON.parse(result.stdout);
 
   assert.equal(result.status, 1, result.stderr);
   assert.equal(report.status, 'insufficient_coverage');
-  assert.equal(report.uniqueArticleCount, 41);
-  assert.equal(report.missingUniqueArticleCount, 59);
+  assert.equal(report.uniqueArticleCount, 46);
+  assert.equal(report.missingUniqueArticleCount, 54);
   assert.equal(result.stdout.includes('articleText'), false);
 });
