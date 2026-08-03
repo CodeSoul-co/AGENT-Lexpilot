@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -491,6 +491,101 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["legitimate_source_defense", "patent_infringement_products"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.labor-contract-law.article-87",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第八十七条",
+      "articleText": "用人单位违反本法规定解除或者终止劳动合同的，应当依照本法第四十七条规定的经济补偿标准的二倍向劳动者支付赔偿金。",
+      "articleTextSha256": "a5b298cb605b3c7215b4e3b7bc60bc86cabb08e5bbaeed686b180ceef6718934",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["unlawful_dismissal_compensation", "double_compensation"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1065",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零六十五条",
+      "articleText": "男女双方可以约定婚姻关系存续期间所得的财产以及婚前财产归各自所有、共同所有或者部分各自所有、部分共同所有。约定应当采用书面形式。没有约定或者约定不明确的，适用本法第一千零六十二条、第一千零六十三条的规定。\n\n夫妻对婚姻关系存续期间所得的财产以及婚前财产的约定，对双方具有法律约束力。\n\n夫妻对婚姻关系存续期间所得的财产约定归各自所有，夫或者妻一方对外所负的债务，相对人知道该约定的，以夫或者妻一方的个人财产清偿。",
+      "articleTextSha256": "f4f686cc7668862e1487a1137841c0c7384d23ba979f96a89c2083acfb53898d",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["marital_property_agreement", "separate_property"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-668",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百六十八条",
+      "articleText": "借款合同应当采用书面形式，但是自然人之间借款另有约定的除外。\n\n借款合同的内容一般包括借款种类、币种、用途、数额、利率、期限和还款方式等条款。",
+      "articleTextSha256": "9eed8e91b732ffde062731faf2abee44c70c094864d0145f0bf8934a6d1bf24b",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["written_loan_contract", "loan_contract_terms"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.tax-collection-administration-law.article-65",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第六十五条",
+      "articleText": "纳税人欠缴应纳税款，采取转移或者隐匿财产的手段，妨碍税务机关追缴欠缴的税款的，由税务机关追缴欠缴的税款、滞纳金，并处欠缴税款百分之五十以上五倍以下的罚款；构成犯罪的，依法追究刑事责任。",
+      "articleTextSha256": "20115e83fe7434977d1ec44fc8bd2a18c30d6bdb62ffab915991376ad42366fd",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["tax_arrears_recovery", "asset_concealment"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-68",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第六十八条",
+      "articleText": "假冒专利的，除依法承担民事责任外，由负责专利执法的部门责令改正并予公告，没收违法所得，可以处违法所得五倍以下的罚款；没有违法所得或者违法所得在五万元以下的，可以处二十五万元以下的罚款；构成犯罪的，依法追究刑事责任。",
+      "articleTextSha256": "c9827d80783ac2bde5734d1ae7c2ed16d3b920b2de17f92b48fee08908755aad",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["patent_counterfeiting", "administrative_penalty"],
       "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
