@@ -21,7 +21,7 @@
 
 - 结果卡片只引用本地法规语料，每条法条录入时经官方来源核验并记录正文 SHA-256；
 - 提供 `npm run audit:law-corpus`（新鲜度）、`audit:law-coverage`（覆盖度）、`audit:law-sources`（官方来源只读核对）三个审计命令；
-- 当前语料为最小演示集，`audit:law-coverage` 在语料达到 100 个唯一法条前按设计以退出码 1 "诚实失败"；未匹配不代表不存在相关法律。
+- 当前语料版本为 `0.3.0`，Batch 001 已覆盖 11/100 个唯一法条；本批新增的 5 条在完成独立检索与结果卡回归前保持不可检索。`audit:law-coverage` 在达到 100 条前按设计以退出码 1 "诚实失败"；未匹配不代表不存在相关法律。
 
 ### 真实模型、受控智能
 
@@ -172,4 +172,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、通用受约束 Text2SQL、脚本沙箱网页入口与真实 Docker 环境验收、生产级权限系统及生产级网页部署尚未完成。SQLite 固定模板单行写入已经完成项目层 Human Review、事务回滚和自动化验收；脚本沙箱已经完成项目层 Human Review、Hypha Docker Provider 接线、固定策略、Artifact 持久化和 Mock Provider 自动化验收，但在真实 Docker 审计命令通过前不视为 OS 级隔离验收完成。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+生产级账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、通用受约束 Text2SQL、生产级权限系统及生产级网页部署尚未完成。SQLite 固定模板单行写入已经完成项目层 Human Review、事务回滚和自动化验收；脚本沙箱已完成网页入口、Hypha Docker Provider 接线、固定隔离策略、Artifact 持久化和当前 Docker Desktop 环境的真实验收。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

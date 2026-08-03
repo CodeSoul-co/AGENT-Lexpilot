@@ -39,9 +39,9 @@ test('verifies every pinned article while fetching unique official pages sequent
 
   assert.equal(report.ok, true);
   assert.equal(report.status, 'verified');
-  assert.equal(report.entryCount, 6);
+  assert.equal(report.entryCount, 11);
   assert.equal(report.sourceCount, 4);
-  assert.equal(report.verifiedCount, 6);
+  assert.equal(report.verifiedCount, 11);
   assert.equal(calls.length, 4);
   assert.equal(maxActiveRequests, 1);
   assert.equal(report.requestAttemptCount, 4);
@@ -148,11 +148,15 @@ test('fails closed for unavailable sources and non-official redirects', async ()
   });
 
   assert.equal(report.ok, false);
-  assert.equal(report.results[0].status, 'source_unavailable');
-  assert.equal(report.results[1].status, 'source_unavailable');
-  assert.equal(report.results[2].status, 'untrusted_redirect');
-  assert.equal(report.results[3].status, 'untrusted_redirect');
-  assert.equal(report.results[2].finalHost, 'example.com');
+  const laborResults = report.results.filter((result) =>
+    result.id.startsWith('cn.labor-contract-law.')
+  );
+  const civilResults = report.results.filter((result) => result.id.startsWith('cn.civil-code.'));
+  assert.equal(laborResults.length, 3);
+  assert.equal(laborResults.every((result) => result.status === 'source_unavailable'), true);
+  assert.equal(civilResults.length, 4);
+  assert.equal(civilResults.every((result) => result.status === 'untrusted_redirect'), true);
+  assert.equal(civilResults.every((result) => result.finalHost === 'example.com'), true);
 });
 
 test('fails closed when a source request throws', async () => {

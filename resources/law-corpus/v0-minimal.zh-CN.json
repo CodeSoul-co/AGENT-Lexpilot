@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -48,6 +48,25 @@
       }
     },
     {
+      "id": "cn.labor-contract-law.article-39",
+      "legalDomain": "labor",
+      "lawName": "中华人民共和国劳动合同法",
+      "articleNumber": "第三十九条",
+      "articleText": "劳动者有下列情形之一的，用人单位可以解除劳动合同:\n\n（一）在试用期间被证明不符合录用条件的；\n\n（二）严重违反用人单位的规章制度的；\n\n（三）严重失职，营私舞弊，给用人单位造成重大损害的；\n\n（四）劳动者同时与其他用人单位建立劳动关系，对完成本单位的工作任务造成严重影响，或者经用人单位提出，拒不改正的；\n\n（五）因本法第二十六条第一款第一项规定的情形致使劳动合同无效的；\n\n（六）被依法追究刑事责任的。",
+      "articleTextSha256": "30cc97b60f174b68ec68eaa1738d759c6812bdba7631c06aff204a3925d18a53",
+      "publicationDate": "2012-12-28",
+      "effectiveDate": "2013-07-01",
+      "status": "effective",
+      "topics": ["immediate_dismissal", "serious_misconduct", "criminal_liability"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=2c909fdd678bf17901678bf74d7106b3&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E5%8A%B3%E5%8A%A8%E5%90%88%E5%90%8C%E6%B3%95&type=",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_0abfdd261c03417b949df19d869add8d.html"
+      }
+    },
+    {
       "id": "cn.civil-code.article-1042",
       "legalDomain": "marriage_family",
       "lawName": "中华人民共和国民法典",
@@ -58,6 +77,25 @@
       "effectiveDate": "2021-01-01",
       "status": "effective",
       "topics": ["marriage_freedom", "bigamy", "domestic_violence"],
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
+      "id": "cn.civil-code.article-1079",
+      "legalDomain": "marriage_family",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第一千零七十九条",
+      "articleText": "夫妻一方要求离婚的，可以由有关组织进行调解或者直接向人民法院提起离婚诉讼。\n\n人民法院审理离婚案件，应当进行调解；如果感情确已破裂，调解无效的，应当准予离婚。\n\n有下列情形之一，调解无效的，应当准予离婚：\n\n（一）重婚或者与他人同居；\n\n（二）实施家庭暴力或者虐待、遗弃家庭成员；\n\n（三）有赌博、吸毒等恶习屡教不改；\n\n（四）因感情不和分居满二年；\n\n（五）其他导致夫妻感情破裂的情形。\n\n一方被宣告失踪，另一方提起离婚诉讼的，应当准予离婚。\n\n经人民法院判决不准离婚后，双方又分居满一年，一方再次提起离婚诉讼的，应当准予离婚。",
+      "articleTextSha256": "c5f128824cb6c10029a5265bfc75fa4f1ff0bb0c0d6269202328bbae74475e79",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["judicial_divorce", "marital_breakdown", "domestic_violence"],
+      "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
         "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
@@ -84,6 +122,25 @@
       }
     },
     {
+      "id": "cn.civil-code.article-676",
+      "legalDomain": "private_lending",
+      "lawName": "中华人民共和国民法典",
+      "articleNumber": "第六百七十六条",
+      "articleText": "借款人未按照约定的期限返还借款的，应当按照约定或者国家有关规定支付逾期利息。",
+      "articleTextSha256": "189c946273bb1de2e445a35b7d5473cf972fd80ef89a1303114d35cb06e2ff03",
+      "publicationDate": "2020-05-28",
+      "effectiveDate": "2021-01-01",
+      "status": "effective",
+      "topics": ["overdue_interest"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",
+        "textAuthority": "工业和信息化部天津市通信管理局",
+        "textUrl": "https://tjca.miit.gov.cn/zwgk/zcwj/flfg/art/2020/art_20cf1a2e1b854924b5caa744c8045d1f.html"
+      }
+    },
+    {
       "id": "cn.tax-collection-administration-law.article-25",
       "legalDomain": "taxation",
       "lawName": "中华人民共和国税收征收管理法",
@@ -102,6 +159,25 @@
       }
     },
     {
+      "id": "cn.tax-collection-administration-law.article-32",
+      "legalDomain": "taxation",
+      "lawName": "中华人民共和国税收征收管理法",
+      "articleNumber": "第三十二条",
+      "articleText": "纳税人未按照规定期限缴纳税款的，扣缴义务人未按照规定期限解缴税款的，税务机关除责令限期缴纳外，从滞纳税款之日起，按日加收滞纳税款万分之五的滞纳金。",
+      "articleTextSha256": "b2377c0b6b9b6c285f5a0272b66e210c6b948e105d6bb1f5a11665e7462d7790",
+      "publicationDate": "2015-04-24",
+      "effectiveDate": "2015-04-24",
+      "status": "effective",
+      "topics": ["tax_payment_delay", "late_payment_surcharge"],
+      "retrievalEnabled": false,
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?id=2c909fdd678bf17901678bf78cff0785&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E7%A8%8E%E6%94%B6%E5%BE%81%E6%94%B6%E7%AE%A1%E7%90%86%E6%B3%95",
+        "textAuthority": "国家市场监督管理总局",
+        "textUrl": "https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/bgt/art/2023/art_1dbea81872cb4fda9ab3ccc45c627531.html"
+      }
+    },
+    {
       "id": "cn.patent-law.article-11",
       "legalDomain": "intellectual_property",
       "lawName": "中华人民共和国专利法",
@@ -112,6 +188,25 @@
       "effectiveDate": "2021-06-01",
       "status": "effective",
       "topics": ["patent_implementation", "authorization"],
+      "source": {
+        "authority": "全国人大常委会办公厅国家法律法规数据库",
+        "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
+        "textAuthority": "国家知识产权局",
+        "textUrl": "https://www.cnipa.gov.cn/art/2020/11/23/art_97_155167.html"
+      }
+    },
+    {
+      "id": "cn.patent-law.article-71",
+      "legalDomain": "intellectual_property",
+      "lawName": "中华人民共和国专利法",
+      "articleNumber": "第七十一条",
+      "articleText": "侵犯专利权的赔偿数额按照权利人因被侵权所受到的实际损失或者侵权人因侵权所获得的利益确定；权利人的损失或者侵权人获得的利益难以确定的，参照该专利许可使用费的倍数合理确定。对故意侵犯专利权，情节严重的，可以在按照上述方法确定数额的一倍以上五倍以下确定赔偿数额。\n\n权利人的损失、侵权人获得的利益和专利许可使用费均难以确定的，人民法院可以根据专利权的类型、侵权行为的性质和情节等因素，确定给予三万元以上五百万元以下的赔偿。\n\n赔偿数额还应当包括权利人为制止侵权行为所支付的合理开支。\n\n人民法院为确定赔偿数额，在权利人已经尽力举证，而与侵权行为相关的账簿、资料主要由侵权人掌握的情况下，可以责令侵权人提供与侵权行为相关的账簿、资料；侵权人不提供或者提供虚假的账簿、资料的，人民法院可以参考权利人的主张和提供的证据判定赔偿数额。",
+      "articleTextSha256": "c2041319adb2bf698875f6bb4be80c4d94e5fab947508ec4f9075a2cb2593066",
+      "publicationDate": "2020-10-17",
+      "effectiveDate": "2021-06-01",
+      "status": "effective",
+      "topics": ["patent_infringement_damages", "punitive_damages"],
+      "retrievalEnabled": false,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
         "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081752b7d430175e4651cbd1547&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E4%B8%93%E5%88%A9%E6%B3%95&type=",
