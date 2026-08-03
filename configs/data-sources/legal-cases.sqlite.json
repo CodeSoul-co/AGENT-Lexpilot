@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "local.legal_cases",
+  "engine": "sqlite",
+  "databasePathEnv": "LEGAL_V1_SQLITE_PATH",
+  "accessMode": "read-only",
+  "allowedTables": [
+    "labor_cases"
+  ],
+  "timeoutMs": 15000,
+  "maxRows": 500,
+  "maxOutputBytes": 1048576
+}

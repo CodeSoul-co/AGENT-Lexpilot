@@ -35,7 +35,7 @@
 - 计划同时记录 Schema 指纹与计划哈希；确认时重新校验，计划或 Schema 发生漂移即停止执行并要求重新确认；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；执行日志关联计划、Schema 与产物哈希；
-- 当前专业数据分析功能使用匿名合成的固定演示数据结构与本地受控求值器，不接真实数据库；Hypha 通用 Text2SQL / SQL Execution 能力到位后再替换。
+- 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；项目已提供 SQLite 只读数据源适配器，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口，支持真实连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。该适配器仍待接入网页 V1 组合根，不会通过修改 Hypha 绕过治理门。
 
 ## 运行
 
@@ -64,6 +64,8 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 密钥不要写入仓库。真实 Provider 只替换法律自检中的结构化事实推理，隐私门、输出校验、法规检索和禁止生成法律结论等边界仍然生效。
 
+可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；将 `LEGAL_V1_SQLITE_PATH` 指向本地数据库文件后，可由项目组合根创建只读数据源。数据库文件、Schema 快照和查询输出均不得提交到仓库。
+
 ## 验证
 
 ```bash
@@ -88,7 +90,7 @@ configs/domain-packs/  Legal DomainPack（FSM 工作流契约）
 resources/law-corpus/  经官方来源核验的本地法规语料
 scripts/               启动、密钥生成、语料审计与基线验证脚本
 src/agent/             Hypha ReAct Agent 业务适配层（推理 Provider、输出边界校验）
-src/                   法律自检、专业数据分析、隐私网关与本地网页服务
+src/                   法律自检、专业数据分析、SQLite 只读数据源、隐私网关与本地网页服务
 src/web/               本地网页 Demo 服务（仅 127.0.0.1）
 tests/                 Package Test
 web/                   网页前端（原生 HTML/CSS/JS，零构建）
@@ -103,4 +105,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、生产数据库连接、Hypha 通用 Text2SQL / SQL Execution、OS 级脚本沙箱、生产级权限系统与生产级网页部署。真实数据库执行和 OS 级隔离属于 Hypha 框架能力，不由本业务仓库绕过治理门禁实现。
+账号删除、每日法规同步、PostgreSQL/MySQL 生产数据库连接、受约束 Text2SQL、SQLite 适配器与网页 V1 组合根接线、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
