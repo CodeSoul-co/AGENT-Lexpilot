@@ -3,7 +3,8 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const {
   createSchemaFingerprint,
-  validateReadOnlySqlPlan
+  validateReadOnlySqlPlan,
+  validateWriteSqlPlan
 } = require('./sql-policy-guard.cjs');
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -137,6 +138,19 @@ function createSQLiteDataSource(options = {}) {
   const databasePath = resolveDatabasePath(options.databasePath);
   const allowedTables = validateAllowedTables(options.allowedTables);
   const allowedColumns = validateAllowedColumns(options.allowedColumns);
+  const accessMode = options.accessMode ?? 'read-only';
+  if (!['read-only', 'read-write'].includes(accessMode)) {
+    throw new TypeError('accessMode must be read-only or read-write.');
+  }
+  const allowedWriteOperations = Object.freeze([...(options.allowedWriteOperations ?? [])]);
+  const requiresHumanReview = options.requiresHumanReview === true;
+  const maxAffectedRows = options.maxAffectedRows ?? 1;
+  if (
+    accessMode === 'read-write' &&
+    (allowedWriteOperations.length === 0 || !requiresHumanReview || maxAffectedRows !== 1)
+  ) {
+    throw new TypeError('read-write SQLite requires allowed operations, Human Review, and a one-row limit.');
+  }
   const timeoutMs = requireBoundedInteger(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     'timeoutMs',
@@ -177,12 +191,19 @@ function createSQLiteDataSource(options = {}) {
       return Object.freeze({
         id,
         engine: 'sqlite',
-        mode: 'read-only',
+        mode: accessMode,
         allowedTables: [...allowedTables],
         allowedColumns: [...allowedColumns],
         timeoutMs,
         maxRows,
         maxOutputBytes,
+        ...(accessMode === 'read-write'
+          ? {
+              allowedWriteOperations: [...allowedWriteOperations],
+              requiresHumanReview,
+              maxAffectedRows
+            }
+          : {}),
         credentialsRequired: false
       });
     },
@@ -239,6 +260,40 @@ function createSQLiteDataSource(options = {}) {
         dataSource: id,
         schemaFingerprint: snapshot.schemaFingerprint,
         readOnly: true
+      });
+    },
+
+    async executeWrite({ sql, parameters, expectedSchemaFingerprint }) {
+      if (accessMode !== 'read-write') {
+        throw new SQLiteDataSourceError('WRITE_ACCESS_DENIED', 'SQLite data source is read-only.');
+      }
+      requireNonEmptyString(expectedSchemaFingerprint, 'expectedSchemaFingerprint');
+      const snapshot = await inspectSchema();
+      if (snapshot.schemaFingerprint !== expectedSchemaFingerprint) {
+        throw new SQLiteDataSourceError('SCHEMA_DRIFT', 'SQLite Schema changed after Human Review.');
+      }
+      const policy = validateWriteSqlPlan({
+        sql,
+        parameters,
+        schema: snapshot.schema,
+        allowedWriteOperations,
+        maxAffectedRows
+      });
+      if (!policy.ok) {
+        throw new SQLiteDataSourceError(policy.code, policy.message);
+      }
+      const startedAt = Date.now();
+      const result = await runWorker(
+        workerFile,
+        { ...basePayload, operation: 'write', sql, parameters, maxAffectedRows },
+        timeoutMs
+      );
+      return Object.freeze({
+        ...result,
+        durationMs: Date.now() - startedAt,
+        dataSource: id,
+        schemaFingerprint: snapshot.schemaFingerprint,
+        readOnly: false
       });
     }
   });

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "local.legal_cases.write",
+  "engine": "sqlite",
+  "databasePathEnv": "LEGAL_V1_SQLITE_WRITE_PATH",
+  "accessMode": "read-write",
+  "allowedTables": ["labor_cases"],
+  "allowedColumns": ["case_id", "year", "issue_type", "outcome", "compensation_amount"],
+  "allowedWriteOperations": ["insert", "update", "delete"],
+  "requiresHumanReview": true,
+  "maxAffectedRows": 1,
+  "timeoutMs": 15000,
+  "maxRows": 500,
+  "maxOutputBytes": 1048576
+}

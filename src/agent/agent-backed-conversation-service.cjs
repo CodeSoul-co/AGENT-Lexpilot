@@ -16,13 +16,17 @@ function assistantMessage(result) {
       return result.v1.schemaDrift.notification;
     }
     if (result.v1?.status === 'completed') {
-      return '专业数据分析已完成 Schema 校验、只读查询计划、演示执行与分析文档生成。';
+      return result.v1?.plan?.readOnly === false
+        ? `受治理数据库写入已完成，事务已提交，影响 ${result.v1.result?.affectedRows ?? 0} 行。`
+        : '专业数据分析已完成 Schema 校验、只读查询计划、演示执行与分析文档生成。';
     }
     if (result.v1?.status === 'cancelled') {
       return '已按你的选择取消本次专业数据分析，查询未执行。';
     }
     if (result.v1?.status === 'awaiting_confirmation') {
-      return '已生成只读查询计划，确认后才会执行演示分析。';
+      return result.v1?.plan?.readOnly === false
+        ? '已创建 Hypha Human Review；请核对 SQL，明确确认后才会执行数据库写入。'
+        : '已生成只读查询计划，确认后才会执行演示分析。';
     }
     return result.v1?.reason ?? '专业数据分析未执行该请求。';
   }

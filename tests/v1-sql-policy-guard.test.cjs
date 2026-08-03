@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   createSchemaFingerprint,
-  validateReadOnlySqlPlan
+  validateReadOnlySqlPlan,
+  validateWriteSqlPlan
 } = require('../src/v1/sql-policy-guard.cjs');
 
 const SCHEMA = Object.freeze({
@@ -11,6 +12,18 @@ const SCHEMA = Object.freeze({
   columns: Object.freeze([
     { name: 'year', type: 'INTEGER' },
     { name: 'issue_type', type: 'TEXT' }
+  ])
+});
+
+const WRITE_SCHEMA = Object.freeze({
+  dataSource: 'local.legal_cases.write',
+  tableName: 'labor_cases',
+  columns: Object.freeze([
+    { name: 'case_id', type: 'TEXT' },
+    { name: 'year', type: 'INTEGER' },
+    { name: 'issue_type', type: 'TEXT' },
+    { name: 'outcome', type: 'TEXT' },
+    { name: 'compensation_amount', type: 'INTEGER' }
   ])
 });
 
@@ -77,4 +90,35 @@ test('schema changes produce a different fingerprint and plan hash', () => {
   });
   assert.notEqual(original.schemaFingerprint, changed.schemaFingerprint);
   assert.notEqual(original.planHash, changed.planHash);
+});
+
+test('accepts only fixed single-row write templates and rejects DDL or broad updates', () => {
+  const accepted = validateWriteSqlPlan({
+    sql: 'UPDATE labor_cases SET compensation_amount = :compensation_amount WHERE case_id = :case_id;',
+    parameters: { compensation_amount: 12000, case_id: 'LC-1' },
+    schema: WRITE_SCHEMA,
+    allowedWriteOperations: ['insert', 'update', 'delete'],
+    maxAffectedRows: 1
+  });
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.operationType, 'update');
+  assert.equal(accepted.requiresHumanReview, true);
+
+  const ddl = validateWriteSqlPlan({
+    sql: 'DROP TABLE labor_cases;',
+    parameters: {},
+    schema: WRITE_SCHEMA,
+    allowedWriteOperations: ['insert', 'update', 'delete'],
+    maxAffectedRows: 1
+  });
+  assert.equal(ddl.code, 'DANGEROUS_OPERATION_DENIED');
+
+  const broad = validateWriteSqlPlan({
+    sql: 'UPDATE labor_cases SET compensation_amount = :compensation_amount;',
+    parameters: { compensation_amount: 12000 },
+    schema: WRITE_SCHEMA,
+    allowedWriteOperations: ['insert', 'update', 'delete'],
+    maxAffectedRows: 1
+  });
+  assert.equal(broad.code, 'WRITE_TEMPLATE_NOT_ALLOWED');
 });

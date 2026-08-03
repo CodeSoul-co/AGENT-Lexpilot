@@ -13,6 +13,7 @@ const PROFESSIONAL_QUERY_THRESHOLD = 3;
 
 const PROFESSIONAL_QUERY_SIGNALS = Object.freeze([
   { id: 'explicit_sql', pattern: /\b(?:select|insert|update|delete|sql)\b/i, weight: 4 },
+  { id: 'governed_business_write', pattern: /(?:新增|更新|删除)案例\s*[A-Za-z0-9-]+|将案例\s*[A-Za-z0-9-]+/i, weight: 4 },
   { id: 'schema_reference', pattern: /\bschema\b|表名|字段名|字段类型/i, weight: 3 },
   { id: 'structured_data_source', pattern: /数据库|数据源|案例库|合同库|数据表/i, weight: 3 },
   { id: 'analytic_metric', pattern: /统计|胜诉率|中位数|平均值|趋势|分布|总数|数量/i, weight: 2 },

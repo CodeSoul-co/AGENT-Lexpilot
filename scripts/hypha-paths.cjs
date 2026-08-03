@@ -32,6 +32,10 @@ function loadHyphaTesting(projectRoot = process.cwd()) {
   return loadHyphaPackage('testing', projectRoot);
 }
 
+function loadHyphaTools(projectRoot = process.cwd()) {
+  return loadHyphaPackage('tools', projectRoot);
+}
+
 function loadHyphaPackage(packageName, projectRoot = process.cwd()) {
   const supportedPackages = new Set([
     'adapters-local',
@@ -39,7 +43,8 @@ function loadHyphaPackage(packageName, projectRoot = process.cwd()) {
     'domain',
     'kernel',
     'models',
-    'testing'
+    'testing',
+    'tools'
   ]);
   if (!supportedPackages.has(packageName)) {
     throw new Error(`Unsupported Hypha package: ${packageName}`);
@@ -60,5 +65,6 @@ module.exports = {
   loadHyphaKernel,
   loadHyphaModels,
   loadHyphaTesting,
+  loadHyphaTools,
   loadHyphaPackage
 };

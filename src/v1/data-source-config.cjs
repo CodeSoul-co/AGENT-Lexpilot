@@ -12,7 +12,10 @@ const MANIFEST_KEYS = new Set([
   'allowedColumns',
   'timeoutMs',
   'maxRows',
-  'maxOutputBytes'
+  'maxOutputBytes',
+  'allowedWriteOperations',
+  'requiresHumanReview',
+  'maxAffectedRows'
 ]);
 const ENV_NAME_PATTERN = /^LEGAL_[A-Z0-9_]+$/;
 
@@ -34,8 +37,8 @@ function readDataSourceManifest(manifestPath) {
   if (manifest.schemaVersion !== 1) {
     throw new TypeError('V1 data-source manifest schemaVersion must be 1.');
   }
-  if (manifest.engine !== 'sqlite' || manifest.accessMode !== 'read-only') {
-    throw new TypeError('V1 data source must use the read-only SQLite profile.');
+  if (manifest.engine !== 'sqlite' || !['read-only', 'read-write'].includes(manifest.accessMode)) {
+    throw new TypeError('V1 data source must use a supported SQLite access profile.');
   }
   if (
     typeof manifest.databasePathEnv !== 'string' ||
@@ -49,10 +52,36 @@ function readDataSourceManifest(manifestPath) {
   if (!Array.isArray(manifest.allowedColumns)) {
     throw new TypeError('allowedColumns must be an array.');
   }
+  if (manifest.accessMode === 'read-write') {
+    const operations = manifest.allowedWriteOperations;
+    if (
+      !Array.isArray(operations) ||
+      operations.length === 0 ||
+      operations.some((operation) => !['insert', 'update', 'delete'].includes(operation)) ||
+      new Set(operations).size !== operations.length
+    ) {
+      throw new TypeError('read-write SQLite profiles require unique INSERT/UPDATE/DELETE operations.');
+    }
+    if (manifest.requiresHumanReview !== true) {
+      throw new TypeError('read-write SQLite profiles must require Human Review.');
+    }
+    if (!Number.isInteger(manifest.maxAffectedRows) || manifest.maxAffectedRows !== 1) {
+      throw new TypeError('read-write SQLite profiles must limit affected rows to 1.');
+    }
+  } else if (
+    manifest.allowedWriteOperations !== undefined ||
+    manifest.requiresHumanReview !== undefined ||
+    manifest.maxAffectedRows !== undefined
+  ) {
+    throw new TypeError('read-only SQLite profiles must not declare write controls.');
+  }
   return Object.freeze({
     ...manifest,
     allowedTables: Object.freeze([...manifest.allowedTables]),
-    allowedColumns: Object.freeze([...manifest.allowedColumns])
+    allowedColumns: Object.freeze([...manifest.allowedColumns]),
+    ...(manifest.allowedWriteOperations
+      ? { allowedWriteOperations: Object.freeze([...manifest.allowedWriteOperations]) }
+      : {})
   });
 }
 
@@ -76,6 +105,10 @@ function createConfiguredSQLiteDataSource(options = {}) {
     databasePath,
     allowedTables: manifest.allowedTables,
     allowedColumns: manifest.allowedColumns,
+    accessMode: manifest.accessMode,
+    allowedWriteOperations: manifest.allowedWriteOperations,
+    requiresHumanReview: manifest.requiresHumanReview,
+    maxAffectedRows: manifest.maxAffectedRows,
     timeoutMs: manifest.timeoutMs,
     maxRows: manifest.maxRows,
     maxOutputBytes: manifest.maxOutputBytes,

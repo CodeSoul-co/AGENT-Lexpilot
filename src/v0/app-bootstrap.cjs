@@ -86,8 +86,13 @@ async function createLocalLegalAgentApplication(options = {}) {
     if (v1Mode === 'demo') {
       v1Runtime = createV1DemoQueryRuntime();
     } else if (v1Mode === 'sqlite') {
+      const configuredManifest = environment.LEGAL_V1_SQLITE_MANIFEST?.trim();
+      const manifestPath = configuredManifest
+        ? path.resolve(projectRoot, configuredManifest)
+        : undefined;
       const dataSource =
-        options.v1DataSource ?? createConfiguredSQLiteDataSource({ env: environment, projectRoot });
+        options.v1DataSource ??
+        createConfiguredSQLiteDataSource({ env: environment, projectRoot, manifestPath });
       v1Runtime = await createV1SQLQueryRuntime({ dataSource });
     } else if (v1Mode === 'postgresql' || v1Mode === 'mysql') {
       const manifestPath = path.join(

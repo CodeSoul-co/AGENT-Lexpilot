@@ -585,6 +585,21 @@ class LegalSelfCheckConversationService {
       clarificationRound: 0,
       knownFacts: {}
     });
+    if (planned && typeof planned.then === 'function') {
+      return planned.then(
+        (result) => this.finishV1QueryPlan(session, prepared, taskRecognition, runId, result),
+        () =>
+          this.finishV1QueryPlan(session, prepared, taskRecognition, runId, {
+            status: 'rejected',
+            reason: '生成受治理数据库计划失败，操作未执行。',
+            trace: [safeEvent('v1.query.plan.failed', { code: 'RUNTIME_REJECTED' })]
+          })
+      );
+    }
+    return this.finishV1QueryPlan(session, prepared, taskRecognition, runId, planned);
+  }
+
+  finishV1QueryPlan(session, prepared, taskRecognition, runId, planned) {
     const now = this.clock();
     session.updatedAt = now;
     session.status = planned.status === 'rejected' ? 'rejected' : 'awaiting_confirmation';
@@ -594,6 +609,7 @@ class LegalSelfCheckConversationService {
       plan: planned.plan ?? null,
       schema: planned.schema ?? null,
       safety: planned.safety ?? null,
+      governanceReceipt: planned.governanceReceipt ?? null,
       reason: planned.reason,
       result: null,
       chart: null,
@@ -659,26 +675,24 @@ class LegalSelfCheckConversationService {
     session.updatedAt = now;
 
     if (confirmation?.confirmed !== true) {
-      session.status = 'cancelled';
-      session.v1.status = 'cancelled';
-      session.v1.cancelledAt = now;
-      const cancelEvent = safeEvent('v1.query.execution.cancelled', {
-        sessionId: session.id,
-        runId: session.v1.runId
-      });
-      session.trace.push(cancelEvent);
-      session.latestTrace = [cancelEvent];
-      try {
-        const cancelLog = this.appendV1ExecutionLog(session, {
-          operationType: 'cancel',
-          status: 'cancelled'
-        });
-        session.v1.executionLogId = cancelLog.entryId;
-      } catch {
-        this.failV1ForAuditLog(session, false);
+      if (
+        session.v1.plan.humanReviewRequired === true &&
+        typeof this.v1Runtime.reject === 'function'
+      ) {
+        session.status = 'cancelling';
+        session.v1.status = 'cancelling';
+        this.store.save(session, this.ownerId);
+        return Promise.resolve(
+          this.v1Runtime.reject({
+            runId: session.v1.runId,
+            governedInvocationId: session.v1.plan.governedInvocationId
+          })
+        ).then(
+          (rejected) => this.finishV1Cancellation(session, now, rejected?.governanceReceipt),
+          () => this.finishV1Cancellation(session, now, null)
+        );
       }
-      this.store.save(session, this.ownerId);
-      return { ...publicResult(session), v1: session.v1 };
+      return this.finishV1Cancellation(session, now, null);
     }
 
     const startedAt = Date.now();
@@ -692,7 +706,10 @@ class LegalSelfCheckConversationService {
       knownFacts: {},
       expectedPlanHash: session.v1.plan.planHash,
       expectedSchemaFingerprint: session.v1.plan.schemaFingerprint,
-      expectedSchemaSnapshot: session.v1.plan.schemaSnapshot ?? session.v1.schema
+      expectedSchemaSnapshot: session.v1.plan.schemaSnapshot ?? session.v1.schema,
+      governedInvocationId: session.v1.plan.governedInvocationId,
+      confirmedAt: now,
+      confirmedPlan: session.v1.plan
     });
     if (execution && typeof execution.then === 'function') {
       session.status = 'executing';
@@ -716,6 +733,33 @@ class LegalSelfCheckConversationService {
       );
     }
     return this.finishV1Execution(session, execution, now, startedAt);
+  }
+
+  finishV1Cancellation(session, cancelledAt, governanceReceipt) {
+    session.status = 'cancelled';
+    session.v1.status = 'cancelled';
+    session.v1.cancelledAt = cancelledAt;
+    session.v1.governanceReceipt = governanceReceipt ?? session.v1.governanceReceipt;
+    const cancelEvent = safeEvent('v1.query.execution.cancelled', {
+      sessionId: session.id,
+      runId: session.v1.runId,
+      humanReviewRejected: session.v1.plan?.humanReviewRequired === true
+    });
+    session.trace.push(cancelEvent);
+    session.latestTrace = [cancelEvent];
+    try {
+      const cancelLog = this.appendV1ExecutionLog(session, {
+        operationType: 'cancel',
+        status: 'cancelled',
+        humanReviewRequired: session.v1.plan?.humanReviewRequired,
+        humanReviewStatus: governanceReceipt?.status
+      });
+      session.v1.executionLogId = cancelLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, false);
+    }
+    this.store.save(session, this.ownerId);
+    return { ...publicResult(session), v1: session.v1 };
   }
 
   replanV1Execution(sessionId) {
@@ -826,7 +870,11 @@ class LegalSelfCheckConversationService {
   }
 
   finishV1Execution(session, executed, confirmedAt, startedAt) {
-    if (executed.status === 'completed' && this.artifactRepository !== null) {
+    if (
+      executed.status === 'completed' &&
+      this.artifactRepository !== null &&
+      executed.plan?.readOnly !== false
+    ) {
       const persistenceFailure = () =>
         this.finalizeV1Execution(
           session,
@@ -904,6 +952,8 @@ class LegalSelfCheckConversationService {
     session.v1.result = executed.result ?? null;
     session.v1.chart = executed.chart ?? null;
     session.v1.artifact = executed.artifact ?? null;
+    session.v1.safety = executed.safety ?? session.v1.safety;
+    session.v1.governanceReceipt = executed.governanceReceipt ?? session.v1.governanceReceipt;
     session.v1.confirmedAt = confirmedAt;
     session.v1.schemaDrift = executed.schemaDrift ?? session.v1.schemaDrift ?? null;
     session.v1.replanRequired = executed.replanRequired === true;
@@ -931,6 +981,12 @@ class LegalSelfCheckConversationService {
         providerOutputBytes: executed.providerReceipt?.outputBytes,
         providerReadOnly: executed.providerReceipt?.readOnly,
         sourceRowCount: executed.providerReceipt?.sourceRowCount,
+        affectedRows: executed.result?.affectedRows,
+        transactionStatus: executed.result?.transactionStatus,
+        humanReviewRequired: executed.safety?.humanReviewRequired,
+        humanReviewStatus: executed.safety?.humanReviewStatus,
+        governedInvocationId: executed.safety?.governedInvocationId,
+        governanceEventCount: executed.governanceReceipt?.eventCount,
         previousSchemaFingerprint: executed.schemaDrift?.previousFingerprint,
         currentSchemaFingerprint: executed.schemaDrift?.currentFingerprint,
         schemaDriftDetected: executed.schemaDrift?.detected,
@@ -971,6 +1027,10 @@ class LegalSelfCheckConversationService {
       sql: session.v1?.plan?.sql,
       planHash: session.v1?.plan?.planHash,
       schemaFingerprint: session.v1?.plan?.schemaFingerprint,
+      humanReviewRequired: session.v1?.plan?.humanReviewRequired,
+      humanReviewStatus: session.v1?.governanceReceipt?.status,
+      governedInvocationId: session.v1?.plan?.governedInvocationId,
+      governanceEventCount: session.v1?.governanceReceipt?.eventCount,
       ...entry
     });
   }

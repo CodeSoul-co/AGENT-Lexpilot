@@ -31,12 +31,13 @@
 
 ### 专业分析须确认后执行
 
-- 查询计划（参数化 SQL + 注释）先展示，独立只读策略门校验单条 `SELECT`、数据表、字段和绑定参数，用户确认后才执行；写操作与多语句查询一律拒绝；
+- 查询计划（参数化 SQL + 注释）先展示；默认只读策略门校验单条 `SELECT`、数据表、字段和绑定参数，用户确认后才执行。SQLite 写入专用配置仅允许固定单行 `INSERT` / `UPDATE` / `DELETE` 模板，并强制进入 Hypha Human Review；多语句和 DDL 一律在数据库前拒绝；
 - 计划同时保存白名单范围内的 Schema 快照、Schema 指纹与计划哈希；确认时重新读取真实 Schema，发生漂移即在到达数据库前停止旧计划，并返回新增、移除或属性变化的表/字段清单；
 - Schema 变化会在会话和网页中主动通知用户，并提供显式重新规划入口；重新规划只基于当前白名单 Schema 生成新计划，仍须再次人工确认，绝不会因重新规划而自动执行；漂移检测与重新规划同样适用于 SQLite、PostgreSQL 和 MySQL；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
 - 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
+- SQLite 写入专用配置通过 Hypha `GovernedToolRunner` 创建真实待审批 invocation；拒绝时 handler 不执行，批准后只执行一次。Worker 使用单个事务，失败、超时或影响超过 1 行时不提交，写操作不自动重试。审计日志仅记录 invocation ID、审批状态、事件数量、事务状态和影响行数，不记录参数、数据库路径或凭证。PostgreSQL/MySQL 在取得专用写账号和独立验收环境前继续保持只读。
 
 Schema 差异只包含数据源清单授权的表和字段，不扫描或输出其他客户 Schema。漂移事件、旧/新指纹、受影响表/字段数量和重新规划状态会写入哈希链审计日志；数据库路径、主机、账号、密码和字段数据不会进入通知或日志。对应接口为 `POST /api/sessions/:sessionId/schema-replan`，请求体固定为 `{ "requested": true }`。
 
@@ -76,6 +77,17 @@ npm run demo:web
 ```
 
 SQLite 文件须包含清单允许的 `labor_cases` 表，以及 `year`、`issue_type`、`outcome`、`compensation_amount` 字段。网页仍先展示 SQL、参数、Schema 指纹与计划哈希，用户确认后才在只读 Worker 中执行；确认期间会话进入 `executing`，重复确认会被拒绝。
+
+本地 SQLite 受治理写入使用独立公开清单 `configs/data-sources/legal-cases-write.sqlite.json`，避免误把默认只读配置升级为写权限。目标表还须包含唯一 `case_id`。建议只对可恢复的本地副本启用：
+
+```bash
+LEGAL_V1_RUNTIME=sqlite
+LEGAL_V1_SQLITE_MANIFEST=configs/data-sources/legal-cases-write.sqlite.json
+LEGAL_V1_SQLITE_WRITE_PATH=D:/private-data/legal-cases-write.sqlite
+npm run demo:web
+```
+
+支持的自然语言模板为：“新增案例 LC-2026-1，年份 2026，事项 未签劳动合同，结果 employee_win，赔偿 20000”“将案例 LC-2026-1 的赔偿金额更新为 12000”“删除案例 LC-2026-1”。这不是通用 Text2SQL；不符合模板的写入会关闭失败。
 
 PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
 
@@ -138,4 +150,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收、通用受约束 Text2SQL、数据库写操作 Human Review/事务回滚、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、通用受约束 Text2SQL、OS 级脚本沙箱、生产级权限系统与生产级网页部署。SQLite 的固定模板单行写入已经完成项目层 Human Review、事务回滚和自动化验收；框架缺失的一等 DomainPack 绑定仍作为上游缺口记录。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

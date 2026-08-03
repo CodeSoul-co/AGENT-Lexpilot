@@ -16,6 +16,12 @@ const manifestPath = path.join(
   'data-sources',
   'legal-cases.sqlite.json'
 );
+const writeManifestPath = path.join(
+  projectRoot,
+  'configs',
+  'data-sources',
+  'legal-cases-write.sqlite.json'
+);
 
 function createDatabase() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lexpilot-config-'));
@@ -57,6 +63,17 @@ test('creates the configured data source from an untracked environment path', as
   } finally {
     fs.rmSync(fixture.directory, { recursive: true, force: true });
   }
+});
+
+test('write profile exposes governance controls but never a database path or credential', () => {
+  const manifest = readDataSourceManifest(writeManifestPath);
+  assert.equal(manifest.accessMode, 'read-write');
+  assert.equal(manifest.databasePathEnv, 'LEGAL_V1_SQLITE_WRITE_PATH');
+  assert.deepEqual(manifest.allowedWriteOperations, ['insert', 'update', 'delete']);
+  assert.equal(manifest.requiresHumanReview, true);
+  assert.equal(manifest.maxAffectedRows, 1);
+  assert.equal(Object.hasOwn(manifest, 'databasePath'), false);
+  assert.equal(Object.hasOwn(manifest, 'credentials'), false);
 });
 
 test('fails closed when the database environment reference is absent', () => {

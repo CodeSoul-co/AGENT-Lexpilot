@@ -28,6 +28,12 @@ const ENTRY_KEYS = Object.freeze([
   'providerOutputBytes',
   'providerReadOnly',
   'sourceRowCount',
+  'affectedRows',
+  'transactionStatus',
+  'humanReviewRequired',
+  'humanReviewStatus',
+  'governedInvocationId',
+  'governanceEventCount',
   'status',
   'durationMs',
   'rowCount',
@@ -92,6 +98,8 @@ function validateReceiptFields(record) {
     'providerDurationMs',
     'providerOutputBytes',
     'sourceRowCount',
+    'affectedRows',
+    'governanceEventCount',
     'affectedTableCount',
     'affectedFieldCount'
   ]) {
@@ -102,8 +110,29 @@ function validateReceiptFields(record) {
       throw new TypeError(`entry.${key} must be a non-negative safe integer.`);
     }
   }
-  if (record.providerReadOnly !== undefined && record.providerReadOnly !== true) {
-    throw new TypeError('entry.providerReadOnly must be true when present.');
+  if (record.providerReadOnly !== undefined && typeof record.providerReadOnly !== 'boolean') {
+    throw new TypeError('entry.providerReadOnly must be a boolean when present.');
+  }
+  if (
+    record.providerReadOnly === false &&
+    (record.humanReviewRequired !== true || record.transactionStatus === undefined)
+  ) {
+    throw new TypeError('entry.providerReadOnly must be true unless governed write receipts are present.');
+  }
+  if (record.humanReviewRequired !== undefined && typeof record.humanReviewRequired !== 'boolean') {
+    throw new TypeError('entry.humanReviewRequired must be a boolean when present.');
+  }
+  if (record.transactionStatus !== undefined && !['committed', 'rolled_back'].includes(record.transactionStatus)) {
+    throw new TypeError('entry.transactionStatus must be committed or rolled_back.');
+  }
+  if (record.humanReviewStatus !== undefined) {
+    requireNonEmptyString(record.humanReviewStatus, 'entry.humanReviewStatus');
+  }
+  if (record.governedInvocationId !== undefined) {
+    requireNonEmptyString(record.governedInvocationId, 'entry.governedInvocationId');
+    if (!/^lexpilot-write-[0-9a-f]{24}$/.test(record.governedInvocationId)) {
+      throw new TypeError('entry.governedInvocationId must be a safe LexPilot receipt identifier.');
+    }
   }
   for (const key of ['schemaDriftDetected', 'replanRequired']) {
     if (record[key] !== undefined && typeof record[key] !== 'boolean') {

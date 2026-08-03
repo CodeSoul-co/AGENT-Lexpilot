@@ -13,6 +13,14 @@ function openReadOnlyDatabase(databasePath, projectRoot) {
   return database;
 }
 
+function openWritableDatabase(databasePath, projectRoot) {
+  const sqlite = loadHyphaAdaptersLocal(projectRoot).loadSqlite(true);
+  const database = new sqlite.DatabaseSync(databasePath);
+  database.exec('PRAGMA trusted_schema = OFF;');
+  database.exec('PRAGMA foreign_keys = ON;');
+  return database;
+}
+
 function quoteIdentifier(identifier) {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
@@ -101,9 +109,36 @@ function executeQuery(database, sql, parameters, maxRows, maxOutputBytes) {
   };
 }
 
+function executeWrite(database, sql, parameters, maxAffectedRows) {
+  database.exec('BEGIN IMMEDIATE;');
+  try {
+    const result = database.prepare(sql.trim().replace(/;\s*$/, '')).run(parameters);
+    const affectedRows = Number(result.changes ?? 0);
+    if (affectedRows > maxAffectedRows) {
+      throw Object.assign(new Error('Write exceeds the configured affected-row limit.'), {
+        code: 'AFFECTED_ROWS_LIMIT_EXCEEDED'
+      });
+    }
+    database.exec('COMMIT;');
+    return {
+      status: 'committed',
+      affectedRows,
+      transactionStatus: 'committed'
+    };
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK;');
+    } catch {}
+    throw error;
+  }
+}
+
 function run() {
   const projectRoot = path.resolve(workerData.projectRoot);
-  const database = openReadOnlyDatabase(workerData.databasePath, projectRoot);
+  const database =
+    workerData.operation === 'write'
+      ? openWritableDatabase(workerData.databasePath, projectRoot)
+      : openReadOnlyDatabase(workerData.databasePath, projectRoot);
   try {
     if (workerData.operation === 'ping') {
       const row = database.prepare('SELECT 1 AS value;').get();
@@ -126,6 +161,14 @@ function run() {
         workerData.parameters,
         workerData.maxRows,
         workerData.maxOutputBytes
+      );
+    }
+    if (workerData.operation === 'write') {
+      return executeWrite(
+        database,
+        workerData.sql,
+        workerData.parameters,
+        workerData.maxAffectedRows
       );
     }
     throw Object.assign(new Error('Unsupported SQLite worker operation.'), {

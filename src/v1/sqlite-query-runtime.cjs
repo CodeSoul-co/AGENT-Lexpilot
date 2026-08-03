@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const { createSchemaFingerprint, validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
 const { createSchemaDrift } = require('./schema-drift.cjs');
+const { createGovernedSQLiteWriteRuntime } = require('./governed-sqlite-write-runtime.cjs');
 
 const SQLITE_QUERY_SQL = [
   'SELECT year, outcome, compensation_amount',
@@ -110,6 +111,9 @@ function inputSupported(redactedText) {
 
 async function createV1SQLiteQueryRuntime(options = {}) {
   const dataSource = options.dataSource;
+  if (dataSource?.describe?.().mode === 'read-write') {
+    return createGovernedSQLiteWriteRuntime(options);
+  }
   if (
     !dataSource ||
     typeof dataSource.describe !== 'function' ||

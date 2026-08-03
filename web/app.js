@@ -139,7 +139,8 @@ function resetConversation(mode = state.mode) {
 function renderFacts(result) {
   elements.factsList.replaceChildren();
   if (result.taskType === 'professional_data_query' && result.v1) {
-    elements.domainLabel.textContent = '演示案例库';
+    const writePlan = result.v1.plan?.readOnly === false;
+    elements.domainLabel.textContent = writePlan ? '业务案例库' : '演示案例库';
     const counts = result.v1.result
       ? [String(result.v1.result.sourceCaseCount), String(result.v1.result.matchedCaseCount)]
       : result.status === 'awaiting_confirmation'
@@ -147,7 +148,15 @@ function renderFacts(result) {
         : result.status === 'cancelled'
           ? ['已取消', '已取消']
           : [String(result.v1.result?.sourceCaseCount ?? 0), String(result.v1.result?.matchedCaseCount ?? 0)];
-    const entries = [
+    const entries = writePlan
+      ? [
+          ['数据源', result.v1.schema?.dataSource ?? '已配置'],
+          ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
+          ['权限', 'Human Review 写入'],
+          ['事务', result.v1.result?.transactionStatus ?? '待审批'],
+          ['影响行数', String(result.v1.result?.affectedRows ?? '待执行')]
+        ]
+      : [
       ['数据源', result.v1.schema?.displayName ?? '未加载'],
       ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
       ['权限', result.v1.safety?.readOnly ? '只读' : '已拒绝'],
@@ -177,10 +186,12 @@ function renderStatus(result) {
   elements.sessionStatus.textContent = labels[result.status] ?? '处理中';
   elements.sessionRound.textContent = result.taskType === 'professional_data_query'
     ? (result.status === 'awaiting_confirmation'
-        ? '只读计划 · 等待确认'
+        ? (result.v1?.plan?.readOnly === false ? '写入计划 · 等待 Human Review' : '只读计划 · 等待确认')
         : result.status === 'cancelled'
           ? '已取消 · 未执行'
-          : (result.v1?.safety?.readOnly ? '固定 Schema · 只读执行' : '未执行'))
+          : (result.v1?.plan?.readOnly === false
+              ? '单行事务 · 受治理写入'
+              : (result.v1?.safety?.readOnly ? '固定 Schema · 只读执行' : '未执行')))
     : `追问轮次 ${result.clarificationRound ?? 0} / 5`;
   elements.sessionOrb.className = 'status-orb';
   const orbClass = result.status === 'completed'
@@ -249,6 +260,28 @@ function addV1Result(result) {
     addMessage('assistant', data.reason ?? '该数据任务未执行。', '安全边界');
     return;
   }
+  if (data.plan?.readOnly === false) {
+    const board = node('section', 'v1-board');
+    const heading = node('div', 'v1-heading');
+    const titleWrap = node('div');
+    titleWrap.append(node('span', 'message-label', '受治理写入'), node('h3', '', '数据库写操作已完成'));
+    heading.append(titleWrap, node('span', 'verified-badge', '✓ Human Review 已完成'));
+    const plan = node('div', 'sql-panel');
+    plan.append(node('div', 'sql-toolbar', '写入 SQL · 已审批并提交'), node('pre', '', data.plan.sql));
+    const resultCard = node(
+      'div',
+      'demo-boundary',
+      `事务状态：${data.result.transactionStatus} · 影响行数：${data.result.affectedRows}`
+    );
+    const receipt = node(
+      'p',
+      'plan-explanation',
+      `治理状态：${data.governanceReceipt?.status ?? 'resolved'} · 事件数：${data.governanceReceipt?.eventCount ?? 0}`
+    );
+    board.append(heading, plan, resultCard, receipt);
+    elements.conversation.append(board);
+    return;
+  }
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
   const titleWrap = node('div'); titleWrap.append(node('span', 'message-label', '查询计划'), node('h3', '', '近三年案例统计分析'));
@@ -292,14 +325,30 @@ function addV1PlanCard(result) {
   if (!data?.plan) return;
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
-  const titleWrap = node('div'); titleWrap.append(node('span', 'message-label', '查询计划'), node('h3', '', '近三年案例统计分析'));
+  const writePlan = data.plan.readOnly === false;
+  const titleWrap = node('div');
+  titleWrap.append(
+    node('span', 'message-label', writePlan ? '写入计划' : '查询计划'),
+    node('h3', '', writePlan ? '单案例数据库变更' : '近三年案例统计分析')
+  );
   heading.append(titleWrap, node('span', 'verified-badge', '✓ Schema 已校验'));
-  const toolbarText = data.status === 'awaiting_confirmation' ? '只读 SQL 计划 · 等待确认执行' : '只读 SQL 计划 · 未执行';
+  const toolbarText = writePlan
+    ? '写入 SQL 计划 · 等待 Human Review'
+    : (data.status === 'awaiting_confirmation' ? '只读 SQL 计划 · 等待确认执行' : '只读 SQL 计划 · 未执行');
   const plan = node('div', 'sql-panel'); plan.append(node('div', 'sql-toolbar', toolbarText), node('pre', '', data.plan.sql));
   const explanation = node('p', 'plan-explanation', data.plan.explanation ?? '固定演示 Schema 的只读查询计划。');
   const badges = node('div', 'plan-badges');
-  badges.append(node('span', 'verified-badge', '只读'), node('span', 'verified-badge', '需人工确认'));
-  const boundary = node('div', 'demo-boundary', '该计划仅读取固定演示 Schema 的匿名合成数据，确认后才会执行，不会产生任何写操作。');
+  badges.append(
+    node('span', 'verified-badge', writePlan ? '单行写入' : '只读'),
+    node('span', 'verified-badge', writePlan ? 'Hypha Human Review' : '需人工确认')
+  );
+  const boundary = node(
+    'div',
+    'demo-boundary',
+    writePlan
+      ? '该计划会修改一条业务数据。批准后使用单个事务执行；失败、超行或超时均不提交，并且不会自动重试。'
+      : '该计划仅读取固定演示 Schema 的匿名合成数据，确认后才会执行，不会产生任何写操作。'
+  );
   board.append(heading, plan, explanation, badges, boundary); elements.conversation.append(board);
 }
 
@@ -332,8 +381,16 @@ function addSchemaDriftCard(result) {
 
 function openConfirmModal(result) {
   const data = result?.v1;
+  const writePlan = data?.plan?.readOnly === false;
   elements.confirmExplanation.textContent = data?.plan?.explanation ?? 'Agent 已生成固定演示 Schema 的只读查询计划，确认后才会执行。';
   elements.confirmSql.textContent = data?.plan?.sql ?? '';
+  const title = $('#confirm-title');
+  if (title) title.textContent = writePlan ? '确认批准该数据库写操作？' : '确认执行该查询计划？';
+  const note = elements.confirmModal.querySelector('.confirm-note');
+  if (note) note.textContent = writePlan
+    ? '这是数据库写操作。批准后将通过 Hypha Human Review 恢复执行；事务失败或影响超过 1 行时不会提交。'
+    : '查询仅读取授权 Schema，确认后才会执行，不会产生任何写操作。';
+  elements.confirmAccept.textContent = writePlan ? '批准并执行写入' : '确认执行';
   elements.confirmAccept.disabled = false;
   elements.confirmCancel.disabled = false;
   elements.confirmModal.classList.remove('hidden');
