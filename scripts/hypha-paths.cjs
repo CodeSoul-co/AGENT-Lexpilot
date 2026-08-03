@@ -12,6 +12,14 @@ function loadHyphaDomain(projectRoot = process.cwd()) {
   return loadHyphaPackage('domain', projectRoot);
 }
 
+function loadHyphaCore(projectRoot = process.cwd()) {
+  return loadHyphaPackage('core', projectRoot);
+}
+
+function loadHyphaAdaptersLocal(projectRoot = process.cwd()) {
+  return loadHyphaPackage('adapters-local', projectRoot);
+}
+
 function loadHyphaKernel(projectRoot = process.cwd()) {
   return loadHyphaPackage('kernel', projectRoot);
 }
@@ -21,7 +29,13 @@ function loadHyphaModels(projectRoot = process.cwd()) {
 }
 
 function loadHyphaPackage(packageName, projectRoot = process.cwd()) {
-  const supportedPackages = new Set(['domain', 'kernel', 'models']);
+  const supportedPackages = new Set([
+    'adapters-local',
+    'core',
+    'domain',
+    'kernel',
+    'models'
+  ]);
   if (!supportedPackages.has(packageName)) {
     throw new Error(`Unsupported Hypha package: ${packageName}`);
   }
@@ -35,6 +49,8 @@ function loadHyphaPackage(packageName, projectRoot = process.cwd()) {
 
 module.exports = {
   loadHyphaLock,
+  loadHyphaAdaptersLocal,
+  loadHyphaCore,
   loadHyphaDomain,
   loadHyphaKernel,
   loadHyphaModels,
