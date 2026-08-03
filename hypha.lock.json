@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repository": "https://github.com/CodeSoul-co/Hypha.git",
   "localPath": "../Hypha",
-  "branch": "execution",
-  "commit": "68bff385cfbe6c7e634f6bde3e9bb0bd453dc850",
+  "branch": "main",
+  "commit": "eae054835b8f3fa28f6eca286cee011a515a48aa",
   "compatibilityMode": "exact-or-clean-descendant-with-unchanged-scope",
   "capturedAt": "2026-08-03",
   "runtime": {
@@ -18,7 +18,8 @@
     "packages/adapters-local/dist/index.js",
     "packages/inference/dist/index.js",
     "packages/kernel/dist/index.js",
-    "packages/models/dist/index.js"
+    "packages/models/dist/index.js",
+    "packages/tools/dist/index.js"
   ],
   "lockedScope": [
     "packages/core",

@@ -5,7 +5,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
-const { createLocalLegalAgent } = require('../src/v0/app-bootstrap.cjs');
+const {
+  createLocalLegalAgent,
+  createLocalLegalAgentApplication
+} = require('../src/v0/app-bootstrap.cjs');
 const { PRIVACY_POLICY_VERSION } = require('../src/v0/contracts.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
@@ -205,4 +208,36 @@ test('validates an invalid command before reading environment configuration', ()
   const failure = JSON.parse(result.stderr);
   assert.match(failure.error.message, /Unknown demo command/);
   assert.equal(failure.error.message.includes('LEGAL_SESSION_KEY_BASE64'), false);
+});
+
+test('application composes an injected Sandbox runtime without requiring Docker configuration', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-sandbox-bootstrap-'));
+  const sandboxRuntime = {
+    describe: () => ({ runtime: 'mock-sandbox', policy: { network: 'disabled' } }),
+    plan: async () => ({ status: 'awaiting_confirmation', invocationId: 'mock-invocation', plan: {} }),
+    approve: async () => ({ status: 'completed' }),
+    reject: async () => ({ status: 'rejected' })
+  };
+  let application;
+  try {
+    application = await createLocalLegalAgentApplication({
+      projectRoot,
+      sandboxRuntime,
+      environment: {
+        LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+        LEGAL_SESSION_OWNER_ID: 'sandbox-bootstrap-owner',
+        LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+        LEGAL_V1_EXECUTION_LOG_FILE: path.join(directory, 'execution-log.jsonl'),
+        LEGAL_V1_ARTIFACT_DIR: path.join(directory, 'artifacts'),
+        LEGAL_V1_RUNTIME: 'demo',
+        LEGAL_AGENT_PROVIDER: 'demo'
+      }
+    });
+    assert.equal(application.sandboxDescriptor.available, true);
+    assert.equal(application.sandboxDescriptor.runtime, 'mock-sandbox');
+    assert.equal(typeof application.sandboxCoordinator.plan, 'function');
+  } finally {
+    await application?.close?.();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { loadHyphaCore, loadHyphaTools } = require('../../scripts/hypha-paths.cjs');
 const { buildSandboxEnvironment, requireSandboxRequest } = require('./sandbox-execution-policy.cjs');
 
@@ -38,6 +38,41 @@ function safeProviderReceipt(receipt) {
     issuedAt: receipt.issuedAt,
     metadata: receipt.metadata
   };
+}
+
+function sha256(value) {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function safePlan(request, environment, invocationId) {
+  const inputFiles = request.inputFiles.map((file) => ({
+    path: file.path,
+    sizeBytes: Buffer.from(file.contentBase64, 'base64').byteLength,
+    contentSha256: file.contentSha256
+  }));
+  const plan = {
+    invocationId,
+    language: request.language,
+    executable: request.language === 'python' ? 'python3' : '/bin/sh',
+    scriptSha256: sha256(request.script),
+    scriptBytes: Buffer.byteLength(request.script, 'utf8'),
+    inputFiles,
+    inputFileCount: inputFiles.length,
+    inputBytes: inputFiles.reduce((total, file) => total + file.sizeBytes, 0),
+    requiresConfirmation: true,
+    policy: {
+      cpuCores: environment.resources.cpuCores,
+      memoryMb: environment.resources.memoryMb,
+      timeoutMs: environment.defaultTimeoutMs,
+      network: environment.network.mode,
+      rootFilesystem: environment.filesystem.rootFilesystem,
+      reuse: environment.lifecycle.reuse
+    }
+  };
+  return Object.freeze({
+    ...plan,
+    planHash: sha256(JSON.stringify(plan))
+  });
 }
 
 async function createSandboxExecutionRuntime(options = {}) {
@@ -287,7 +322,12 @@ async function createSandboxExecutionRuntime(options = {}) {
         throw new Error('Unable to create Sandbox Human Review.');
       }
       pending.set(invocationId, runId);
-      return { status: 'awaiting_confirmation', invocationId, executionAttempted: false };
+      return {
+        status: 'awaiting_confirmation',
+        invocationId,
+        executionAttempted: false,
+        plan: safePlan(request, environment, invocationId)
+      };
     },
     async approve({ invocationId, runId, approvedAt }) {
       if (pending.get(invocationId) !== runId) throw new Error('Sandbox plan mismatch.');

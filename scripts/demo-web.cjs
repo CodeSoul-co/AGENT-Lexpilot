@@ -23,11 +23,19 @@ async function main() {
     dataDirectory,
     agentDescriptor,
     v1Descriptor,
+    sandboxCoordinator,
+    sandboxDescriptor,
     executionLogFilePath,
     artifactDirectory,
     close
   } = await createLocalLegalAgentApplication();
-  const server = createDemoWebServer({ service, agentDescriptor, v1Descriptor });
+  const server = createDemoWebServer({
+    service,
+    agentDescriptor,
+    v1Descriptor,
+    sandboxCoordinator,
+    sandboxDescriptor
+  });
   server.on('error', (error) => {
     process.stderr.write(`本地网页 Demo 启动失败：${error.message}\n`);
     process.exitCode = 1;

@@ -188,6 +188,15 @@ test('Human Review blocks Python execution, then approval runs once and cleans e
     });
     assert.equal(planned.status, 'awaiting_confirmation');
     assert.equal(planned.executionAttempted, false);
+    assert.equal(planned.plan.language, 'python');
+    assert.equal(planned.plan.scriptSha256, hash(script));
+    assert.equal(planned.plan.inputFiles[0].contentSha256, hash(inputContent));
+    assert.equal(planned.plan.policy.cpuCores, 1);
+    assert.equal(planned.plan.policy.memoryMb, 512);
+    assert.equal(planned.plan.policy.timeoutMs, 30_000);
+    assert.equal(planned.plan.policy.network, 'disabled');
+    assert.equal(JSON.stringify(planned).includes(script), false);
+    assert.equal(JSON.stringify(planned).includes(inputContent), false);
     assert.deepEqual(value.calls, []);
 
     const approved = await runtime.approve({

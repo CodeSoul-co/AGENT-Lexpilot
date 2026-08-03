@@ -90,13 +90,16 @@ npm run demo:web
 
 支持的自然语言模板为：“新增案例 LC-2026-1，年份 2026，事项 未签劳动合同，结果 employee_win，赔偿 20000”“将案例 LC-2026-1 的赔偿金额更新为 12000”“删除案例 LC-2026-1”。这不是通用 Text2SQL；不符合模板的写入会关闭失败。
 
-受治理脚本沙箱当前提供项目层运行时与独立真实 Docker 验收入口，尚未接入网页操作入口。镜像必须同时提供 `python3`、`/bin/sh`、`sleep` 与 `ln`，并使用不可变 SHA-256 digest；不能只写可漂移的镜像标签：
+受治理脚本沙箱已提供项目层运行时、网页“计划—确认—执行—结果”入口与独立真实 Docker 验收命令。镜像必须同时提供 `python3`、`/bin/sh`、`sleep` 与 `ln`，并使用不可变 SHA-256 digest；不能只写可漂移的镜像标签：
 
 ```bash
+LEGAL_V1_SANDBOX_ENABLED=true
 LEGAL_V1_SANDBOX_IMAGE=your-registry/lexpilot-sandbox:version
 LEGAL_V1_SANDBOX_IMAGE_DIGEST=sha256:<64-lowercase-hex-digest>
 npm run audit:sandbox:docker
 ```
+
+启用后，本地网页 Demo 会显示“脚本沙箱”入口：浏览器提交 Python/Shell 脚本与最多 32 个输入文件，服务端先返回不含正文的哈希化执行计划；用户明确确认后，才通过最新本地 Hypha 的公开 `GovernedToolRunner` 与 `DockerSandboxProviderFactory` 执行。Web 响应只返回退出状态、私有 Artifact 引用、清理证据和治理事件摘要，不回显脚本或文件正文。默认 `LEGAL_V1_SANDBOX_ENABLED=false`，因此未安装 Docker 时不影响原有 V0/V1 Demo。
 
 该命令真实执行 Python、Shell、禁网、路径逃逸、符号链接、超时与内存限制用例，并核对每个运行的 Human Review 事件、Artifact 回执和 Workspace 清理。缺少 Docker daemon、镜像或 digest 时命令以非零状态诚实失败；自动化 Mock Provider 测试只证明业务接线与治理合同，不替代 OS 级隔离验收。
 

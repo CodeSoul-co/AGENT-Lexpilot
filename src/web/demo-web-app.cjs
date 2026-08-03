@@ -4,6 +4,7 @@ const path = require('node:path');
 const { PRIVACY_POLICY_VERSION, V0_DOMAIN_PACK_VERSION } = require('../v0/contracts.cjs');
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
+const MAX_SANDBOX_JSON_BODY_BYTES = 24 * 1024 * 1024;
 const STATIC_FILES = Object.freeze({
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
@@ -33,12 +34,12 @@ function sendError(response, statusCode, code, message) {
   sendJson(response, statusCode, { status: 'failed', error: { code, message } });
 }
 
-async function readJsonBody(request) {
+async function readJsonBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
   const chunks = [];
   let byteLength = 0;
   for await (const chunk of request) {
     byteLength += chunk.length;
-    if (byteLength > MAX_JSON_BODY_BYTES) {
+    if (byteLength > maxBytes) {
       const error = new Error('请求内容过大。');
       error.code = 'REQUEST_BODY_TOO_LARGE';
       throw error;
@@ -87,6 +88,15 @@ function parseSessionRoute(pathname) {
   return null;
 }
 
+function parseSandboxRoute(pathname) {
+  if (pathname === '/api/v1/sandbox/plans') return { type: 'plan' };
+  const confirmationMatch = pathname.match(
+    /^\/api\/v1\/sandbox\/plans\/([A-Za-z0-9-]{1,100})\/confirmation$/
+  );
+  if (confirmationMatch) return { type: 'confirmation', planId: confirmationMatch[1] };
+  return null;
+}
+
 function requireExactKeys(body, requiredKeys) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const actual = Object.keys(body).sort();
@@ -106,14 +116,19 @@ function createDemoWebHandler(options = {}) {
   validateService(service);
   const agentDescriptor = options.agentDescriptor ?? null;
   const v1Descriptor = options.v1Descriptor ?? null;
+  const sandboxCoordinator = options.sandboxCoordinator ?? null;
+  const sandboxDescriptor = options.sandboxDescriptor ?? sandboxCoordinator?.describe?.() ?? { available: false };
   const staticDirectory = path.resolve(
     options.staticDirectory ?? path.join(__dirname, '..', '..', 'web')
   );
 
   return async function demoWebHandler(request, response) {
+    let requestPathname = '';
     try {
       const url = new URL(request.url, 'http://127.0.0.1');
+      requestPathname = url.pathname;
       const route = parseSessionRoute(url.pathname);
+      const sandboxRoute = parseSandboxRoute(url.pathname);
 
       const hostname = parseHostHeader(request.headers.host);
       if (!LOCAL_HOSTNAMES.has(hostname)) {
@@ -138,7 +153,8 @@ function createDemoWebHandler(options = {}) {
           productScope: 'V0 + V1',
           domainPackVersion: V0_DOMAIN_PACK_VERSION,
           agent: agentDescriptor,
-          v1: v1Descriptor
+          v1: v1Descriptor,
+          sandbox: sandboxDescriptor
         });
         return;
       }
@@ -150,9 +166,43 @@ function createDemoWebHandler(options = {}) {
           maxClarificationRounds: 5,
           maxQuestionsPerRound: 2,
           supportedTaskTypes: ['legal_self_check', 'professional_data_query'],
+          sandbox: sandboxDescriptor,
+          sandboxLimits: {
+            maxScriptBytes: 64 * 1024,
+            maxInputFiles: 32,
+            maxInputBytes: 16 * 1024 * 1024
+          },
           v1DemoDataSource: v1Descriptor?.dataSource ?? null,
           v1DemoSchema: v1Descriptor?.schema ?? null
         });
+        return;
+      }
+
+      if (sandboxRoute?.type === 'plan' && request.method === 'POST') {
+        if (!sandboxCoordinator) {
+          sendError(response, 501, 'SANDBOX_UNAVAILABLE', 'Docker Sandbox is not configured for this local Demo.');
+          return;
+        }
+        const body = await readJsonBody(request, MAX_SANDBOX_JSON_BODY_BYTES);
+        if (!requireExactKeys(body, ['language', 'script', 'inputFiles'])) {
+          sendError(response, 400, 'INVALID_REQUEST', 'Sandbox plan request fields are invalid.');
+          return;
+        }
+        sendJson(response, 200, await sandboxCoordinator.plan(body));
+        return;
+      }
+
+      if (sandboxRoute?.type === 'confirmation' && request.method === 'POST') {
+        if (!sandboxCoordinator) {
+          sendError(response, 501, 'SANDBOX_UNAVAILABLE', 'Docker Sandbox is not configured for this local Demo.');
+          return;
+        }
+        const body = await readJsonBody(request);
+        if (!requireExactKeys(body, ['confirmed']) || typeof body.confirmed !== 'boolean') {
+          sendError(response, 400, 'INVALID_REQUEST', 'Sandbox confirmation request fields are invalid.');
+          return;
+        }
+        sendJson(response, 200, await sandboxCoordinator.confirm(sandboxRoute.planId, body));
         return;
       }
 
@@ -280,6 +330,18 @@ function createDemoWebHandler(options = {}) {
         sendError(response, 400, error.code, error.message);
         return;
       }
+      if (error?.code === 'SANDBOX_PLAN_NOT_FOUND') {
+        sendError(response, 404, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'SANDBOX_PENDING_LIMIT') {
+        sendError(response, 429, error.code, error.message);
+        return;
+      }
+      if (error instanceof TypeError && requestPathname.startsWith('/api/v1/sandbox/')) {
+        sendError(response, 400, 'INVALID_REQUEST', error.message);
+        return;
+      }
       if (error?.name === 'V0ContractError' && typeof error.code === 'string') {
         sendError(response, 400, error.code, error.message);
         return;
@@ -295,6 +357,7 @@ function createDemoWebServer(options = {}) {
 
 module.exports = {
   MAX_JSON_BODY_BYTES,
+  MAX_SANDBOX_JSON_BODY_BYTES,
   createDemoWebHandler,
   createDemoWebServer
 };

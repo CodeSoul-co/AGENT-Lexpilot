@@ -39,6 +39,7 @@
       <main class="workspace">
         <header class="topbar">
           <div class="topbar-heading">
+            <button class="mode-tab sandbox-mode-tab" data-mode="sandbox" type="button" role="tab">脚本沙箱</button>
             <div class="mode-switch" role="tablist" aria-label="任务模式">
               <button class="mode-tab active" data-mode="v0" type="button" role="tab">法律自检</button>
               <button class="mode-tab" data-mode="v1" type="button" role="tab">专业数据分析</button>
@@ -59,6 +60,14 @@
             <h2 id="welcome-title">把事情说清楚，先完成一次法律自检</h2>
             <p class="welcome-copy" id="welcome-copy">统一 Agent 会先脱敏，再判断所属领域；信息不足时每轮最多追问两个问题。结果只引用本地已核验法条，不构成法律意见。</p>
             <div class="sample-grid">
+              <button class="sample-card hidden" type="button" data-mode="sandbox" data-language="python" data-sample="from pathlib import Path&#10;Path('result.txt').write_text('sandbox ok', encoding='utf-8')&#10;print('done')">
+                <span>Python 隔离执行</span>
+                <strong>生成结果文件并保存为私有 Artifact</strong>
+              </button>
+              <button class="sample-card hidden" type="button" data-mode="sandbox" data-language="shell" data-sample="printf 'sandbox ok\n' > result.txt&#10;printf 'done\n'">
+                <span>Shell 隔离执行</span>
+                <strong>确认后在无网络容器中运行</strong>
+              </button>
               <button class="sample-card" type="button" data-mode="v0" data-sample="老板让我明天不用来了。">
                 <span>劳动用工</span>
                 <strong>“老板让我明天不用来了”</strong>
@@ -90,6 +99,18 @@
         </section>
 
         <form class="composer" id="composer">
+          <div class="sandbox-controls hidden" id="sandbox-controls">
+            <label>语言
+              <select id="sandbox-language">
+                <option value="python">Python</option>
+                <option value="shell">Shell</option>
+              </select>
+            </label>
+            <label class="sandbox-file-picker">输入文件
+              <input id="sandbox-files" type="file" multiple>
+            </label>
+            <span id="sandbox-file-summary">未选择文件</span>
+          </div>
           <label class="sr-only" for="message-input">描述任务或补充回答</label>
           <textarea id="message-input" maxlength="5000" rows="2" placeholder="请描述发生了什么，避免粘贴不必要的敏感信息……"></textarea>
           <div class="composer-footer">

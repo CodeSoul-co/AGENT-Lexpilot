@@ -16,10 +16,12 @@ const elements = {
   schemaModal: $('#schema-modal'), schemaDescription: $('#schema-description'),
   schemaTableBody: $('#schema-table-body'), openSchema: $('#open-schema'), schemaClose: $('#schema-close'),
   artifactsSection: $('#artifacts-section'), artifactList: $('#artifact-list'),
-  logsSection: $('#logs-section'), logFilter: $('#log-filter'), logList: $('#log-list')
+  logsSection: $('#logs-section'), logFilter: $('#log-filter'), logList: $('#log-list'),
+  sandboxControls: $('#sandbox-controls'), sandboxLanguage: $('#sandbox-language'),
+  sandboxFiles: $('#sandbox-files'), sandboxFileSummary: $('#sandbox-file-summary')
 };
 
-const state = { activeSessionId: null, activeStatus: null, config: null, consentGranted: false, busy: false, mode: 'v0', artifacts: [], lastExecutionMs: null };
+const state = { activeSessionId: null, activeStatus: null, config: null, consentGranted: false, busy: false, mode: 'v0', artifacts: [], lastExecutionMs: null, pendingSandboxPlanId: null };
 const taskLabels = { legal_self_check: '法律自检', professional_data_query: '专业数据分析' };
 const factLabels = {
   employmentDuration: '工作时长', writtenContractStatus: '书面合同', issueType: '事项类型',
@@ -95,6 +97,24 @@ function showMode(mode) {
   document.querySelectorAll('.mode-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.mode === mode));
   document.querySelectorAll('.sample-card').forEach((card) => card.classList.toggle('hidden', card.dataset.mode !== mode));
   const v1 = mode === 'v1';
+  const sandbox = mode === 'sandbox';
+  elements.sandboxControls.classList.toggle('hidden', !sandbox);
+  elements.openSchema.classList.toggle('hidden', !v1);
+  elements.input.maxLength = sandbox ? 65536 : 5000;
+  if (sandbox) {
+    elements.welcomeIcon.textContent = '>_';
+    elements.welcomeEyebrow.textContent = '受治理的脚本执行';
+    elements.welcomeTitle.textContent = '先审阅计划，再在隔离环境中执行';
+    elements.welcomeCopy.textContent = '支持 Python 与 Shell。脚本和所选文件只进入一次性工作区；网络关闭，限制 1 核 CPU、512 MiB 内存和 30 秒执行时间。';
+    elements.artifactsSection.classList.add('hidden');
+    elements.logsSection.classList.add('hidden');
+    elements.scopeBanner.textContent = state.config?.sandbox?.available
+      ? 'Docker Sandbox 已接入；确认前不会执行，结束后销毁容器与临时工作区。'
+      : 'Docker Sandbox 当前未配置。请先按 README 设置固定镜像摘要并启用。';
+    elements.input.placeholder = '输入需要隔离执行的 Python 或 Shell 脚本…';
+    elements.pageTitle.textContent = '脚本沙箱';
+    return;
+  }
   elements.welcomeIcon.textContent = v1 ? '∑' : '§';
   elements.welcomeEyebrow.textContent = v1 ? '专业结构化数据查询' : '法律信息辅助';
   elements.welcomeTitle.textContent = v1 ? '从自然语言到可核验的数据结果' : '把事情说清楚，先完成一次法律自检';
@@ -117,6 +137,7 @@ function resetConversation(mode = state.mode) {
   state.activeSessionId = null;
   state.activeStatus = null;
   state.artifacts = [];
+  state.pendingSandboxPlanId = null;
   closeConfirmModal();
   renderArtifacts();
   elements.conversation.replaceChildren();
@@ -384,6 +405,8 @@ function openConfirmModal(result) {
   const writePlan = data?.plan?.readOnly === false;
   elements.confirmExplanation.textContent = data?.plan?.explanation ?? 'Agent 已生成固定演示 Schema 的只读查询计划，确认后才会执行。';
   elements.confirmSql.textContent = data?.plan?.sql ?? '';
+  const toolbar = elements.confirmModal.querySelector('.sql-toolbar');
+  if (toolbar) toolbar.textContent = writePlan ? '写入 SQL 计划 · 等待 Human Review' : '只读 SQL 计划 · 等待确认';
   const title = $('#confirm-title');
   if (title) title.textContent = writePlan ? '确认批准该数据库写操作？' : '确认执行该查询计划？';
   const note = elements.confirmModal.querySelector('.confirm-note');
@@ -398,6 +421,8 @@ function openConfirmModal(result) {
 
 function closeConfirmModal() {
   elements.confirmModal.classList.add('hidden');
+  elements.confirmExplanation.textContent = '';
+  elements.confirmSql.textContent = '';
 }
 
 async function confirmExecution(confirmed) {
@@ -753,6 +778,140 @@ function renderResult(result) {
 
 function canContinue(status) { return ['needs_clarification', 'needs_domain_clarification', 'active'].includes(status); }
 
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function sandboxInputFiles() {
+  const files = [...elements.sandboxFiles.files];
+  const limits = state.config?.sandboxLimits ?? { maxInputFiles: 32, maxInputBytes: 16 * 1024 * 1024 };
+  if (files.length > limits.maxInputFiles) throw new Error(`最多选择 ${limits.maxInputFiles} 个输入文件。`);
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (totalBytes > limits.maxInputBytes) throw new Error('输入文件总大小不能超过 16 MiB。');
+  return Promise.all(files.map(async (file) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const contentSha256 = `sha256:${[...digest].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+    return {
+      path: (file.webkitRelativePath || file.name).replaceAll('\\', '/'),
+      contentBase64: bytesToBase64(bytes),
+      contentSha256
+    };
+  }));
+}
+
+function addSandboxPlanCard(planned) {
+  const plan = planned.plan;
+  const board = node('section', 'v1-board sandbox-board');
+  const heading = node('div', 'v1-heading');
+  const title = node('div');
+  title.append(node('span', 'message-label', '隔离执行计划'), node('h3', '', plan.language === 'python' ? 'Python 脚本' : 'Shell 脚本'));
+  heading.append(title, node('span', 'verified-badge', '等待人工确认'));
+  const details = node('dl', 'sandbox-plan-details');
+  for (const [label, value] of [
+    ['脚本 SHA-256', plan.scriptSha256],
+    ['输入文件', `${plan.inputFileCount} 个 / ${plan.inputBytes} 字节`],
+    ['资源限制', `${plan.policy.cpuCores} 核 / ${plan.policy.memoryMb} MiB / ${plan.policy.timeoutMs / 1000} 秒`],
+    ['网络', plan.policy.network === 'disabled' ? '关闭' : plan.policy.network],
+    ['计划哈希', plan.planHash]
+  ]) {
+    const row = node('div');
+    row.append(node('dt', '', label), node('dd', '', String(value)));
+    details.append(row);
+  }
+  board.append(heading, details, node('div', 'demo-boundary', '确认前不会创建 Provider 或执行脚本。服务端响应不回显脚本正文或文件内容。'));
+  elements.conversation.append(board);
+}
+
+function openSandboxConfirmModal(planned, script) {
+  state.pendingSandboxPlanId = planned.planId;
+  $('#confirm-title').textContent = '确认在隔离环境中执行该脚本？';
+  elements.confirmExplanation.textContent = `计划 ${planned.plan.planHash}；${planned.plan.inputFileCount} 个输入文件。`;
+  elements.confirmSql.textContent = script;
+  const toolbar = elements.confirmModal.querySelector('.sql-toolbar');
+  if (toolbar) toolbar.textContent = '待确认脚本 · 本地预览';
+  const note = elements.confirmModal.querySelector('.confirm-note');
+  if (note) note.textContent = '确认后才会启动一次性 Docker Sandbox；网络关闭，执行完成或失败后均清理容器和临时工作区。';
+  elements.confirmAccept.textContent = '确认隔离执行';
+  elements.confirmAccept.disabled = false;
+  elements.confirmCancel.disabled = false;
+  elements.confirmModal.classList.remove('hidden');
+}
+
+function addSandboxResult(result) {
+  if (result.status === 'rejected') {
+    addMessage('assistant', '已取消本次脚本执行；Provider 未启动。', '安全边界');
+    return;
+  }
+  const board = node('section', 'v1-board sandbox-board');
+  const heading = node('div', 'v1-heading');
+  const title = node('div');
+  title.append(node('span', 'message-label', '沙箱执行结果'), node('h3', '', result.status === 'completed' ? '执行完成' : '执行失败'));
+  heading.append(title, node('span', 'verified-badge', result.status));
+  const output = result.result ?? {};
+  const artifacts = [output.stdoutArtifactRef, output.stderrArtifactRef, ...(output.generatedArtifactRefs ?? [])].filter(Boolean);
+  const summary = node('div', 'demo-boundary', `退出码：${output.exitCode ?? '—'}；产物：${artifacts.length} 个；治理事件：${result.governanceReceipt?.eventCount ?? 0} 个。`);
+  board.append(heading, summary);
+  for (const ref of artifacts) board.append(node('p', 'artifact-reference', ref));
+  elements.conversation.append(board);
+}
+
+async function submitSandboxScript(script) {
+  if (!state.consentGranted) { elements.privacyModal.classList.remove('hidden'); return; }
+  if (!state.config?.sandbox?.available) {
+    addMessage('assistant', 'Docker Sandbox 尚未配置，当前不会执行脚本。请先按 README 启用并固定镜像摘要。', '能力未启用');
+    return;
+  }
+  elements.welcome.classList.add('hidden');
+  addMessage('user', script, elements.sandboxLanguage.value === 'python' ? 'Python 脚本' : 'Shell 脚本');
+  addLoading();
+  setBusy(true);
+  try {
+    const inputFiles = await sandboxInputFiles();
+    const planned = await api('/api/v1/sandbox/plans', {
+      method: 'POST',
+      body: JSON.stringify({ language: elements.sandboxLanguage.value, script, inputFiles })
+    });
+    elements.conversation.querySelector('[data-loading="true"]')?.remove();
+    addSandboxPlanCard(planned);
+    openSandboxConfirmModal(planned, script);
+  } catch (error) {
+    elements.conversation.querySelector('[data-loading="true"]')?.remove();
+    addMessage('assistant', error.message, '计划创建失败');
+  } finally {
+    setBusy(false);
+    scrollBottom();
+  }
+}
+
+async function confirmSandboxExecution(confirmed) {
+  if (!state.pendingSandboxPlanId || state.busy) return;
+  const planId = state.pendingSandboxPlanId;
+  elements.confirmAccept.disabled = true;
+  elements.confirmCancel.disabled = true;
+  setBusy(true);
+  try {
+    const result = await api(`/api/v1/sandbox/plans/${planId}/confirmation`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmed })
+    });
+    closeConfirmModal();
+    state.pendingSandboxPlanId = null;
+    addSandboxResult(result);
+  } catch (error) {
+    elements.confirmAccept.disabled = false;
+    elements.confirmCancel.disabled = false;
+    addMessage('assistant', error.message, '执行失败');
+  } finally {
+    setBusy(false);
+    scrollBottom();
+  }
+}
+
 async function submitText(text) {
   if (!state.consentGranted) { elements.privacyModal.classList.remove('hidden'); return; }
   const continuing = state.activeSessionId && canContinue(state.activeStatus);
@@ -791,7 +950,7 @@ async function openHistory(sessionId) {
   } catch (error) { toast(error.message); } finally { setBusy(false); }
 }
 
-elements.composer.addEventListener('submit', async (event) => { event.preventDefault(); const text = elements.input.value.trim(); if (!text || state.busy) return; elements.input.value = ''; elements.characterCount.textContent = '0'; await submitText(text); });
+elements.composer.addEventListener('submit', async (event) => { event.preventDefault(); const text = elements.input.value.trim(); if (!text || state.busy) return; elements.input.value = ''; elements.characterCount.textContent = '0'; if (state.mode === 'sandbox') await submitSandboxScript(text); else await submitText(text); });
 elements.input.addEventListener('input', () => { elements.characterCount.textContent = String(elements.input.value.length); });
 elements.input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
 elements.consent.addEventListener('change', () => { elements.privacyAccept.disabled = !elements.consent.checked || !state.config; });
@@ -800,9 +959,14 @@ elements.newSession.addEventListener('click', () => resetConversation(state.mode
 elements.refreshHistory.addEventListener('click', () => loadHistory().catch((error) => toast(error.message)));
 elements.deleteSession.addEventListener('click', async () => { if (!state.activeSessionId || !window.confirm('确认物理删除当前本地会话？此操作无法撤销。')) return; try { await api(`/api/sessions/${state.activeSessionId}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true }) }); toast('会话已删除'); resetConversation(state.mode); await loadHistory(); } catch (error) { toast(error.message); } });
 document.querySelectorAll('.mode-tab').forEach((tab) => tab.addEventListener('click', () => resetConversation(tab.dataset.mode)));
-document.querySelectorAll('[data-sample]').forEach((button) => button.addEventListener('click', () => { showMode(button.dataset.mode); elements.input.value = button.dataset.sample; elements.characterCount.textContent = String(elements.input.value.length); elements.input.focus(); }));
-elements.confirmAccept.addEventListener('click', () => confirmExecution(true));
-elements.confirmCancel.addEventListener('click', () => confirmExecution(false));
+document.querySelectorAll('[data-sample]').forEach((button) => button.addEventListener('click', () => { showMode(button.dataset.mode); if (button.dataset.language) elements.sandboxLanguage.value = button.dataset.language; elements.input.value = button.dataset.sample; elements.characterCount.textContent = String(elements.input.value.length); elements.input.focus(); }));
+elements.confirmAccept.addEventListener('click', () => state.pendingSandboxPlanId ? confirmSandboxExecution(true) : confirmExecution(true));
+elements.confirmCancel.addEventListener('click', () => state.pendingSandboxPlanId ? confirmSandboxExecution(false) : confirmExecution(false));
+elements.sandboxFiles.addEventListener('change', () => {
+  const files = [...elements.sandboxFiles.files];
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  elements.sandboxFileSummary.textContent = files.length ? `${files.length} 个文件 / ${total} 字节` : '未选择文件';
+});
 elements.openSchema.addEventListener('click', openSchemaModal);
 elements.schemaClose.addEventListener('click', () => elements.schemaModal.classList.add('hidden'));
 elements.logFilter.addEventListener('change', () => loadLogs().catch((error) => toast(error.message)));
@@ -821,5 +985,6 @@ async function initialize() {
   } catch (error) { elements.runtime.classList.add('offline'); elements.runtimeText.textContent = '本地服务不可用'; elements.policyVersion.textContent = error.message; }
 }
 
+document.querySelector('.mode-switch')?.append(document.querySelector('.sandbox-mode-tab'));
 showMode('v0');
 initialize();

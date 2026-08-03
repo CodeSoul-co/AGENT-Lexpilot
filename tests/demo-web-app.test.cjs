@@ -9,7 +9,11 @@ const test = require('node:test');
 const { PRIVACY_POLICY_VERSION } = require('../src/v0/contracts.cjs');
 const { LegalSelfCheckConversationService } = require('../src/v0/conversation-service.cjs');
 const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
-const { MAX_JSON_BODY_BYTES, createDemoWebServer } = require('../src/web/demo-web-app.cjs');
+const {
+  MAX_JSON_BODY_BYTES,
+  MAX_SANDBOX_JSON_BODY_BYTES,
+  createDemoWebServer
+} = require('../src/web/demo-web-app.cjs');
 
 function createService() {
   let nextId = 1;
@@ -31,6 +35,51 @@ async function withServer(run) {
   const { port } = server.address();
   try {
     await run(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function withSandboxServer(run) {
+  const calls = [];
+  const sandboxCoordinator = {
+    describe() {
+      return { available: true, runtime: 'mock-sandbox', policy: { network: 'disabled' } };
+    },
+    async plan(input) {
+      calls.push(['plan', input]);
+      return {
+        status: 'awaiting_confirmation',
+        planId: 'sandbox-plan-1',
+        executionAttempted: false,
+        plan: {
+          language: input.language,
+          scriptSha256: 'sha256:safe-only',
+          inputFiles: [],
+          requiresConfirmation: true
+        }
+      };
+    },
+    async confirm(planId, input) {
+      calls.push(['confirm', planId, input]);
+      return input.confirmed
+        ? {
+            status: 'completed',
+            executionAttempted: true,
+            result: { exitCode: 0, generatedArtifactRefs: ['artifact:mock:generated'] },
+            governanceReceipt: { eventCount: 3, eventTypes: ['human.review.approved'] }
+          }
+        : { status: 'rejected', executionAttempted: false };
+    }
+  };
+  const server = createDemoWebServer({ service: createService(), sandboxCoordinator });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  try {
+    await run(`http://127.0.0.1:${port}`, calls);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -92,6 +141,86 @@ test('exposes a localhost health contract with defensive browser headers', async
   });
 });
 
+test('exposes Sandbox availability and runs the plan-confirm flow without echoing script content', async () => {
+  await withSandboxServer(async (baseUrl, calls) => {
+    const health = await jsonRequest(`${baseUrl}/api/health`);
+    const config = await jsonRequest(`${baseUrl}/api/config`);
+    assert.equal(health.body.sandbox.available, true);
+    assert.equal(config.body.sandbox.available, true);
+    assert.equal(config.body.sandboxLimits.maxInputFiles, 32);
+
+    const privateScript = 'print("private-script-value")';
+    const planned = await jsonRequest(`${baseUrl}/api/v1/sandbox/plans`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language: 'python', script: privateScript, inputFiles: [] })
+    });
+    assert.equal(planned.response.status, 200);
+    assert.equal(planned.body.status, 'awaiting_confirmation');
+    assert.equal(planned.body.executionAttempted, false);
+    assert.equal(JSON.stringify(planned.body).includes(privateScript), false);
+    assert.equal(calls[0][1].script, privateScript);
+
+    const confirmed = await jsonRequest(
+      `${baseUrl}/api/v1/sandbox/plans/${planned.body.planId}/confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(confirmed.response.status, 200);
+    assert.equal(confirmed.body.executionAttempted, true);
+    assert.deepEqual(confirmed.body.result.generatedArtifactRefs, ['artifact:mock:generated']);
+    assert.deepEqual(calls.map((call) => call[0]), ['plan', 'confirm']);
+  });
+});
+
+test('Sandbox Web routes reject undeclared fields and remain unavailable by default', async () => {
+  await withServer(async (baseUrl) => {
+    const config = await jsonRequest(`${baseUrl}/api/config`);
+    assert.equal(config.body.sandbox.available, false);
+    const unavailable = await jsonRequest(`${baseUrl}/api/v1/sandbox/plans`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language: 'python', script: 'print(1)', inputFiles: [] })
+    });
+    assert.equal(unavailable.response.status, 501);
+    assert.equal(unavailable.body.error.code, 'SANDBOX_UNAVAILABLE');
+  });
+
+  await withSandboxServer(async (baseUrl) => {
+    const invalidPlan = await jsonRequest(`${baseUrl}/api/v1/sandbox/plans`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language: 'python', script: 'print(1)', inputFiles: [], debug: true })
+    });
+    assert.equal(invalidPlan.response.status, 400);
+    const invalidConfirmation = await jsonRequest(
+      `${baseUrl}/api/v1/sandbox/plans/sandbox-plan-1/confirmation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: 'yes' })
+      }
+    );
+    assert.equal(invalidConfirmation.response.status, 400);
+  });
+});
+
+test('Sandbox request body has a dedicated bounded upload limit', async () => {
+  assert.ok(MAX_SANDBOX_JSON_BODY_BYTES > MAX_JSON_BODY_BYTES);
+  await withSandboxServer(async (baseUrl) => {
+    const oversized = await jsonRequest(`${baseUrl}/api/v1/sandbox/plans`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'x'.repeat(MAX_SANDBOX_JSON_BODY_BYTES + 1) })
+    });
+    assert.equal(oversized.response.status, 413);
+    assert.equal(oversized.body.error.code, 'REQUEST_BODY_TOO_LARGE');
+  });
+});
+
 test('serves the local web shell and its fixed static assets', async () => {
   await withServer(async (baseUrl) => {
     const page = await fetch(`${baseUrl}/`);
@@ -105,6 +234,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, />法律自检</);
     assert.match(pageText, />专业数据分析</);
     assert.doesNotMatch(pageText, />\s*V[01]\b/);
+    assert.match(pageText, /data-mode="sandbox"/);
+    assert.match(pageText, /id="sandbox-language"/);
+    assert.match(pageText, /id="sandbox-files"/);
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /text\/javascript/);
     const scriptText = await script.text();
@@ -112,6 +244,8 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /sourceCaseCount/);
     assert.match(scriptText, /matchedCaseCount/);
     assert.match(scriptText, /mode === 'demo'/);
+    assert.match(scriptText, /submitSandboxScript/);
+    assert.match(scriptText, /confirmSandboxExecution/);
     assert.match(scriptText, /Provider 未识别/);
     assert.equal(styles.status, 200);
     assert.match(styles.headers.get('content-type'), /text\/css/);

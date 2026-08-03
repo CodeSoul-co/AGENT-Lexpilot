@@ -7,6 +7,10 @@ const { createExecutionArtifactRepository } = require('../v1/execution-artifact-
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
 const { createConfiguredSQLiteDataSource } = require('../v1/data-source-config.cjs');
 const { createConfiguredNetworkDataSource } = require('../v1/network-data-source-config.cjs');
+const { createSandboxArtifactRepository } = require('../v1/sandbox-artifact-repository.cjs');
+const { createDockerSandboxProviderFactory } = require('../v1/docker-sandbox-provider-factory.cjs');
+const { createSandboxExecutionRuntime } = require('../v1/sandbox-execution-runtime.cjs');
+const { createSandboxWebCoordinator } = require('../v1/sandbox-web-coordinator.cjs');
 const { createV1SQLQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
 const {
@@ -18,7 +22,10 @@ const ENVIRONMENT_KEYS = Object.freeze({
   encryptionKey: 'LEGAL_SESSION_KEY_BASE64',
   ownerId: 'LEGAL_SESSION_OWNER_ID',
   dataDirectory: 'LEGAL_SESSION_DATA_DIR',
-  v1Runtime: 'LEGAL_V1_RUNTIME'
+  v1Runtime: 'LEGAL_V1_RUNTIME',
+  sandboxEnabled: 'LEGAL_V1_SANDBOX_ENABLED',
+  sandboxImage: 'LEGAL_V1_SANDBOX_IMAGE',
+  sandboxImageDigest: 'LEGAL_V1_SANDBOX_IMAGE_DIGEST'
 });
 
 function requiredEnvironmentValue(environment, name) {
@@ -122,6 +129,44 @@ async function createLocalLegalAgentApplication(options = {}) {
   const artifactRepository =
     options.artifactRepository ??
     createExecutionArtifactRepository({ rootPath: artifactDirectory, projectRoot });
+  const sandboxEnabled =
+    options.sandboxCoordinator !== undefined ||
+    options.sandboxRuntime !== undefined ||
+    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
+  let sandboxArtifactRepository;
+  let sandboxCoordinator = options.sandboxCoordinator;
+  if (sandboxEnabled && !sandboxCoordinator) {
+    let sandboxRuntime = options.sandboxRuntime;
+    if (!sandboxRuntime) {
+      const imageReference = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.sandboxImage);
+      const imageDigest = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.sandboxImageDigest);
+      const sandboxArtifactDirectory = path.resolve(
+        projectRoot,
+        environment.LEGAL_V1_SANDBOX_ARTIFACT_ROOT?.trim() || 'data/sandbox-artifacts'
+      );
+      sandboxArtifactRepository =
+        options.sandboxArtifactRepository ??
+        createSandboxArtifactRepository({ rootPath: sandboxArtifactDirectory, projectRoot });
+      const providerFactory =
+        options.sandboxProviderFactory ??
+        createDockerSandboxProviderFactory({
+          projectRoot,
+          artifactRepository: sandboxArtifactRepository,
+          dockerPath: environment.LEGAL_V1_DOCKER_PATH?.trim() || undefined
+        });
+      sandboxRuntime = await createSandboxExecutionRuntime({
+        workspaceRoot: path.resolve(
+          projectRoot,
+          environment.LEGAL_V1_SANDBOX_WORKSPACE_ROOT?.trim() || 'data/sandbox-workspaces'
+        ),
+        imageReference,
+        imageDigest,
+        providerFactory,
+        artifactRepository: sandboxArtifactRepository
+      });
+    }
+    sandboxCoordinator = createSandboxWebCoordinator({ sandboxRuntime });
+  }
   const local = createLocalLegalAgent({
     ...options,
     environment,
@@ -153,9 +198,12 @@ async function createLocalLegalAgentApplication(options = {}) {
     service,
     agentDescriptor: service.describe(),
     v1Descriptor: v1Runtime.describe(),
+    sandboxCoordinator: sandboxCoordinator ?? null,
+    sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
     executionLogFilePath,
     artifactDirectory,
     async close() {
+      await sandboxArtifactRepository?.close?.();
       await artifactRepository.close?.();
     }
   };
