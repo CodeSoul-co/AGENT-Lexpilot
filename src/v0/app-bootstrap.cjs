@@ -3,6 +3,7 @@ const { AgentBackedConversationService } = require('../agent/agent-backed-conver
 const { createAgentInferenceProvider } = require('../agent/inference-provider.cjs');
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
+const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
 const { createConfiguredSQLiteDataSource } = require('../v1/data-source-config.cjs');
 const { createConfiguredNetworkDataSource } = require('../v1/network-data-source-config.cjs');
@@ -69,7 +70,8 @@ function createLocalLegalAgent(options = {}) {
     autoCleanup: options.autoCleanup,
     retentionDays: options.retentionDays,
     v1Runtime: options.v1Runtime,
-    executionLog: options.executionLog
+    executionLog: options.executionLog,
+    artifactRepository: options.artifactRepository
   });
   return { service, dataDirectory };
 }
@@ -108,12 +110,20 @@ async function createLocalLegalAgentApplication(options = {}) {
     options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
   );
   const executionLog = createDemoExecutionLog({ filePath: executionLogFilePath });
+  const artifactDirectory = path.resolve(
+    projectRoot,
+    environment.LEGAL_V1_ARTIFACT_DIR?.trim() || 'data/web-demo/v1-artifacts'
+  );
+  const artifactRepository =
+    options.artifactRepository ??
+    createExecutionArtifactRepository({ rootPath: artifactDirectory, projectRoot });
   const local = createLocalLegalAgent({
     ...options,
     environment,
     projectRoot,
     v1Runtime,
-    executionLog
+    executionLog,
+    artifactRepository
   });
   const inference = createAgentInferenceProvider({ environment, projectRoot });
   const agent = await createLegalComplianceAgent({
@@ -138,7 +148,11 @@ async function createLocalLegalAgentApplication(options = {}) {
     service,
     agentDescriptor: service.describe(),
     v1Descriptor: v1Runtime.describe(),
-    executionLogFilePath
+    executionLogFilePath,
+    artifactDirectory,
+    async close() {
+      await artifactRepository.close?.();
+    }
   };
 }
 

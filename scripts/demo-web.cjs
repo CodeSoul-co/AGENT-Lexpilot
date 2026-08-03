@@ -18,8 +18,15 @@ function parsePort(value) {
 
 async function main() {
   const port = parsePort(process.env.LEGAL_DEMO_PORT);
-  const { service, dataDirectory, agentDescriptor, v1Descriptor, executionLogFilePath } =
-    await createLocalLegalAgentApplication();
+  const {
+    service,
+    dataDirectory,
+    agentDescriptor,
+    v1Descriptor,
+    executionLogFilePath,
+    artifactDirectory,
+    close
+  } = await createLocalLegalAgentApplication();
   const server = createDemoWebServer({ service, agentDescriptor, v1Descriptor });
   server.on('error', (error) => {
     process.stderr.write(`本地网页 Demo 启动失败：${error.message}\n`);
@@ -38,8 +45,14 @@ async function main() {
       ].join('\n') + '\n'
     );
   });
-  process.once('SIGINT', () => server.close(() => process.exit(0)));
-  process.once('SIGTERM', () => server.close(() => process.exit(0)));
+  process.stdout.write(`Artifact Store: ${artifactDirectory}\n`);
+  const shutdown = () => {
+    server.close(() => {
+      Promise.resolve(close()).finally(() => process.exit(0));
+    });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 if (require.main === module) {

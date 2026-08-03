@@ -50,6 +50,18 @@ function safeEvent(type, data) {
   return { type, data };
 }
 
+function isGovernedArtifactReceipt(receipt, expectedContentSha256) {
+  return (
+    receipt !== null &&
+    typeof receipt === 'object' &&
+    typeof receipt.storeId === 'string' &&
+    receipt.storeId.length > 0 &&
+    typeof receipt.objectKey === 'string' &&
+    /^analysis\/[0-9a-f]{64}\.md$/.test(receipt.objectKey) &&
+    receipt.contentSha256 === expectedContentSha256
+  );
+}
+
 function publicPrivacyAuthorization(session) {
   const authorization = session?.privacyAuthorization;
   const valid =
@@ -196,6 +208,7 @@ class LegalSelfCheckConversationService {
       throw new TypeError('v1Runtime must expose plan(input) and execute(input).');
     }
     this.executionLog = options.executionLog ?? null;
+    this.artifactRepository = options.artifactRepository ?? null;
     if (
       this.executionLog !== null &&
       (typeof this.executionLog.append !== 'function' ||
@@ -208,6 +221,12 @@ class LegalSelfCheckConversationService {
     }
     if (this.v1Runtime !== null && this.executionLog === null) {
       throw new TypeError('V1 runtime requires an append-only executionLog.');
+    }
+    if (
+      this.artifactRepository !== null &&
+      typeof this.artifactRepository.storeAnalysisArtifact !== 'function'
+    ) {
+      throw new TypeError('artifactRepository must expose storeAnalysisArtifact(input).');
     }
     this.lastCleanup = this.autoCleanup ? this.cleanupInactiveSessions() : null;
     this.lastCleanupAt = this.autoCleanup ? this.clock() : null;
@@ -695,8 +714,79 @@ class LegalSelfCheckConversationService {
   }
 
   finishV1Execution(session, executed, confirmedAt, startedAt) {
+    if (executed.status === 'completed' && this.artifactRepository !== null) {
+      const persistenceFailure = () =>
+        this.finalizeV1Execution(
+          session,
+          {
+            ...executed,
+            status: 'failed',
+            reason: '查询已执行，但分析产物持久化失败，结果已停止发布。',
+            result: null,
+            chart: null,
+            artifact: null,
+            trace: [
+              ...(executed.trace ?? []),
+              safeEvent('v1.artifact.persistence.failed', { resultWithheld: true })
+            ]
+          },
+          confirmedAt,
+          startedAt
+        );
+      if (!executed.artifact) {
+        return persistenceFailure();
+      }
+      session.status = 'executing';
+      session.v1.status = 'executing';
+      this.store.save(session, this.ownerId);
+      return Promise.resolve(
+        this.artifactRepository.storeAnalysisArtifact({
+          sessionId: session.id,
+          runId: session.v1.runId,
+          artifact: executed.artifact
+        })
+      )
+        .then(
+          (storageReceipt) =>
+            isGovernedArtifactReceipt(
+              storageReceipt,
+              executed.artifact.contentSha256
+            )
+              ? { persisted: true, storageReceipt }
+              : { persisted: false },
+          () => ({ persisted: false })
+        )
+        .then(({ persisted, storageReceipt }) => {
+          if (!persisted) return persistenceFailure();
+          return this.finalizeV1Execution(
+            session,
+            {
+              ...executed,
+              artifact: { ...executed.artifact, storage: storageReceipt },
+              trace: [
+                ...(executed.trace ?? []),
+                safeEvent('v1.artifact.persisted', {
+                  storeId: storageReceipt.storeId,
+                  contentSha256: storageReceipt.contentSha256
+                })
+              ]
+            },
+            confirmedAt,
+            startedAt
+          );
+        });
+    }
+    return this.finalizeV1Execution(session, executed, confirmedAt, startedAt);
+  }
+
+  finalizeV1Execution(session, executed, confirmedAt, startedAt) {
     const durationMs = Date.now() - startedAt;
-    session.status = executed.status === 'completed' ? 'completed' : 'rejected';
+    session.status =
+      executed.status === 'completed'
+        ? 'completed'
+        : executed.status === 'failed'
+          ? 'failed'
+          : 'rejected';
     session.v1.status = executed.status;
     session.v1.reason = executed.reason;
     session.v1.result = executed.result ?? null;
@@ -720,6 +810,13 @@ class LegalSelfCheckConversationService {
         rowCount: executed.result?.rowCount ?? 0,
         artifactId: executed.artifact?.artifactId,
         artifactSha256: executed.artifact?.contentSha256,
+        artifactStoreId: executed.artifact?.storage?.storeId,
+        artifactObjectKey: executed.artifact?.storage?.objectKey,
+        executionProvider: executed.providerReceipt?.provider,
+        providerDurationMs: executed.providerReceipt?.durationMs,
+        providerOutputBytes: executed.providerReceipt?.outputBytes,
+        providerReadOnly: executed.providerReceipt?.readOnly,
+        sourceRowCount: executed.providerReceipt?.sourceRowCount,
         error: executed.reason
       });
       session.v1.executionLogId = executionLog.entryId;

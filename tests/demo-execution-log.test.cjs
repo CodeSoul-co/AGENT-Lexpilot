@@ -62,6 +62,31 @@ test('appends jsonl entries and lists them newest first', () => {
   });
 });
 
+test('records only governed provider and Artifact Store receipts', () => {
+  withTemporaryLog((filePath) => {
+    const log = createDemoExecutionLog({ filePath });
+    const objectKey = `analysis/${'a'.repeat(64)}.md`;
+    const stored = log.append(
+      entry({
+        artifactStoreId: 'lexpilot.execution-artifacts.local',
+        artifactObjectKey: objectKey,
+        executionProvider: 'hypha-adapters-local.loadSqlite',
+        providerDurationMs: 12,
+        providerOutputBytes: 256,
+        providerReadOnly: true,
+        sourceRowCount: 5
+      })
+    );
+    assert.equal(stored.artifactObjectKey, objectKey);
+    assert.equal(stored.providerReadOnly, true);
+    assert.throws(
+      () => log.append(entry({ artifactObjectKey: '../private/session.md' })),
+      /governed analysis object key/
+    );
+    assert.throws(() => log.append(entry({ providerReadOnly: false })), /must be true/);
+  });
+});
+
 test('drops undeclared entry fields so user text never reaches the log', () => {
   withTemporaryLog((filePath) => {
     const log = createDemoExecutionLog({ filePath });

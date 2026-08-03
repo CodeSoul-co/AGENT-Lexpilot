@@ -306,3 +306,47 @@ test('withholds an executed result when the audit log cannot be appended', () =>
   assert.equal(confirmed.v1.artifact, null);
   assert.equal(confirmed.trace.at(-1).type, 'v1.execution-log.append.failed');
 });
+
+test('withholds an executed result when Artifact Store persistence fails', async () => {
+  const executionLog = {
+    entries: [],
+    append(entry) {
+      const stored = { ...entry, entryId: `log-${this.entries.length + 1}` };
+      this.entries.push(stored);
+      return stored;
+    },
+    list() {
+      return [...this.entries].reverse();
+    },
+    verifyIntegrity() {
+      return { status: 'verified', recordCount: this.entries.length };
+    }
+  };
+  const service = new LegalSelfCheckConversationService({
+    store: new InMemoryLegalSessionStore(),
+    ownerId: 'v1-artifact-failure-test',
+    idFactory: () => 'v1-session-artifact-failure',
+    clock: () => '2026-08-03T08:00:00.000Z',
+    autoCleanup: false,
+    v1Runtime: createV1DemoQueryRuntime(),
+    executionLog,
+    artifactRepository: {
+      async storeAnalysisArtifact() {
+        throw new Error('private filesystem unavailable');
+      }
+    }
+  });
+
+  const started = service.start(startRequest(PROFESSIONAL_QUERY_TEXT));
+  const confirmed = await service.confirmV1Execution(started.sessionId, { confirmed: true });
+  assert.equal(confirmed.status, 'failed');
+  assert.equal(confirmed.v1.status, 'failed');
+  assert.equal(confirmed.v1.result, null);
+  assert.equal(confirmed.v1.chart, null);
+  assert.equal(confirmed.v1.artifact, null);
+  assert.equal(
+    confirmed.trace.some((event) => event.type === 'v1.artifact.persistence.failed'),
+    true
+  );
+  assert.equal(executionLog.entries.at(-1).status, 'failed');
+});

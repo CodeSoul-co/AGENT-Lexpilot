@@ -15,6 +15,13 @@ const ENTRY_KEYS = Object.freeze([
   'schemaFingerprint',
   'artifactId',
   'artifactSha256',
+  'artifactStoreId',
+  'artifactObjectKey',
+  'executionProvider',
+  'providerDurationMs',
+  'providerOutputBytes',
+  'providerReadOnly',
+  'sourceRowCount',
   'status',
   'durationMs',
   'rowCount',
@@ -51,6 +58,40 @@ function hashRecord(record) {
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== 'string' || value.length === 0) {
     throw new TypeError(`${fieldName} must be a non-empty string.`);
+  }
+}
+
+function validateReceiptFields(record) {
+  for (const key of ['artifactStoreId', 'artifactObjectKey']) {
+    if (record[key] !== undefined) {
+      requireNonEmptyString(record[key], `entry.${key}`);
+      if (record[key].length > 256) {
+        throw new TypeError(`entry.${key} must not exceed 256 characters.`);
+      }
+    }
+  }
+  if (
+    record.artifactObjectKey !== undefined &&
+    !/^analysis\/[0-9a-f]{64}\.md$/.test(record.artifactObjectKey)
+  ) {
+    throw new TypeError('entry.artifactObjectKey must be a governed analysis object key.');
+  }
+  if (record.executionProvider !== undefined) {
+    requireNonEmptyString(record.executionProvider, 'entry.executionProvider');
+    if (record.executionProvider.length > 128) {
+      throw new TypeError('entry.executionProvider must not exceed 128 characters.');
+    }
+  }
+  for (const key of ['providerDurationMs', 'providerOutputBytes', 'sourceRowCount']) {
+    if (
+      record[key] !== undefined &&
+      (!Number.isSafeInteger(record[key]) || record[key] < 0)
+    ) {
+      throw new TypeError(`entry.${key} must be a non-negative safe integer.`);
+    }
+  }
+  if (record.providerReadOnly !== undefined && record.providerReadOnly !== true) {
+    throw new TypeError('entry.providerReadOnly must be true when present.');
   }
 }
 
@@ -149,6 +190,7 @@ function createDemoExecutionLog(options = {}) {
       requireNonEmptyString(record.sessionId, 'entry.sessionId');
       requireNonEmptyString(record.operationType, 'entry.operationType');
       requireNonEmptyString(record.status, 'entry.status');
+      validateReceiptFields(record);
       record.entryHash = hashRecord(record);
 
       fs.mkdirSync(path.dirname(filePath), { recursive: true });

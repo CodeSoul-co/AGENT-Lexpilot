@@ -10,6 +10,7 @@ const { createLocalLegalAgentApplication } = require('../src/v0/app-bootstrap.cj
 const { LegalSelfCheckConversationService } = require('../src/v0/conversation-service.cjs');
 const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
 const { createDemoExecutionLog } = require('../src/v1/demo-execution-log.cjs');
+const { createExecutionArtifactRepository } = require('../src/v1/execution-artifact-repository.cjs');
 const { createSQLiteDataSource } = require('../src/v1/sqlite-data-source.cjs');
 const { createV1SQLiteQueryRuntime } = require('../src/v1/sqlite-query-runtime.cjs');
 
@@ -157,6 +158,10 @@ test('stops confirmed execution when the live SQLite Schema drifts', async () =>
 
 test('integrates async SQLite execution with confirmation, session state, and audit log', async () => {
   const fixture = createFixture();
+  const artifactRepository = createExecutionArtifactRepository({
+    rootPath: path.join(fixture.directory, 'artifacts'),
+    projectRoot
+  });
   try {
     const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
     const executionLog = createDemoExecutionLog({
@@ -169,7 +174,8 @@ test('integrates async SQLite execution with confirmation, session state, and au
       clock: () => '2026-08-03T08:00:00.000Z',
       autoCleanup: false,
       v1Runtime: runtime,
-      executionLog
+      executionLog,
+      artifactRepository
     });
     const started = service.start({
       userText: PROFESSIONAL_QUERY_TEXT,
@@ -187,21 +193,38 @@ test('integrates async SQLite execution with confirmation, session state, and au
     const completed = await pending;
     assert.equal(completed.status, 'completed');
     assert.equal(completed.v1.result.sourceRowCount, 5);
+    assert.equal(completed.v1.artifact.storage.storeId, 'lexpilot.execution-artifacts.local');
+    assert.match(completed.v1.artifact.storage.objectKey, /^analysis\/[0-9a-f]{64}\.md$/);
+    const persisted = await artifactRepository.readAnalysisArtifact(
+      completed.v1.artifact.storage
+    );
+    assert.equal(persisted.content, completed.v1.artifact.content);
+    assert.equal(persisted.contentSha256, completed.v1.artifact.contentSha256);
     assert.equal(service.getSession(started.sessionId).status, 'completed');
     const logs = service.listV1ExecutionLogs();
     assert.equal(logs.length, 2);
-    assert.equal(logs.find((entry) => entry.operationType === 'execute').status, 'completed');
+    const executionEntry = logs.find((entry) => entry.operationType === 'execute');
+    assert.equal(executionEntry.status, 'completed');
+    assert.equal(executionEntry.executionProvider, 'hypha-adapters-local.loadSqlite');
+    assert.equal(executionEntry.providerReadOnly, true);
+    assert.equal(executionEntry.sourceRowCount, 5);
+    assert.equal(Number.isSafeInteger(executionEntry.providerDurationMs), true);
+    assert.equal(Number.isSafeInteger(executionEntry.providerOutputBytes), true);
+    assert.equal(executionEntry.artifactStoreId, 'lexpilot.execution-artifacts.local');
+    assert.equal(executionEntry.artifactObjectKey, completed.v1.artifact.storage.objectKey);
     assert.equal(service.getV1ExecutionLogIntegrity().status, 'verified');
   } finally {
+    await artifactRepository.close();
     fixture.cleanup();
   }
 });
 
 test('boots the local application in explicit SQLite mode while demo remains the default', async () => {
   const fixture = createFixture();
+  let application;
   try {
     const dataDirectory = path.join(fixture.directory, 'application-data');
-    const application = await createLocalLegalAgentApplication({
+    application = await createLocalLegalAgentApplication({
       projectRoot,
       environment: {
         LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
@@ -209,7 +232,8 @@ test('boots the local application in explicit SQLite mode while demo remains the
         LEGAL_SESSION_DATA_DIR: dataDirectory,
         LEGAL_AGENT_PROVIDER: 'demo',
         LEGAL_V1_RUNTIME: 'sqlite',
-        LEGAL_V1_SQLITE_PATH: fixture.databasePath
+        LEGAL_V1_SQLITE_PATH: fixture.databasePath,
+        LEGAL_V1_ARTIFACT_DIR: path.join(fixture.directory, 'application-artifacts')
       }
     });
     assert.equal(application.v1Descriptor.runtime, 'sqlite-readonly');
@@ -226,7 +250,10 @@ test('boots the local application in explicit SQLite mode while demo remains the
     });
     assert.equal(completed.status, 'completed');
     assert.equal(completed.v1.result.sourceRowCount, 5);
+    assert.equal(completed.v1.artifact.storage.storeId, 'lexpilot.execution-artifacts.local');
+    assert.equal(application.artifactDirectory.startsWith(fixture.directory), true);
   } finally {
+    await application?.close();
     fixture.cleanup();
   }
 });

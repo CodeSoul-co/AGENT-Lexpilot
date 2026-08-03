@@ -34,7 +34,7 @@
 - 查询计划（参数化 SQL + 注释）先展示，独立只读策略门校验单条 `SELECT`、数据表、字段和绑定参数，用户确认后才执行；写操作与多语句查询一律拒绝；
 - 计划同时记录 Schema 指纹与计划哈希；确认时重新校验，计划或 Schema 发生漂移即停止执行并要求重新确认；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
-- 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；执行日志关联计划、Schema 与产物哈希；
+- 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
 - 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
 
 ## 运行
@@ -88,6 +88,8 @@ npm run audit:sql:mysql
 
 真实验收账号必须仅拥有目标 `labor_cases` 表四个白名单字段所需的 `SELECT` 权限。驱动错误会转换为不含主机、用户名、密码和查询参数值的安全错误。
 
+分析产物默认存入 Git 忽略的 `data/web-demo/v1-artifacts`，也可通过 `LEGAL_V1_ARTIFACT_DIR` 指向其他私有目录。存储对象键由会话、运行和产物标识的 SHA-256 派生，不包含原始标识；网页返回和哈希链日志均不暴露磁盘根路径。
+
 ## 验证
 
 ```bash
@@ -114,7 +116,7 @@ configs/domain-packs/  Legal DomainPack（FSM 工作流契约）
 resources/law-corpus/  经官方来源核验的本地法规语料
 scripts/               启动、密钥生成、语料审计与基线验证脚本
 src/agent/             Hypha ReAct Agent 业务适配层（推理 Provider、输出边界校验）
-src/                   法律自检、专业数据分析、SQLite 只读数据源、隐私网关与本地网页服务
+src/                   法律自检、专业数据分析、只读数据源、Artifact Store、隐私网关与本地网页服务
 src/web/               本地网页 Demo 服务（仅 127.0.0.1）
 tests/                 Package Test
 web/                   网页前端（原生 HTML/CSS/JS，零构建）
