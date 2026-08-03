@@ -77,10 +77,16 @@ function buildArtifact(runId, dataSource, sourceRowCount, rows) {
   });
 }
 
-function reject(input, code, reason, traceType = 'v1.sqlite.query.rejected') {
+function reject(
+  input,
+  code,
+  reason,
+  traceType = 'v1.sql.query.rejected',
+  runtime = 'sql-readonly'
+) {
   return {
     status: 'rejected',
-    runtime: 'sqlite-readonly',
+    runtime,
     runId: input.runId,
     executionAttempted: false,
     reason,
@@ -123,6 +129,11 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     throw new Error(`SQLite query template is incompatible with the configured Schema: ${policy.code}`);
   }
   const descriptor = dataSource.describe();
+  const runtimeName = `${descriptor.engine}-readonly`;
+  const providerName =
+    descriptor.engine === 'sqlite'
+      ? 'hypha-adapters-local.loadSqlite'
+      : `${descriptor.engine}.official-node-driver`;
 
   function buildPlan() {
     return Object.freeze({
@@ -143,11 +154,11 @@ async function createV1SQLiteQueryRuntime(options = {}) {
   return Object.freeze({
     describe() {
       return Object.freeze({
-        runtime: 'sqlite-readonly',
+        runtime: runtimeName,
         dataSource: descriptor.id,
         schema: snapshot.schema,
         schemaMode: 'live-whitelisted-table',
-        executionProvider: 'hypha-adapters-local.loadSqlite',
+        executionProvider: providerName,
         hyphaSourceModified: false,
         limits: {
           timeoutMs: descriptor.timeoutMs,
@@ -159,23 +170,31 @@ async function createV1SQLiteQueryRuntime(options = {}) {
 
     plan(input) {
       if (WRITE_PATTERN.test(input.redactedText)) {
-        return reject(input, 'WRITE_OPERATION_BLOCKED', 'SQLite 模式当前只允许只读查询，写操作不会执行。');
+        return reject(
+          input,
+          'WRITE_OPERATION_BLOCKED',
+          `${descriptor.engine} 模式当前只允许只读查询，写操作不会执行。`,
+          'v1.sql.query.rejected',
+          runtimeName
+        );
       }
       if (!inputSupported(input.redactedText)) {
         return reject(
           input,
           'QUERY_TEMPLATE_NOT_SUPPORTED',
-          '当前 SQLite 模式仅支持“近三年未签劳动合同胜诉率与赔偿中位数”查询模板。'
+          `当前 ${descriptor.engine} 模式仅支持“近三年未签劳动合同胜诉率与赔偿中位数”查询模板。`,
+          'v1.sql.query.rejected',
+          runtimeName
         );
       }
       const plan = buildPlan();
       return {
         status: 'awaiting_confirmation',
-        runtime: 'sqlite-readonly',
+        runtime: runtimeName,
         runId: input.runId,
         executionAttempted: false,
         executionMode: 'worker-readonly-sqlite',
-        sqlExecutionProvider: 'hypha-adapters-local.loadSqlite',
+        sqlExecutionProvider: providerName,
         schema: snapshot.schema,
         plan,
         safety: {
@@ -188,15 +207,15 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           dataClassification: 'configured-business-data'
         },
         trace: [
-          safeTrace('v1.sqlite.schema.loaded', {
+          safeTrace('v1.sql.schema.loaded', {
             dataSource: descriptor.id,
             schemaFingerprint: snapshot.schemaFingerprint
           }),
-          safeTrace('v1.sqlite.query.plan.verified', {
+          safeTrace('v1.sql.query.plan.verified', {
             readOnly: true,
             planHash: policy.planHash
           }),
-          safeTrace('v1.sqlite.query.plan.awaiting_confirmation', { requiresConfirmation: true })
+          safeTrace('v1.sql.query.plan.awaiting_confirmation', { requiresConfirmation: true })
         ]
       };
     },
@@ -212,7 +231,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           input,
           'PLAN_DRIFT',
           '确认时查询计划或 Schema 指纹与已展示内容不一致，请重新生成计划。',
-          'v1.sqlite.query.plan-drift.rejected'
+          'v1.sql.query.plan-drift.rejected',
+          runtimeName
         );
       }
       let queryResult;
@@ -229,8 +249,9 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           code,
           code === 'SCHEMA_DRIFT'
             ? '确认后数据源 Schema 已变化，本次查询已停止，请重新生成计划。'
-            : 'SQLite 只读查询未完成，结果不会发布。',
-          'v1.sqlite.query.execution.failed'
+            : `${descriptor.engine} 只读查询未完成，结果不会发布。`,
+          'v1.sql.query.execution.failed',
+          runtimeName
         );
       }
 
@@ -238,11 +259,11 @@ async function createV1SQLiteQueryRuntime(options = {}) {
       const artifact = buildArtifact(input.runId, descriptor.id, queryResult.rowCount, rows);
       return {
         status: 'completed',
-        runtime: 'sqlite-readonly',
+        runtime: runtimeName,
         runId: input.runId,
         executionAttempted: true,
         executionMode: 'worker-readonly-sqlite',
-        sqlExecutionProvider: 'hypha-adapters-local.loadSqlite',
+        sqlExecutionProvider: providerName,
         schema: snapshot.schema,
         plan: buildPlan(),
         result: {
@@ -268,7 +289,7 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           dataClassification: 'configured-business-data'
         },
         providerReceipt: {
-          provider: 'hypha-adapters-local.loadSqlite',
+          provider: providerName,
           dataSource: descriptor.id,
           readOnly: true,
           sourceRowCount: queryResult.rowCount,
@@ -276,12 +297,12 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           durationMs: queryResult.durationMs
         },
         trace: [
-          safeTrace('v1.sqlite.query.confirmation.recorded', { confirmed: true }),
-          safeTrace('v1.sqlite.query.executed', {
+          safeTrace('v1.sql.query.confirmation.recorded', { confirmed: true }),
+          safeTrace('v1.sql.query.executed', {
             rowCount: queryResult.rowCount,
-            provider: 'hypha-adapters-local.loadSqlite'
+            provider: providerName
           }),
-          safeTrace('v1.sqlite.artifact.created', { artifactType: artifact.type })
+          safeTrace('v1.sql.artifact.created', { artifactType: artifact.type })
         ]
       };
     }
@@ -291,5 +312,6 @@ async function createV1SQLiteQueryRuntime(options = {}) {
 module.exports = {
   SQLITE_QUERY_PARAMETERS,
   SQLITE_QUERY_SQL,
+  createV1SQLQueryRuntime: createV1SQLiteQueryRuntime,
   createV1SQLiteQueryRuntime
 };

@@ -74,6 +74,20 @@ npm run demo:web
 
 SQLite 文件须包含清单允许的 `labor_cases` 表，以及 `year`、`issue_type`、`outcome`、`compensation_amount` 字段。网页仍先展示 SQL、参数、Schema 指纹与计划哈希，用户确认后才在只读 Worker 中执行；确认期间会话进入 `executing`，重复确认会被拒绝。
 
+PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
+
+```bash
+# 二选一，并在 .env 中填写对应 LEGAL_V1_PG_* 或 LEGAL_V1_MYSQL_* 变量
+LEGAL_V1_RUNTIME=postgresql
+LEGAL_V1_RUNTIME=mysql
+
+# 可复现的真实 Provider 验收；缺少凭证或 Schema 时以非零状态诚实失败
+npm run audit:sql:postgresql
+npm run audit:sql:mysql
+```
+
+真实验收账号必须仅拥有目标 `labor_cases` 表四个白名单字段所需的 `SELECT` 权限。驱动错误会转换为不含主机、用户名、密码和查询参数值的安全错误。
+
 ## 验证
 
 ```bash
@@ -89,6 +103,8 @@ npm test         # 仅 Package Test
 npm run audit:law-corpus    # 新鲜度
 npm run audit:law-coverage  # 覆盖度（语料不足 100 条时按设计失败）
 npm run audit:law-sources   # 官方来源只读核对（需联网）
+npm run audit:sql:mysql     # MySQL 真实只读 Provider 验收（需专用凭证）
+npm run audit:sql:postgresql # PostgreSQL 真实只读 Provider 验收（需专用凭证）
 ```
 
 ## 目录结构
@@ -113,4 +129,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、PostgreSQL/MySQL 生产数据库连接、通用受约束 Text2SQL、数据库写操作 Human Review/事务回滚、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收、通用受约束 Text2SQL、数据库写操作 Human Review/事务回滚、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "network.legal_cases.mysql",
+  "engine": "mysql",
+  "accessMode": "read-only",
+  "connectionEnv": {
+    "host": "LEGAL_V1_MYSQL_HOST",
+    "port": "LEGAL_V1_MYSQL_PORT",
+    "database": "LEGAL_V1_MYSQL_DATABASE",
+    "user": "LEGAL_V1_MYSQL_USER",
+    "password": "LEGAL_V1_MYSQL_PASSWORD",
+    "tlsMode": "LEGAL_V1_MYSQL_TLS_MODE"
+  },
+  "allowedTables": [
+    "labor_cases"
+  ],
+  "allowedColumns": [
+    "year",
+    "issue_type",
+    "outcome",
+    "compensation_amount"
+  ],
+  "timeoutMs": 15000,
+  "maxRows": 500,
+  "maxOutputBytes": 1048576
+}

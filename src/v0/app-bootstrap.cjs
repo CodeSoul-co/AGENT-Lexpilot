@@ -5,7 +5,8 @@ const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
 const { createConfiguredSQLiteDataSource } = require('../v1/data-source-config.cjs');
-const { createV1SQLiteQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
+const { createConfiguredNetworkDataSource } = require('../v1/network-data-source-config.cjs');
+const { createV1SQLQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
 const {
   EncryptedFileLegalSessionStore,
@@ -85,9 +86,20 @@ async function createLocalLegalAgentApplication(options = {}) {
     } else if (v1Mode === 'sqlite') {
       const dataSource =
         options.v1DataSource ?? createConfiguredSQLiteDataSource({ env: environment, projectRoot });
-      v1Runtime = await createV1SQLiteQueryRuntime({ dataSource });
+      v1Runtime = await createV1SQLQueryRuntime({ dataSource });
+    } else if (v1Mode === 'postgresql' || v1Mode === 'mysql') {
+      const manifestPath = path.join(
+        projectRoot,
+        'configs',
+        'data-sources',
+        `legal-cases.${v1Mode}.json`
+      );
+      const dataSource =
+        options.v1DataSource ??
+        createConfiguredNetworkDataSource({ env: environment, manifestPath });
+      v1Runtime = await createV1SQLQueryRuntime({ dataSource });
     } else {
-      throw new Error('LEGAL_V1_RUNTIME must be demo or sqlite.');
+      throw new Error('LEGAL_V1_RUNTIME must be demo, sqlite, postgresql, or mysql.');
     }
   }
   const executionLogFilePath = resolveExecutionLogFilePath(
