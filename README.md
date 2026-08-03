@@ -94,12 +94,19 @@ npm run demo:web
 
 ```bash
 LEGAL_V1_SANDBOX_ENABLED=true
-LEGAL_V1_SANDBOX_IMAGE=your-registry/lexpilot-sandbox:version
-LEGAL_V1_SANDBOX_IMAGE_DIGEST=sha256:<64-lowercase-hex-digest>
+LEGAL_V1_SANDBOX_IMAGE=python:3.12-alpine
+LEGAL_V1_SANDBOX_IMAGE_DIGEST=sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df
+npm run preflight:sandbox:docker
 npm run audit:sandbox:docker
 ```
 
 启用后，本地网页 Demo 会显示“脚本沙箱”入口：浏览器提交 Python/Shell 脚本与最多 32 个输入文件，服务端先返回不含正文的哈希化执行计划；用户明确确认后，才通过最新本地 Hypha 的公开 `GovernedToolRunner` 与 `DockerSandboxProviderFactory` 执行。Web 响应只返回退出状态、私有 Artifact 引用、清理证据和治理事件摘要，不回显脚本或文件正文。默认 `LEGAL_V1_SANDBOX_ENABLED=false`，因此未安装 Docker 时不影响原有 V0/V1 Demo。
+
+预检与真实验收命令都会自动读取已忽略的 `.env`。预检只检查 Docker CLI、daemon 和本地精确镜像，不会自动拉取镜像；首次准备时由操作者显式执行：
+
+```bash
+docker pull "python:3.12-alpine@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33568873133f8fc69980419df"
+```
 
 该命令真实执行 Python、Shell、禁网、路径逃逸、符号链接、超时与内存限制用例，并核对每个运行的 Human Review 事件、Artifact 回执和 Workspace 清理。缺少 Docker daemon、镜像或 digest 时命令以非零状态诚实失败；自动化 Mock Provider 测试只证明业务接线与治理合同，不替代 OS 级隔离验收。
 

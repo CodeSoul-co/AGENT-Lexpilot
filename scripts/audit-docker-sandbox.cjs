@@ -1,8 +1,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { loadLocalEnv } = require('./load-env.cjs');
+const { createDockerSandboxPreflight } = require('../src/v1/docker-sandbox-preflight.cjs');
 const { createSandboxArtifactRepository } = require('../src/v1/sandbox-artifact-repository.cjs');
 const { createDockerSandboxProviderFactory } = require('../src/v1/docker-sandbox-provider-factory.cjs');
 const { createSandboxExecutionRuntime } = require('../src/v1/sandbox-execution-runtime.cjs');
+
+loadLocalEnv();
 
 function requireEnvironment(name) {
   const value = process.env[name];
@@ -16,6 +20,44 @@ function requireEnvironment(name) {
 
 function emptyDirectory(directory) {
   return !fs.existsSync(directory) || fs.readdirSync(directory).length === 0;
+}
+
+function requireGovernanceEvents(eventTypes, decision) {
+  const required = [
+    'human.review.requested',
+    `human.review.${decision}`,
+    ...(decision === 'approved' ? ['human.review.resolved'] : [])
+  ];
+  if (!Array.isArray(eventTypes) || required.some((type) => !eventTypes.includes(type))) {
+    const error = new Error('Sandbox audit did not produce complete Human Review evidence.');
+    error.code = 'SANDBOX_AUDIT_TRACE_INCOMPLETE';
+    throw error;
+  }
+}
+
+async function rejectCase(runtime) {
+  const runId = 'sandbox-audit-unconfirmed-rejected';
+  const plan = await runtime.plan({
+    language: 'python',
+    script: "raise SystemExit('must-not-run')",
+    runId,
+    sessionId: 'sandbox-audit-session'
+  });
+  const result = await runtime.reject({ invocationId: plan.invocationId, runId });
+  requireGovernanceEvents(result.governanceReceipt.eventTypes, 'rejected');
+  if (result.executionAttempted !== false) {
+    const error = new Error('Rejected Sandbox audit case attempted execution.');
+    error.code = 'SANDBOX_AUDIT_UNCONFIRMED_EXECUTION';
+    throw error;
+  }
+  return {
+    id: 'unconfirmed-rejected',
+    status: result.status,
+    executionAttempted: false,
+    eventTypes: result.governanceReceipt.eventTypes,
+    cleanupVerified: true,
+    generatedArtifactCount: 0
+  };
 }
 
 async function executeCase(runtime, definition) {
@@ -36,6 +78,7 @@ async function executeCase(runtime, definition) {
     error.code = 'SANDBOX_AUDIT_EXPECTATION_FAILED';
     throw error;
   }
+  requireGovernanceEvents(result.governanceReceipt.eventTypes, 'approved');
   const safeResult = {
     id: definition.id,
     status: result.status,
@@ -63,6 +106,12 @@ async function main() {
   );
   const imageReference = requireEnvironment('LEGAL_V1_SANDBOX_IMAGE');
   const imageDigest = requireEnvironment('LEGAL_V1_SANDBOX_IMAGE_DIGEST');
+  const dockerPath = process.env.LEGAL_V1_DOCKER_PATH || 'docker';
+  const preflight = createDockerSandboxPreflight().check({
+    dockerPath,
+    imageReference,
+    imageDigest
+  });
   const artifactRepository = createSandboxArtifactRepository({ rootPath: artifactRoot, projectRoot });
   try {
     const runtime = await createSandboxExecutionRuntime({
@@ -73,7 +122,7 @@ async function main() {
       providerFactory: createDockerSandboxProviderFactory({
         projectRoot,
         artifactRepository,
-        dockerPath: process.env.LEGAL_V1_DOCKER_PATH
+        dockerPath
       })
     });
     const policy = runtime.describe().policy;
@@ -82,7 +131,14 @@ async function main() {
         id: 'python-generated-artifact',
         language: 'python',
         script: "from pathlib import Path\nPath('/workspace/result.txt').write_text('sandbox-ok', encoding='utf-8')\nprint('python-ok')",
-        expectedStatuses: ['completed']
+        expectedStatuses: ['completed'],
+        validate(result) {
+          if (result.generatedArtifactCount < 1) {
+            const error = new Error('Generated Sandbox file was not persisted as an Artifact.');
+            error.code = 'SANDBOX_AUDIT_ARTIFACT_MISSING';
+            throw error;
+          }
+        }
       },
       {
         id: 'shell-literal-argv',
@@ -147,7 +203,7 @@ async function main() {
         }
       }
     ];
-    const results = [];
+    const results = [await rejectCase(runtime)];
     for (const definition of cases) results.push(await executeCase(runtime, definition));
     if (!emptyDirectory(workspaceRoot)) {
       const error = new Error('Sandbox Workspace cleanup was incomplete.');
@@ -157,6 +213,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({
       status: 'passed',
       provider: 'hypha.DockerSandboxProviderFactory',
+      preflight,
       policy,
       cases: results,
       workspaceCleanupVerified: true,
