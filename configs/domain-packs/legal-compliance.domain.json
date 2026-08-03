@@ -696,15 +696,25 @@
   ],
   "regressionCases": [
     {
-      "id": "regression.legal-domainpack-loads",
+      "id": "regression.legal-v0-v1-replay",
       "version": "0.1.0",
       "fixtureRefs": [
         {
-          "id": "fixture.legal-domainpack-skeleton",
+          "id": "fixture.legal-self-check.v0",
+          "version": "0.1.0"
+        },
+        {
+          "id": "fixture.professional-query.v1",
           "version": "0.1.0"
         }
       ],
-      "requiredChecks": ["state_path", "output_contract"]
+      "requiredChecks": [
+        "event_types",
+        "state_path",
+        "tool_calls",
+        "policy_decisions",
+        "output_contract"
+      ]
     }
   ],
   "metadata": {

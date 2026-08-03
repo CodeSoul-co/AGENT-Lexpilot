@@ -1,0 +1,190 @@
+{
+  "id": "fixture.legal-self-check.v0",
+  "version": "0.1.0",
+  "runId": "run-fixture-legal-self-check-v0",
+  "createdAt": "2026-08-03T08:01:00.000Z",
+  "events": [
+    {
+      "id": "run-fixture-legal-self-check-v0:event:1",
+      "type": "run.started",
+      "runId": "run-fixture-legal-self-check-v0",
+      "timestamp": "2026-08-03T08:00:01.000Z",
+      "payload": { "scenarioId": "legal-self-check-v0" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:2",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "Intake",
+      "timestamp": "2026-08-03T08:00:02.000Z",
+      "payload": { "stateId": "Intake" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:3",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "PrivacyConsent",
+      "timestamp": "2026-08-03T08:00:03.000Z",
+      "payload": { "stateId": "PrivacyConsent" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:4",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "RedactInput",
+      "timestamp": "2026-08-03T08:00:04.000Z",
+      "payload": { "stateId": "RedactInput" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:5",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "SaveSession",
+      "timestamp": "2026-08-03T08:00:05.000Z",
+      "payload": { "stateId": "SaveSession" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:6",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "ClassifyTask",
+      "timestamp": "2026-08-03T08:00:06.000Z",
+      "payload": { "stateId": "ClassifyTask" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:7",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "ClassifyDomain",
+      "timestamp": "2026-08-03T08:00:07.000Z",
+      "payload": { "stateId": "ClassifyDomain" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:8",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "CheckInformation",
+      "timestamp": "2026-08-03T08:00:08.000Z",
+      "payload": { "stateId": "CheckInformation" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:9",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-legal-self-check-v0",
+      "fsmState": "Clarify",
+      "timestamp": "2026-08-03T08:00:09.000Z",
+      "payload": { "stateId": "Clarify" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:10",
+      "type": "tool.policy.checked",
+      "runId": "run-fixture-legal-self-check-v0",
+      "stepId": "privacy-gate",
+      "timestamp": "2026-08-03T08:00:10.000Z",
+      "payload": { "toolId": "tool.pii-redactor", "decision": "allow" }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:10-tool-start",
+      "type": "tool.call.started",
+      "runId": "run-fixture-legal-self-check-v0",
+      "stepId": "classify-domain",
+      "timestamp": "2026-08-03T08:00:10.500Z",
+      "payload": {
+        "toolId": "tool.legal-domain-classifier",
+        "source": "local"
+      }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:11",
+      "type": "tool.call.completed",
+      "runId": "run-fixture-legal-self-check-v0",
+      "stepId": "classify-domain",
+      "timestamp": "2026-08-03T08:00:11.000Z",
+      "payload": {
+        "toolId": "tool.legal-domain-classifier",
+        "source": "local",
+        "output": { "status": "classified", "domain": "labor" }
+      }
+    },
+    {
+      "id": "run-fixture-legal-self-check-v0:event:12",
+      "type": "run.completed",
+      "runId": "run-fixture-legal-self-check-v0",
+      "timestamp": "2026-08-03T08:00:12.000Z",
+      "payload": {
+        "output": {
+          "status": "needs_clarification",
+          "taskType": "legal_self_check",
+          "legalDomain": "labor",
+          "piiRedacted": true,
+          "clarificationRound": 0,
+          "questionCount": 1,
+          "legalConclusionGenerated": false,
+          "businessTraceTypes": [
+            "v0.input.received",
+            "v0.privacy.consent.checked",
+            "v0.pii.redaction.completed",
+            "business.task-type.classified",
+            "v0.legal-domain.classified",
+            "v0.information.checked",
+            "v0.session.created"
+          ]
+        }
+      }
+    }
+  ],
+  "eventTypes": [
+    "run.started",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "tool.policy.checked",
+    "tool.call.started",
+    "tool.call.completed",
+    "run.completed"
+  ],
+  "statePath": [
+    "Intake",
+    "PrivacyConsent",
+    "RedactInput",
+    "SaveSession",
+    "ClassifyTask",
+    "ClassifyDomain",
+    "CheckInformation",
+    "Clarify"
+  ],
+  "finalOutput": {
+    "status": "needs_clarification",
+    "taskType": "legal_self_check",
+    "legalDomain": "labor",
+    "piiRedacted": true,
+    "clarificationRound": 0,
+    "questionCount": 1,
+    "legalConclusionGenerated": false,
+    "businessTraceTypes": [
+      "v0.input.received",
+      "v0.privacy.consent.checked",
+      "v0.pii.redaction.completed",
+      "business.task-type.classified",
+      "v0.legal-domain.classified",
+      "v0.information.checked",
+      "v0.session.created"
+    ]
+  },
+  "toolCalls": [
+    "tool.call.completed|classify-domain|tool.legal-domain-classifier|local|{\"domain\":\"labor\",\"status\":\"classified\"}"
+  ],
+  "modelCalls": [],
+  "policyDecisions": ["privacy-gate|tool.pii-redactor|\"allow\""],
+  "memoryReadSet": [],
+  "metadata": {
+    "piiRedacted": true,
+    "synthetic": true,
+    "source": "lexpilot-business-runtime"
+  }
+}

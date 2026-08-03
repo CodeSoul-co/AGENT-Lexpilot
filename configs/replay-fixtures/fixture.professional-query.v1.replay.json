@@ -1,0 +1,245 @@
+{
+  "id": "fixture.professional-query.v1",
+  "version": "0.1.0",
+  "runId": "run-fixture-professional-query-v1",
+  "createdAt": "2026-08-03T08:01:00.000Z",
+  "events": [
+    {
+      "id": "run-fixture-professional-query-v1:event:1",
+      "type": "run.started",
+      "runId": "run-fixture-professional-query-v1",
+      "timestamp": "2026-08-03T08:00:01.000Z",
+      "payload": { "scenarioId": "professional-query-v1" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:2",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "Intake",
+      "timestamp": "2026-08-03T08:00:02.000Z",
+      "payload": { "stateId": "Intake" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:3",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "PrivacyConsent",
+      "timestamp": "2026-08-03T08:00:03.000Z",
+      "payload": { "stateId": "PrivacyConsent" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:4",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "RedactInput",
+      "timestamp": "2026-08-03T08:00:04.000Z",
+      "payload": { "stateId": "RedactInput" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:5",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "ClassifyTask",
+      "timestamp": "2026-08-03T08:00:05.000Z",
+      "payload": { "stateId": "ClassifyTask" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:6",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "PlanQuery",
+      "timestamp": "2026-08-03T08:00:06.000Z",
+      "payload": { "stateId": "PlanQuery" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:7",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "AwaitingConfirmation",
+      "timestamp": "2026-08-03T08:00:07.000Z",
+      "payload": { "stateId": "AwaitingConfirmation" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:8",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "ExecuteSelect",
+      "timestamp": "2026-08-03T08:00:08.000Z",
+      "payload": { "stateId": "ExecuteSelect" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:9",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "BuildArtifact",
+      "timestamp": "2026-08-03T08:00:09.000Z",
+      "payload": { "stateId": "BuildArtifact" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:10",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "AppendLog",
+      "timestamp": "2026-08-03T08:00:10.000Z",
+      "payload": { "stateId": "AppendLog" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:11",
+      "type": "fsm.state.entered",
+      "runId": "run-fixture-professional-query-v1",
+      "fsmState": "Completed",
+      "timestamp": "2026-08-03T08:00:11.000Z",
+      "payload": { "stateId": "Completed" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:12",
+      "type": "tool.policy.checked",
+      "runId": "run-fixture-professional-query-v1",
+      "stepId": "query-policy",
+      "timestamp": "2026-08-03T08:00:12.000Z",
+      "payload": { "toolId": "tool.v1-readonly-query", "decision": "allow" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:13",
+      "type": "human.review.requested",
+      "runId": "run-fixture-professional-query-v1",
+      "timestamp": "2026-08-03T08:00:13.000Z",
+      "payload": { "operation": "execute-select" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:14",
+      "type": "human.review.approved",
+      "runId": "run-fixture-professional-query-v1",
+      "timestamp": "2026-08-03T08:00:14.000Z",
+      "payload": { "operation": "execute-select" }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:14-tool-start",
+      "type": "tool.call.started",
+      "runId": "run-fixture-professional-query-v1",
+      "stepId": "execute-select",
+      "timestamp": "2026-08-03T08:00:14.500Z",
+      "payload": {
+        "toolId": "tool.v1-readonly-query",
+        "source": "local"
+      }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:15",
+      "type": "tool.call.completed",
+      "runId": "run-fixture-professional-query-v1",
+      "stepId": "execute-select",
+      "timestamp": "2026-08-03T08:00:15.000Z",
+      "payload": {
+        "toolId": "tool.v1-readonly-query",
+        "source": "local",
+        "output": { "status": "completed", "rowCount": 3, "matchedCaseCount": 672 }
+      }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:16",
+      "type": "artifact.created",
+      "runId": "run-fixture-professional-query-v1",
+      "timestamp": "2026-08-03T08:00:16.000Z",
+      "payload": {
+        "storeId": "lexpilot.execution-artifacts.local",
+        "contentSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217"
+      }
+    },
+    {
+      "id": "run-fixture-professional-query-v1:event:17",
+      "type": "run.completed",
+      "runId": "run-fixture-professional-query-v1",
+      "timestamp": "2026-08-03T08:00:17.000Z",
+      "payload": {
+        "output": {
+          "status": "completed",
+          "taskType": "professional_data_query",
+          "piiRedacted": true,
+          "readOnly": true,
+          "schemaVerified": true,
+          "confirmationRequired": true,
+          "rowCount": 3,
+          "matchedCaseCount": 672,
+          "artifactStoreId": "lexpilot.execution-artifacts.local",
+          "artifactSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217",
+          "auditLogStatus": "verified",
+          "businessTraceTypes": [
+            "v1.schema.loaded",
+            "v1.query.plan.verified",
+            "v1.query.confirmation.recorded",
+            "v1.query.executed",
+            "v1.artifact.created",
+            "v1.artifact.persisted",
+            "v1.query.execution.finished"
+          ]
+        }
+      }
+    }
+  ],
+  "eventTypes": [
+    "run.started",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "fsm.state.entered",
+    "tool.policy.checked",
+    "human.review.requested",
+    "human.review.approved",
+    "tool.call.started",
+    "tool.call.completed",
+    "artifact.created",
+    "run.completed"
+  ],
+  "statePath": [
+    "Intake",
+    "PrivacyConsent",
+    "RedactInput",
+    "ClassifyTask",
+    "PlanQuery",
+    "AwaitingConfirmation",
+    "ExecuteSelect",
+    "BuildArtifact",
+    "AppendLog",
+    "Completed"
+  ],
+  "finalOutput": {
+    "status": "completed",
+    "taskType": "professional_data_query",
+    "piiRedacted": true,
+    "readOnly": true,
+    "schemaVerified": true,
+    "confirmationRequired": true,
+    "rowCount": 3,
+    "matchedCaseCount": 672,
+    "artifactStoreId": "lexpilot.execution-artifacts.local",
+    "artifactSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217",
+    "auditLogStatus": "verified",
+    "businessTraceTypes": [
+      "v1.schema.loaded",
+      "v1.query.plan.verified",
+      "v1.query.confirmation.recorded",
+      "v1.query.executed",
+      "v1.artifact.created",
+      "v1.artifact.persisted",
+      "v1.query.execution.finished"
+    ]
+  },
+  "toolCalls": [
+    "tool.call.completed|execute-select|tool.v1-readonly-query|local|{\"matchedCaseCount\":672,\"rowCount\":3,\"status\":\"completed\"}"
+  ],
+  "modelCalls": [],
+  "policyDecisions": ["query-policy|tool.v1-readonly-query|\"allow\""],
+  "memoryReadSet": [],
+  "metadata": {
+    "piiRedacted": true,
+    "synthetic": true,
+    "source": "lexpilot-business-runtime"
+  }
+}

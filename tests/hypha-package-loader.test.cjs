@@ -4,6 +4,7 @@ const test = require('node:test');
 const {
   loadHyphaAdaptersLocal,
   loadHyphaCore,
+  loadHyphaTesting,
   loadHyphaPackage
 } = require('../scripts/hypha-paths.cjs');
 
@@ -15,6 +16,13 @@ test('loads the pinned read-only Hypha Core execution contracts', () => {
   assert.equal(typeof core.validateExecutionEnvironmentSpec, 'function');
   assert.equal(typeof core.DefaultExecutionRiskEvaluator, 'function');
   assert.equal(typeof core.ArtifactStoreProviderRegistry, 'function');
+});
+
+test('loads the pinned Hypha Replay and Regression helpers', () => {
+  const testing = loadHyphaTesting(projectRoot);
+  assert.equal(typeof testing.FileReplayFixtureStore, 'function');
+  assert.equal(typeof testing.ReplayEngine, 'function');
+  assert.equal(typeof testing.RegressionRunner, 'function');
 });
 
 test('loads the pinned local adapters and performs a real in-memory SQLite query', () => {

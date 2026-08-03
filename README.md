@@ -93,11 +93,13 @@ npm run audit:sql:mysql
 ## 验证
 
 ```bash
-npm run verify   # verify:baseline + verify:domain + Package Test
+npm run verify   # verify:baseline + verify:domain + verify:replay + Package Test
 npm test         # 仅 Package Test
 ```
 
 完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
+
+`verify` 还会加载 `configs/replay-fixtures/` 中两份版本化、SHA-256 固定的 V0/V1 脱敏合成 Fixture，通过 Hypha `ReplayEngine` / `RegressionRunner` 将当前业务路径与黄金事件、状态路径、策略决策、工具调用和最终输出逐项比较，并在临时目录执行一次清单约束的恢复复验。Fixture 不保存用户原文、会话标识、客户数据或凭证；缺失、篡改、PII/Secret 检测或业务输出漂移均会使验证失败。
 
 法规语料可单独审计：
 
@@ -107,12 +109,14 @@ npm run audit:law-coverage  # 覆盖度（语料不足 100 条时按设计失败
 npm run audit:law-sources   # 官方来源只读核对（需联网）
 npm run audit:sql:mysql     # MySQL 真实只读 Provider 验收（需专用凭证）
 npm run audit:sql:postgresql # PostgreSQL 真实只读 Provider 验收（需专用凭证）
+npm run verify:replay       # V0/V1 脱敏 Replay、Regression 与临时恢复验收
 ```
 
 ## 目录结构
 
 ```text
 configs/domain-packs/  Legal DomainPack（FSM 工作流契约）
+configs/replay-fixtures/  V0/V1 脱敏合成 Replay 黄金 Fixture 与完整性清单
 resources/law-corpus/  经官方来源核验的本地法规语料
 scripts/               启动、密钥生成、语料审计与基线验证脚本
 src/agent/             Hypha ReAct Agent 业务适配层（推理 Provider、输出边界校验）

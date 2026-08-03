@@ -18,8 +18,9 @@
     "audit:sql:postgresql": "node scripts/audit-sql-provider.cjs postgresql",
     "verify:baseline": "node scripts/verify-baseline.cjs",
     "verify:domain": "node scripts/verify-domain-pack.cjs",
+    "verify:replay": "node scripts/verify-replay-fixtures.cjs",
     "test": "node --test",
-    "verify": "npm run verify:baseline && npm run verify:domain && npm test"
+    "verify": "npm run verify:baseline && npm run verify:domain && npm run verify:replay && npm test"
   },
   "dependencies": {
     "mysql2": "^3.23.2",

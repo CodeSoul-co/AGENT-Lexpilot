@@ -1,0 +1,32 @@
+{
+  "id": "replay.legal-compliance.v0-v1",
+  "version": "0.1.0",
+  "domainPackRef": {
+    "id": "domain.legal-compliance.v0-v1",
+    "version": "0.16.0"
+  },
+  "regressionSpecRef": {
+    "id": "regression.legal-v0-v1-replay",
+    "version": "0.1.0"
+  },
+  "fixtures": [
+    {
+      "id": "fixture.legal-self-check.v0",
+      "version": "0.1.0",
+      "file": "fixture.legal-self-check.v0.replay.json",
+      "sha256": "cdedc30f7d065eb19ff0c83c8d86a456458a515d6b14dc01990fad38be42ad09"
+    },
+    {
+      "id": "fixture.professional-query.v1",
+      "version": "0.1.0",
+      "file": "fixture.professional-query.v1.replay.json",
+      "sha256": "c953ac86b87a38fadb345631727ca30df8b96bb9319d179d43a18dd2f0a7f0df"
+    }
+  ],
+  "privacy": {
+    "piiRedacted": true,
+    "syntheticOnly": true,
+    "rawUserTextStored": false,
+    "credentialsStored": false
+  }
+}
