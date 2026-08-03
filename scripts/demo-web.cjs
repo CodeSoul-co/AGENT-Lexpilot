@@ -33,7 +33,7 @@ async function main() {
         `加密会话目录：${dataDirectory}`,
         `V1 执行日志：${executionLogFilePath}`,
         `统一 Agent：${agentDescriptor.agentId}（${agentDescriptor.inference.mode}）`,
-        '功能范围：V0 法律自检 + V1 固定演示 Schema 只读分析',
+        `功能范围：V0 法律自检 + V1 ${v1Descriptor.runtime} 只读分析`,
         '按 Ctrl+C 停止。'
       ].join('\n') + '\n'
     );

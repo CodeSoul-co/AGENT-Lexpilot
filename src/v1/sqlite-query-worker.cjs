@@ -21,7 +21,7 @@ function normalizeRows(rows) {
   return rows.map((row) => ({ ...row }));
 }
 
-function inspectTable(database, tableName) {
+function inspectTable(database, tableName, allowedColumns) {
   const columns = normalizeRows(
     database.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)});`).all()
   );
@@ -30,9 +30,16 @@ function inspectTable(database, tableName) {
       code: 'TABLE_NOT_FOUND'
     });
   }
+  const columnsByName = new Map(columns.map((column) => [String(column.name), column]));
+  const missingColumns = allowedColumns.filter((column) => !columnsByName.has(column));
+  if (missingColumns.length > 0) {
+    throw Object.assign(new Error('Configured column is unavailable.'), {
+      code: 'COLUMN_NOT_FOUND'
+    });
+  }
   return {
     tableName,
-    columns: columns.map((column) => ({
+    columns: allowedColumns.map((columnName) => columnsByName.get(columnName)).map((column) => ({
       name: String(column.name),
       type: String(column.type || 'UNKNOWN').toUpperCase(),
       nullable: Number(column.notnull) !== 1,
@@ -41,7 +48,7 @@ function inspectTable(database, tableName) {
   };
 }
 
-function inspectSchema(database, allowedTables) {
+function inspectSchema(database, allowedTables, allowedColumns) {
   const existingTables = new Set(
     normalizeRows(
       database
@@ -57,7 +64,7 @@ function inspectSchema(database, allowedTables) {
         code: 'TABLE_NOT_FOUND'
       });
     }
-    return inspectTable(database, tableName);
+    return inspectTable(database, tableName, allowedColumns);
   });
 }
 
@@ -93,7 +100,9 @@ function run() {
       return { connected: Number(row.value) === 1 };
     }
     if (workerData.operation === 'schema') {
-      return { tables: inspectSchema(database, workerData.allowedTables) };
+      return {
+        tables: inspectSchema(database, workerData.allowedTables, workerData.allowedColumns)
+      };
     }
     if (workerData.operation === 'query') {
       return executeQuery(

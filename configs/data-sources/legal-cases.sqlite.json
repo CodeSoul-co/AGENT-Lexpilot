@@ -7,6 +7,12 @@
   "allowedTables": [
     "labor_cases"
   ],
+  "allowedColumns": [
+    "year",
+    "issue_type",
+    "outcome",
+    "compensation_amount"
+  ],
   "timeoutMs": 15000,
   "maxRows": 500,
   "maxOutputBytes": 1048576

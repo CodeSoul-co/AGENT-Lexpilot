@@ -4,6 +4,8 @@ const { createAgentInferenceProvider } = require('../agent/inference-provider.cj
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
+const { createConfiguredSQLiteDataSource } = require('../v1/data-source-config.cjs');
+const { createV1SQLiteQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
 const {
   EncryptedFileLegalSessionStore,
@@ -13,7 +15,8 @@ const {
 const ENVIRONMENT_KEYS = Object.freeze({
   encryptionKey: 'LEGAL_SESSION_KEY_BASE64',
   ownerId: 'LEGAL_SESSION_OWNER_ID',
-  dataDirectory: 'LEGAL_SESSION_DATA_DIR'
+  dataDirectory: 'LEGAL_SESSION_DATA_DIR',
+  v1Runtime: 'LEGAL_V1_RUNTIME'
 });
 
 function requiredEnvironmentValue(environment, name) {
@@ -74,7 +77,19 @@ async function createLocalLegalAgentApplication(options = {}) {
   const environment = options.environment ?? process.env;
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
-  const v1Runtime = createV1DemoQueryRuntime();
+  const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
+  let v1Runtime = options.v1Runtime;
+  if (!v1Runtime) {
+    if (v1Mode === 'demo') {
+      v1Runtime = createV1DemoQueryRuntime();
+    } else if (v1Mode === 'sqlite') {
+      const dataSource =
+        options.v1DataSource ?? createConfiguredSQLiteDataSource({ env: environment, projectRoot });
+      v1Runtime = await createV1SQLiteQueryRuntime({ dataSource });
+    } else {
+      throw new Error('LEGAL_V1_RUNTIME must be demo or sqlite.');
+    }
+  }
   const executionLogFilePath = resolveExecutionLogFilePath(
     projectRoot,
     options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],

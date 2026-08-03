@@ -61,6 +61,23 @@ function validateAllowedTables(allowedTables) {
   return Object.freeze([tableName]);
 }
 
+function validateAllowedColumns(allowedColumns) {
+  if (!Array.isArray(allowedColumns) || allowedColumns.length === 0) {
+    throw new TypeError('allowedColumns must contain at least one column.');
+  }
+  const normalized = allowedColumns.map((column, index) => {
+    const name = requireNonEmptyString(column, `allowedColumns[${index}]`);
+    if (!TABLE_NAME_PATTERN.test(name)) {
+      throw new TypeError('allowedColumns contains an invalid SQLite identifier.');
+    }
+    return name;
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError('allowedColumns must not contain duplicates.');
+  }
+  return Object.freeze(normalized);
+}
+
 function runWorker(workerFile, payload, timeoutMs) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerFile, { workerData: payload });
@@ -119,6 +136,7 @@ function createSQLiteDataSource(options = {}) {
   const id = requireNonEmptyString(options.id, 'id');
   const databasePath = resolveDatabasePath(options.databasePath);
   const allowedTables = validateAllowedTables(options.allowedTables);
+  const allowedColumns = validateAllowedColumns(options.allowedColumns);
   const timeoutMs = requireBoundedInteger(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     'timeoutMs',
@@ -134,7 +152,7 @@ function createSQLiteDataSource(options = {}) {
   );
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
   const workerFile = path.join(__dirname, 'sqlite-query-worker.cjs');
-  const basePayload = Object.freeze({ projectRoot, databasePath, allowedTables });
+  const basePayload = Object.freeze({ projectRoot, databasePath, allowedTables, allowedColumns });
 
   async function inspectSchema() {
     const result = await runWorker(workerFile, { ...basePayload, operation: 'schema' }, timeoutMs);
@@ -145,7 +163,7 @@ function createSQLiteDataSource(options = {}) {
       tableName: table.tableName,
       columns: Object.freeze(table.columns.map((column) => Object.freeze({ ...column })))
     });
-    return Object.freeze({ ...schema, schemaFingerprint: createSchemaFingerprint(schema) });
+    return Object.freeze({ schema, schemaFingerprint: createSchemaFingerprint(schema) });
   }
 
   return Object.freeze({
@@ -155,6 +173,7 @@ function createSQLiteDataSource(options = {}) {
         engine: 'sqlite',
         mode: 'read-only',
         allowedTables: [...allowedTables],
+        allowedColumns: [...allowedColumns],
         timeoutMs,
         maxRows,
         maxOutputBytes,
@@ -171,14 +190,26 @@ function createSQLiteDataSource(options = {}) {
 
     async executeReadOnly({ sql, parameters, expectedSchemaFingerprint }) {
       requireNonEmptyString(expectedSchemaFingerprint, 'expectedSchemaFingerprint');
-      const schema = await inspectSchema();
-      if (schema.schemaFingerprint !== expectedSchemaFingerprint) {
+      let snapshot;
+      try {
+        snapshot = await inspectSchema();
+      } catch (error) {
+        if (error?.code === 'TABLE_NOT_FOUND' || error?.code === 'COLUMN_NOT_FOUND') {
+          throw new SQLiteDataSourceError(
+            'SCHEMA_DRIFT',
+            'Configured SQLite table or column changed after confirmation.',
+            { cause: error }
+          );
+        }
+        throw error;
+      }
+      if (snapshot.schemaFingerprint !== expectedSchemaFingerprint) {
         throw new SQLiteDataSourceError(
           'SCHEMA_DRIFT',
           'SQLite Schema changed after the query plan was confirmed.'
         );
       }
-      const policy = validateReadOnlySqlPlan({ sql, parameters, schema });
+      const policy = validateReadOnlySqlPlan({ sql, parameters, schema: snapshot.schema });
       if (!policy.ok) {
         throw new SQLiteDataSourceError(policy.code, policy.message);
       }
@@ -200,7 +231,7 @@ function createSQLiteDataSource(options = {}) {
         rows: Object.freeze(result.rows.map((row) => Object.freeze({ ...row }))),
         durationMs: Date.now() - startedAt,
         dataSource: id,
-        schemaFingerprint: schema.schemaFingerprint,
+        schemaFingerprint: snapshot.schemaFingerprint,
         readOnly: true
       });
     }

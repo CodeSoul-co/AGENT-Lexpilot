@@ -62,12 +62,12 @@ class AgentBackedConversationService {
   }
 
   async start(input) {
-    const businessResult = this.service.start(input);
+    const businessResult = await this.service.start(input);
     return this.runAgent(businessResult);
   }
 
   async answer(sessionId, userText) {
-    const businessResult = this.service.answer(sessionId, userText);
+    const businessResult = await this.service.answer(sessionId, userText);
     return this.runAgent(businessResult);
   }
 

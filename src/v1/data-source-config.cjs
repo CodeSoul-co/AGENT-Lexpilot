@@ -9,6 +9,7 @@ const MANIFEST_KEYS = new Set([
   'databasePathEnv',
   'accessMode',
   'allowedTables',
+  'allowedColumns',
   'timeoutMs',
   'maxRows',
   'maxOutputBytes'
@@ -45,7 +46,14 @@ function readDataSourceManifest(manifestPath) {
   if (!Array.isArray(manifest.allowedTables)) {
     throw new TypeError('allowedTables must be an array.');
   }
-  return Object.freeze({ ...manifest, allowedTables: Object.freeze([...manifest.allowedTables]) });
+  if (!Array.isArray(manifest.allowedColumns)) {
+    throw new TypeError('allowedColumns must be an array.');
+  }
+  return Object.freeze({
+    ...manifest,
+    allowedTables: Object.freeze([...manifest.allowedTables]),
+    allowedColumns: Object.freeze([...manifest.allowedColumns])
+  });
 }
 
 function createConfiguredSQLiteDataSource(options = {}) {
@@ -67,6 +75,7 @@ function createConfiguredSQLiteDataSource(options = {}) {
     id: manifest.id,
     databasePath,
     allowedTables: manifest.allowedTables,
+    allowedColumns: manifest.allowedColumns,
     timeoutMs: manifest.timeoutMs,
     maxRows: manifest.maxRows,
     maxOutputBytes: manifest.maxOutputBytes,

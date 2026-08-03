@@ -35,7 +35,7 @@
 - 计划同时记录 Schema 指纹与计划哈希；确认时重新校验，计划或 Schema 发生漂移即停止执行并要求重新确认；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；执行日志关联计划、Schema 与产物哈希；
-- 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；项目已提供 SQLite 只读数据源适配器，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口，支持真实连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。该适配器仍待接入网页 V1 组合根，不会通过修改 Hypha 绕过治理门。
+- 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
 
 ## 运行
 
@@ -64,7 +64,15 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 密钥不要写入仓库。真实 Provider 只替换法律自检中的结构化事实推理，隐私门、输出校验、法规检索和禁止生成法律结论等边界仍然生效。
 
-可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；将 `LEGAL_V1_SQLITE_PATH` 指向本地数据库文件后，可由项目组合根创建只读数据源。数据库文件、Schema 快照和查询输出均不得提交到仓库。
+可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。当前真实数据模式只开放一个受审计查询模板：近三年未签劳动合同案例的胜诉率与赔偿中位数；其他自然语言查询会关闭失败，不会猜测生成 SQL。
+
+```bash
+LEGAL_V1_RUNTIME=sqlite
+LEGAL_V1_SQLITE_PATH=D:/private-data/legal-cases.sqlite
+npm run demo:web
+```
+
+SQLite 文件须包含清单允许的 `labor_cases` 表，以及 `year`、`issue_type`、`outcome`、`compensation_amount` 字段。网页仍先展示 SQL、参数、Schema 指纹与计划哈希，用户确认后才在只读 Worker 中执行；确认期间会话进入 `executing`，重复确认会被拒绝。
 
 ## 验证
 
@@ -105,4 +113,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、PostgreSQL/MySQL 生产数据库连接、受约束 Text2SQL、SQLite 适配器与网页 V1 组合根接线、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+账号删除、每日法规同步、PostgreSQL/MySQL 生产数据库连接、通用受约束 Text2SQL、数据库写操作 Human Review/事务回滚、OS 级脚本沙箱、生产级权限系统与生产级网页部署。框架缺失的一等 DomainPack 绑定仍作为上游缺口记录；本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

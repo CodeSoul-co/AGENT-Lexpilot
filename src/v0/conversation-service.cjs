@@ -659,7 +659,7 @@ class LegalSelfCheckConversationService {
     }
 
     const startedAt = Date.now();
-    const executed = this.v1Runtime.execute({
+    const execution = this.v1Runtime.execute({
       runId: session.v1.runId,
       sessionId: session.id,
       ownerId: this.ownerId,
@@ -670,6 +670,31 @@ class LegalSelfCheckConversationService {
       expectedPlanHash: session.v1.plan.planHash,
       expectedSchemaFingerprint: session.v1.plan.schemaFingerprint
     });
+    if (execution && typeof execution.then === 'function') {
+      session.status = 'executing';
+      session.v1.status = 'executing';
+      session.v1.confirmedAt = now;
+      this.store.save(session, this.ownerId);
+      return execution.then(
+        (executed) => this.finishV1Execution(session, executed, now, startedAt),
+        () =>
+          this.finishV1Execution(
+            session,
+            {
+              status: 'rejected',
+              executionAttempted: true,
+              reason: '只读查询执行失败，结果不会发布。',
+              trace: [safeEvent('v1.query.execution.failed', { code: 'RUNTIME_REJECTED' })]
+            },
+            now,
+            startedAt
+          )
+      );
+    }
+    return this.finishV1Execution(session, execution, now, startedAt);
+  }
+
+  finishV1Execution(session, executed, confirmedAt, startedAt) {
     const durationMs = Date.now() - startedAt;
     session.status = executed.status === 'completed' ? 'completed' : 'rejected';
     session.v1.status = executed.status;
@@ -677,7 +702,7 @@ class LegalSelfCheckConversationService {
     session.v1.result = executed.result ?? null;
     session.v1.chart = executed.chart ?? null;
     session.v1.artifact = executed.artifact ?? null;
-    session.v1.confirmedAt = now;
+    session.v1.confirmedAt = confirmedAt;
     const executedEvent = safeEvent('v1.query.execution.finished', {
       sessionId: session.id,
       runId: session.v1.runId,

@@ -34,6 +34,12 @@ test('public manifest contains policy and an environment reference, never a loca
   assert.equal(manifest.accessMode, 'read-only');
   assert.equal(manifest.databasePathEnv, 'LEGAL_V1_SQLITE_PATH');
   assert.deepEqual(manifest.allowedTables, ['labor_cases']);
+  assert.deepEqual(manifest.allowedColumns, [
+    'year',
+    'issue_type',
+    'outcome',
+    'compensation_amount'
+  ]);
   assert.equal(Object.hasOwn(manifest, 'databasePath'), false);
   assert.equal(Object.hasOwn(manifest, 'credentials'), false);
 });
@@ -73,6 +79,7 @@ test('rejects undeclared manifest fields instead of accepting inline secrets', (
         databasePathEnv: 'LEGAL_V1_SQLITE_PATH',
         accessMode: 'read-only',
         allowedTables: ['labor_cases'],
+        allowedColumns: ['year'],
         timeoutMs: 15000,
         maxRows: 500,
         maxOutputBytes: 1048576,

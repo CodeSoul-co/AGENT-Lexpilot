@@ -38,6 +38,7 @@ function createSource(databasePath, overrides = {}) {
     id: 'local.legal_cases',
     databasePath,
     allowedTables: ['labor_cases'],
+    allowedColumns: ['case_id', 'year', 'issue_type', 'compensation_amount'],
     ...overrides
   });
 }
@@ -51,6 +52,7 @@ test('opens an existing SQLite file read-only without exposing its local path', 
       engine: 'sqlite',
       mode: 'read-only',
       allowedTables: ['labor_cases'],
+      allowedColumns: ['case_id', 'year', 'issue_type', 'compensation_amount'],
       timeoutMs: 15000,
       maxRows: 500,
       maxOutputBytes: 1048576,
@@ -73,14 +75,14 @@ test('introspects only the configured table and returns a stable Schema fingerpr
     const first = await source.inspectSchema();
     const second = await source.inspectSchema();
 
-    assert.equal(first.dataSource, 'local.legal_cases');
-    assert.equal(first.engine, 'sqlite');
-    assert.equal(first.tableName, 'labor_cases');
+    assert.equal(first.schema.dataSource, 'local.legal_cases');
+    assert.equal(first.schema.engine, 'sqlite');
+    assert.equal(first.schema.tableName, 'labor_cases');
     assert.deepEqual(
-      first.columns.map((column) => column.name),
+      first.schema.columns.map((column) => column.name),
       ['case_id', 'year', 'issue_type', 'compensation_amount']
     );
-    assert.equal(first.columns[0].primaryKeyPosition, 1);
+    assert.equal(first.schema.columns[0].primaryKeyPosition, 1);
     assert.match(first.schemaFingerprint, /^[0-9a-f]{64}$/);
     assert.equal(first.schemaFingerprint, second.schemaFingerprint);
   } finally {
@@ -131,7 +133,9 @@ test('blocks writes before execution and rejects a changed Schema fingerprint', 
 
     const sqlite = loadHyphaAdaptersLocal(path.resolve(__dirname, '..')).loadSqlite(true);
     const writable = new sqlite.DatabaseSync(fixture.databasePath);
-    writable.exec('ALTER TABLE labor_cases ADD COLUMN city TEXT;');
+    writable.exec(
+      'ALTER TABLE labor_cases RENAME COLUMN compensation_amount TO compensation_total;'
+    );
     writable.close?.();
 
     await assert.rejects(
@@ -174,13 +178,14 @@ test('fails closed at the row, output-size, and hard-timeout limits', async () =
   }
 });
 
-test('rejects missing files and unsafe table declarations during configuration', () => {
+test('rejects missing files and unsafe table or column declarations', async () => {
   assert.throws(
     () =>
       createSQLiteDataSource({
         id: 'missing',
         databasePath: path.join(os.tmpdir(), 'missing-lexpilot-database.sqlite'),
-        allowedTables: ['labor_cases']
+        allowedTables: ['labor_cases'],
+        allowedColumns: ['year']
       }),
     (error) => error instanceof SQLiteDataSourceError && error.code === 'DATABASE_NOT_FOUND'
   );
@@ -194,6 +199,14 @@ test('rejects missing files and unsafe table declarations during configuration',
     assert.throws(
       () => createSource(fixture.databasePath, { allowedTables: ['labor_cases', 'private_cases'] }),
       /exactly one table/
+    );
+    assert.throws(
+      () => createSource(fixture.databasePath, { allowedColumns: ['year', 'year'] }),
+      /must not contain duplicates/
+    );
+    await assert.rejects(
+      createSource(fixture.databasePath, { allowedColumns: ['private_note'] }).inspectSchema(),
+      (error) => error instanceof SQLiteDataSourceError && error.code === 'COLUMN_NOT_FOUND'
     );
   } finally {
     fixture.cleanup();
