@@ -16,6 +16,7 @@
     "audit:law-sources": "node scripts/audit-law-sources.cjs",
     "audit:sql:mysql": "node scripts/audit-sql-provider.cjs mysql",
     "audit:sql:postgresql": "node scripts/audit-sql-provider.cjs postgresql",
+    "audit:sandbox:docker": "node scripts/audit-docker-sandbox.cjs",
     "verify:baseline": "node scripts/verify-baseline.cjs",
     "verify:domain": "node scripts/verify-domain-pack.cjs",
     "verify:replay": "node scripts/verify-replay-fixtures.cjs",

@@ -38,6 +38,7 @@
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
 - 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
 - SQLite 写入专用配置通过 Hypha `GovernedToolRunner` 创建真实待审批 invocation；拒绝时 handler 不执行，批准后只执行一次。Worker 使用单个事务，失败、超时或影响超过 1 行时不提交，写操作不自动重试。审计日志仅记录 invocation ID、审批状态、事件数量、事务状态和影响行数，不记录参数、数据库路径或凭证。PostgreSQL/MySQL 在取得专用写账号和独立验收环境前继续保持只读。
+- Python / Shell 脚本执行同样强制进入 Hypha Human Review。批准后才把已校验路径、数量、总大小与 SHA-256 的输入文件写入独立的一次性 Workspace，并调用锁定 Hypha 基线公开导出的 `DockerSandboxProviderFactory`：网络与 DNS 默认关闭，根文件系统只读，只挂载当前 Workspace，固定非 root 用户、丢弃全部 capability，最多 1 核 CPU、512 MiB 内存和 30 秒命令执行时间。标准输出、标准错误和生成文件通过 Hypha Artifact Store 接口持久化；成功、失败和超时都必须验证执行容器已删除，再清理逻辑 Sandbox 与临时 Workspace。
 
 Schema 差异只包含数据源清单授权的表和字段，不扫描或输出其他客户 Schema。漂移事件、旧/新指纹、受影响表/字段数量和重新规划状态会写入哈希链审计日志；数据库路径、主机、账号、密码和字段数据不会进入通知或日志。对应接口为 `POST /api/sessions/:sessionId/schema-replan`，请求体固定为 `{ "requested": true }`。
 
@@ -89,6 +90,16 @@ npm run demo:web
 
 支持的自然语言模板为：“新增案例 LC-2026-1，年份 2026，事项 未签劳动合同，结果 employee_win，赔偿 20000”“将案例 LC-2026-1 的赔偿金额更新为 12000”“删除案例 LC-2026-1”。这不是通用 Text2SQL；不符合模板的写入会关闭失败。
 
+受治理脚本沙箱当前提供项目层运行时与独立真实 Docker 验收入口，尚未接入网页操作入口。镜像必须同时提供 `python3`、`/bin/sh`、`sleep` 与 `ln`，并使用不可变 SHA-256 digest；不能只写可漂移的镜像标签：
+
+```bash
+LEGAL_V1_SANDBOX_IMAGE=your-registry/lexpilot-sandbox:version
+LEGAL_V1_SANDBOX_IMAGE_DIGEST=sha256:<64-lowercase-hex-digest>
+npm run audit:sandbox:docker
+```
+
+该命令真实执行 Python、Shell、禁网、路径逃逸、符号链接、超时与内存限制用例，并核对每个运行的 Human Review 事件、Artifact 回执和 Workspace 清理。缺少 Docker daemon、镜像或 digest 时命令以非零状态诚实失败；自动化 Mock Provider 测试只证明业务接线与治理合同，不替代 OS 级隔离验收。
+
 PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
 
 ```bash
@@ -124,6 +135,7 @@ npm run audit:law-coverage  # 覆盖度（语料不足 100 条时按设计失败
 npm run audit:law-sources   # 官方来源只读核对（需联网）
 npm run audit:sql:mysql     # MySQL 真实只读 Provider 验收（需专用凭证）
 npm run audit:sql:postgresql # PostgreSQL 真实只读 Provider 验收（需专用凭证）
+npm run audit:sandbox:docker # Docker 脚本沙箱真实隔离验收（需 Docker 与 digest 固定镜像）
 npm run verify:replay       # V0/V1 脱敏 Replay、Regression 与临时恢复验收
 ```
 
@@ -150,4 +162,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、通用受约束 Text2SQL、OS 级脚本沙箱、生产级权限系统与生产级网页部署。SQLite 的固定模板单行写入已经完成项目层 Human Review、事务回滚和自动化验收；框架缺失的一等 DomainPack 绑定仍作为上游缺口记录。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、通用受约束 Text2SQL、脚本沙箱网页入口与真实 Docker 环境验收、生产级权限系统及生产级网页部署尚未完成。SQLite 固定模板单行写入已经完成项目层 Human Review、事务回滚和自动化验收；脚本沙箱已经完成项目层 Human Review、Hypha Docker Provider 接线、固定策略、Artifact 持久化和 Mock Provider 自动化验收，但在真实 Docker 审计命令通过前不视为 OS 级隔离验收完成。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
