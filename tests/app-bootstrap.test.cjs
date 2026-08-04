@@ -9,11 +9,28 @@ const {
   createLocalLegalAgent,
   createLocalLegalAgentApplication
 } = require('../src/v0/app-bootstrap.cjs');
+const { createCapabilityReferenceSnapshot } = require('../src/v1/capability-reference-snapshot.cjs');
+const { loadDataSourceSchemaProfile } = require('../src/v1/data-source-schema-profile.cjs');
+const { loadWorkflowStateCapabilityMap } = require('../src/v1/workflow-state-capability-map.cjs');
+const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 const { PRIVACY_POLICY_VERSION } = require('../src/v0/contracts.cjs');
 
 const projectRoot = path.resolve(__dirname, '..');
 const demoScript = path.join(projectRoot, 'scripts', 'demo-v0.cjs');
 const keyScript = path.join(projectRoot, 'scripts', 'generate-session-key.cjs');
+
+function demoCapabilitySnapshot() {
+  const workspace = loadWorkspaceExecutionProfile({ projectRoot }).receipt;
+  const dataSources = loadDataSourceSchemaProfile({ projectRoot });
+  const stateMap = loadWorkflowStateCapabilityMap({ projectRoot });
+  return createCapabilityReferenceSnapshot(
+    stateMap.bindApplication({
+      workspaceExecutionBinding: workspace,
+      dataSourceSchemaBinding: dataSources.resolveRuntime({ runtime: 'demo' }).receipt,
+      sandboxEnabled: false
+    })
+  );
+}
 
 function withTemporaryDirectory(run) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-demo-test-'));
@@ -69,6 +86,7 @@ test('resolves the default encrypted data directory below the project root', () 
     const key = crypto.randomBytes(32).toString('base64');
     const app = createLocalLegalAgent({
       projectRoot: temporaryProjectRoot,
+      capabilitySnapshot: demoCapabilitySnapshot(),
       environment: {
         LEGAL_SESSION_OWNER_ID: 'owner-a',
         LEGAL_SESSION_KEY_BASE64: key
@@ -432,9 +450,21 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     assert.equal(application.workflowStateCapabilityBinding.runtimeStateBindingCount, 12);
     assert.equal(application.workflowStateCapabilityBinding.referencesRetained, true);
     assert.equal(
+      application.capabilitySnapshotRef.id,
+      'capability-snapshot.legal-session-agent'
+    );
+    assert.match(application.capabilitySnapshotRef.snapshotSha256, /^sha256:[0-9a-f]{64}$/);
+    assert.equal(application.agentCapabilityPatchRef.id, 'agent-patch.legal-capabilities');
+    assert.match(application.agentCapabilityPatchRef.patchSha256, /^sha256:[0-9a-f]{64}$/);
+    assert.deepEqual(
+      application.agentDescriptor.capabilitySnapshotRef,
+      application.capabilitySnapshotRef
+    );
+    assert.equal(
       JSON.stringify(application.workflowStateCapabilityBinding).includes(directory),
       false
     );
+    assert.equal(JSON.stringify(application.capabilitySnapshotRef).includes(directory), false);
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });

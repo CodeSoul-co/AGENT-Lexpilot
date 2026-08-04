@@ -1,5 +1,11 @@
 const path = require('node:path');
 const { loadHyphaDomain } = require('./hypha-paths.cjs');
+const {
+  agentCapabilityPatchRef,
+  capabilitySnapshotRef,
+  createAgentCapabilityPatch,
+  createCapabilityReferenceSnapshot
+} = require('../src/v1/capability-reference-snapshot.cjs');
 const { loadDataSourceSchemaProfile } = require('../src/v1/data-source-schema-profile.cjs');
 const { loadWorkflowStateCapabilityMap } = require('../src/v1/workflow-state-capability-map.cjs');
 const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
@@ -27,6 +33,8 @@ async function main() {
     dataSourceSchemaBinding: dataSourceSchemaProfile.resolveRuntime({ runtime: 'demo' }).receipt,
     sandboxEnabled: false
   });
+  const capabilitySnapshot = createCapabilityReferenceSnapshot(workflowStateBinding);
+  const capabilityPatch = createAgentCapabilityPatch(capabilitySnapshot);
 
   console.log(
     JSON.stringify(
@@ -47,7 +55,9 @@ async function main() {
         domainStateBindingCount: workflowStateBinding.domainStateBindingCount,
         runtimeStateBindingCount: workflowStateBinding.runtimeStateBindingCount,
         compiledStateFsmSha256: workflowStateBinding.compiledFsmSha256,
-        stateCapabilityReferencesRetained: workflowStateBinding.referencesRetained
+        stateCapabilityReferencesRetained: workflowStateBinding.referencesRetained,
+        sessionAgentCapabilitySnapshot: capabilitySnapshotRef(capabilitySnapshot),
+        agentCapabilityPatch: agentCapabilityPatchRef(capabilityPatch, capabilitySnapshot)
       },
       null,
       2

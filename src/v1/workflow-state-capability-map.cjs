@@ -650,6 +650,7 @@ function loadWorkflowStateCapabilityMap(options = {}) {
       return deepFreeze({
         bindingId: manifest.id,
         bindingVersion: manifest.version,
+        domainPackRef,
         runtimeWorkflowRef: receipt.runtimeWorkflowRef,
         activeRuntime: dataSourceReceipt.runtime,
         activeDataSourceProfileRef,

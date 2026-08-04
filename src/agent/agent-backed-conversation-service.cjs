@@ -59,6 +59,20 @@ class AgentBackedConversationService {
     if (!this.agent || typeof this.agent.run !== 'function' || typeof this.agent.describe !== 'function') {
       throw new TypeError('agent must expose describe() and run(input).');
     }
+    const sessionSnapshotRef = this.service.describeCapabilityBinding?.() ?? null;
+    const agentSnapshotRef = this.agent.describe().capabilitySnapshotRef ?? null;
+    if (
+      (sessionSnapshotRef === null) !== (agentSnapshotRef === null) ||
+      (sessionSnapshotRef !== null &&
+        (sessionSnapshotRef.id !== agentSnapshotRef.id ||
+          sessionSnapshotRef.version !== agentSnapshotRef.version ||
+          sessionSnapshotRef.snapshotSha256 !== agentSnapshotRef.snapshotSha256))
+    ) {
+      const error = new Error('Session and Agent capability snapshots do not match.');
+      error.code = 'CAPABILITY_SNAPSHOT_COMPOSITION_DRIFT';
+      throw error;
+    }
+    this.capabilitySnapshotRef = sessionSnapshotRef;
   }
 
   describe() {

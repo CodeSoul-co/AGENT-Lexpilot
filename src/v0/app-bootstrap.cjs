@@ -4,6 +4,12 @@ const { createAgentInferenceProvider } = require('../agent/inference-provider.cj
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
 const { createDataSourceAdmin } = require('../v1/data-source-admin.cjs');
 const { loadDataSourceSchemaProfile } = require('../v1/data-source-schema-profile.cjs');
+const {
+  agentCapabilityPatchRef,
+  capabilitySnapshotRef,
+  createAgentCapabilityPatch,
+  createCapabilityReferenceSnapshot
+} = require('../v1/capability-reference-snapshot.cjs');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
@@ -73,9 +79,48 @@ function assertV1RuntimeBinding(v1Runtime, bindingReceipt) {
   }
 }
 
+function createDefaultCapabilitySnapshot(options, environment, projectRoot) {
+  const workspaceExecutionProfile = loadWorkspaceExecutionProfile({
+    projectRoot,
+    manifestPath: options.workspaceExecutionManifestPath,
+    domainPackPath: options.domainPackPath
+  });
+  const dataSourceSchemaProfile = loadDataSourceSchemaProfile({
+    projectRoot,
+    bindingPath: options.dataSourceSchemaBindingPath,
+    domainPackPath: options.domainPackPath
+  });
+  const workflowStateCapabilityMap = loadWorkflowStateCapabilityMap({
+    projectRoot,
+    manifestPath: options.workflowStateCapabilityManifestPath,
+    domainPackPath: options.domainPackPath,
+    workspaceExecutionPath: options.workspaceExecutionManifestPath,
+    dataSourceSchemaPath: options.dataSourceSchemaBindingPath
+  });
+  const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
+  const dataSourceSchemaBinding = dataSourceSchemaProfile.resolveRuntime({
+    runtime: v1Mode,
+    configuredManifest:
+      v1Mode === 'sqlite' ? environment.LEGAL_V1_SQLITE_MANIFEST : undefined
+  });
+  const sandboxEnabled =
+    options.sandboxCoordinator !== undefined ||
+    options.sandboxRuntime !== undefined ||
+    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
+  const workflowStateCapabilityBinding = workflowStateCapabilityMap.bindApplication({
+    workspaceExecutionBinding: workspaceExecutionProfile.receipt,
+    dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
+    sandboxEnabled
+  });
+  return createCapabilityReferenceSnapshot(workflowStateCapabilityBinding);
+}
+
 function createLocalLegalAgent(options = {}) {
   const environment = options.environment ?? process.env;
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
+  const capabilitySnapshot =
+    options.capabilitySnapshot ??
+    createDefaultCapabilitySnapshot(options, environment, projectRoot);
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
   const encodedKey = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey);
   const dataDirectory = resolveDataDirectory(
@@ -103,9 +148,10 @@ function createLocalLegalAgent(options = {}) {
     retentionDays: options.retentionDays,
     v1Runtime: options.v1Runtime,
     executionLog: options.executionLog,
-    artifactRepository: options.artifactRepository
+    artifactRepository: options.artifactRepository,
+    capabilitySnapshot
   });
-  return { service, dataDirectory };
+  return { service, dataDirectory, capabilitySnapshotRef: capabilitySnapshotRef(capabilitySnapshot) };
 }
 
 async function createLocalLegalAgentApplication(options = {}) {
@@ -143,6 +189,10 @@ async function createLocalLegalAgentApplication(options = {}) {
     dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
     sandboxEnabled
   });
+  const capabilitySnapshot = createCapabilityReferenceSnapshot(
+    workflowStateCapabilityBinding
+  );
+  const capabilityPatch = createAgentCapabilityPatch(capabilitySnapshot);
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
   const auditActorKey = parseBase64EncryptionKey(
     requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey)
@@ -250,14 +300,17 @@ async function createLocalLegalAgentApplication(options = {}) {
     auditActorId,
     v1Runtime,
     executionLog,
-    artifactRepository
+    artifactRepository,
+    capabilitySnapshot
   });
   const inference = createAgentInferenceProvider({ environment, projectRoot });
   const agent = await createLegalComplianceAgent({
     projectRoot,
     inference,
     v1Runtime,
-    v0ModelAlias: environment.LEGAL_AGENT_MODEL_ALIAS
+    v0ModelAlias: environment.LEGAL_AGENT_MODEL_ALIAS,
+    capabilitySnapshot,
+    capabilityPatch
   });
   const service = new AgentBackedConversationService({
     service: local.service,
@@ -280,6 +333,8 @@ async function createLocalLegalAgentApplication(options = {}) {
     dataSourceAdmin,
     dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
     workflowStateCapabilityBinding,
+    capabilitySnapshotRef: capabilitySnapshotRef(capabilitySnapshot),
+    agentCapabilityPatchRef: agentCapabilityPatchRef(capabilityPatch, capabilitySnapshot),
     workspaceExecutionBinding: workspaceExecutionProfile.receipt,
     executionLogFilePath,
     artifactDirectory,

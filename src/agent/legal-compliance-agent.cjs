@@ -7,6 +7,12 @@ const {
   TASK_TYPES,
   classifyBusinessTask
 } = require('../v0/task-type-classifier.cjs');
+const {
+  agentCapabilityPatchRef,
+  assertAgentCapabilityPatch,
+  assertCapabilityReferenceSnapshot,
+  capabilitySnapshotRef
+} = require('../v1/capability-reference-snapshot.cjs');
 
 const AGENT_NAME = '法律合规审查智能助手';
 const ROUTER_RUNTIME = 'hypha-agent-router';
@@ -37,6 +43,15 @@ function safeRuntimeTrace(trace) {
 }
 
 async function createLegalComplianceAgent(options = {}) {
+  const capabilitySnapshot = options.capabilitySnapshot
+    ? assertCapabilityReferenceSnapshot(options.capabilitySnapshot)
+    : null;
+  if ((capabilitySnapshot === null) !== (options.capabilityPatch === undefined)) {
+    throw new TypeError('capabilitySnapshot and capabilityPatch must be provided together.');
+  }
+  const capabilityPatch = capabilitySnapshot
+    ? assertAgentCapabilityPatch(options.capabilityPatch, capabilitySnapshot)
+    : null;
   const v0Runtime = await createLegalV0AgentRuntime({
     projectRoot: options.projectRoot,
     inference: options.inference,
@@ -79,11 +94,28 @@ async function createLegalComplianceAgent(options = {}) {
             id: null,
             status: v1Runtime ? 'connected' : 'not_implemented'
           }
-        }
+        },
+        capabilitySnapshotRef: capabilitySnapshot
+          ? capabilitySnapshotRef(capabilitySnapshot)
+          : null,
+        capabilityPatchRef: capabilityPatch
+          ? agentCapabilityPatchRef(capabilityPatch, capabilitySnapshot)
+          : null
       };
     },
 
+    applyCapabilityPatch(candidate) {
+      if (!capabilitySnapshot) {
+        throw new Error('Agent has no capability snapshot binding.');
+      }
+      const validated = assertAgentCapabilityPatch(candidate, capabilitySnapshot);
+      return agentCapabilityPatchRef(validated, capabilitySnapshot);
+    },
+
     async run(rawInput) {
+      if (capabilitySnapshot) {
+        assertAgentCapabilityPatch(capabilityPatch, capabilitySnapshot);
+      }
       const input = normalizeAgentInput(rawInput);
       const classification = classifyBusinessTask({
         piiRedacted: true,

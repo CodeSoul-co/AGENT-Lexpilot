@@ -1,6 +1,11 @@
 const { randomUUID } = require('node:crypto');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const {
+  assertCapabilityReferenceSnapshot,
+  capabilitySnapshotRef,
+  createCapabilityBoundSessionStore
+} = require('../v1/capability-reference-snapshot.cjs');
+const {
   V0_DOMAIN_PACK_VERSION,
   V0_ERROR_CODES,
   PRIVACY_AUTHORIZATION_STATUS,
@@ -170,7 +175,13 @@ function historyDetail(session) {
 
 class LegalSelfCheckConversationService {
   constructor(options = {}) {
-    this.store = options.store ?? new InMemoryLegalSessionStore();
+    const baseStore = options.store ?? new InMemoryLegalSessionStore();
+    this.capabilitySnapshot = options.capabilitySnapshot
+      ? assertCapabilityReferenceSnapshot(options.capabilitySnapshot)
+      : null;
+    this.store = this.capabilitySnapshot
+      ? createCapabilityBoundSessionStore(baseStore, this.capabilitySnapshot)
+      : baseStore;
     this.taskClassifier = options.taskClassifier ?? classifyBusinessTask;
     if (typeof this.taskClassifier !== 'function') {
       throw new TypeError('taskClassifier must be a function.');
@@ -235,6 +246,10 @@ class LegalSelfCheckConversationService {
     }
     this.lastCleanup = this.autoCleanup ? this.cleanupInactiveSessions() : null;
     this.lastCleanupAt = this.autoCleanup ? this.clock() : null;
+  }
+
+  describeCapabilityBinding() {
+    return this.capabilitySnapshot ? capabilitySnapshotRef(this.capabilitySnapshot) : null;
   }
 
   maybeCleanupInactiveSessions() {
@@ -356,6 +371,9 @@ class LegalSelfCheckConversationService {
       id: this.idFactory(),
       ownerId: this.ownerId,
       domainPackVersion: V0_DOMAIN_PACK_VERSION,
+      ...(this.capabilitySnapshot
+        ? { capabilitySnapshot: structuredClone(this.capabilitySnapshot) }
+        : {}),
       privacyAuthorization: {
         status: PRIVACY_AUTHORIZATION_STATUS.GRANTED,
         policyVersion: prepared.privacyPolicyVersion,
