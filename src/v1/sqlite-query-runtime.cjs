@@ -2,20 +2,12 @@ const { createHash } = require('node:crypto');
 const { createSchemaFingerprint, validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
 const { createSchemaDrift } = require('./schema-drift.cjs');
 const { createGovernedSQLiteWriteRuntime } = require('./governed-sqlite-write-runtime.cjs');
-
-const SQLITE_QUERY_SQL = [
-  'SELECT year, outcome, compensation_amount',
-  'FROM labor_cases',
-  'WHERE year BETWEEN :start_year AND :end_year AND issue_type = :issue_type',
-  'ORDER BY year;'
-].join('\n');
-const SQLITE_QUERY_PARAMETERS = Object.freeze({
-  start_year: 2023,
-  end_year: 2025,
-  issue_type: '未签劳动合同'
-});
-const WRITE_PATTERN = /\b(?:insert|update|delete|drop|alter|truncate|create|replace|grant|revoke)\b|新增|写入|修改|删除|清空|建表/i;
-const TEMPLATE_SIGNALS = Object.freeze([/未签.{0,4}劳动合同/, /胜诉率|赔偿.{0,4}(?:中位数|金额)/]);
+const {
+  DEFAULT_QUERY_PARAMETERS: SQLITE_QUERY_PARAMETERS,
+  DEFAULT_QUERY_SQL: SQLITE_QUERY_SQL,
+  DEFAULT_QUERY_TEXT,
+  planConstrainedText2Sql
+} = require('./constrained-text2sql-planner.cjs');
 
 function safeTrace(type, data) {
   return { type, data };
@@ -54,9 +46,9 @@ function buildYearlyRows(sourceRows) {
     });
 }
 
-function buildArtifact(runId, dataSource, sourceRowCount, rows) {
+function buildArtifact(runId, dataSource, sourceRowCount, rows, parameters) {
   const content = [
-    '# 近三年未签劳动合同案例分析',
+    `# ${parameters.start_year}-${parameters.end_year} 年未签劳动合同案例分析`,
     '',
     `数据源：${dataSource}（本次只读查询匹配 ${sourceRowCount} 条记录）`,
     '',
@@ -105,10 +97,6 @@ function reject(
   };
 }
 
-function inputSupported(redactedText) {
-  return TEMPLATE_SIGNALS.every((pattern) => pattern.test(redactedText));
-}
-
 async function createV1SQLiteQueryRuntime(options = {}) {
   const dataSource = options.dataSource;
   if (dataSource?.describe?.().mode === 'read-write') {
@@ -127,13 +115,23 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     throw new Error('The configured SQLite data source is unavailable.');
   }
   let snapshot = await dataSource.inspectSchema();
-  let policy = validateReadOnlySqlPlan({
-    sql: SQLITE_QUERY_SQL,
-    parameters: SQLITE_QUERY_PARAMETERS,
+  const initialGeneratedPlan = planConstrainedText2Sql({
+    piiRedacted: true,
+    redactedText: DEFAULT_QUERY_TEXT,
     schema: snapshot.schema
   });
-  if (!policy.ok) {
-    throw new Error(`SQLite query template is incompatible with the configured Schema: ${policy.code}`);
+  if (!initialGeneratedPlan.ok) {
+    throw new Error(
+      `SQLite query template is incompatible with the configured Schema: ${initialGeneratedPlan.code}`
+    );
+  }
+  const initialPolicy = validateReadOnlySqlPlan({
+    sql: initialGeneratedPlan.sql,
+    parameters: initialGeneratedPlan.parameters,
+    schema: snapshot.schema
+  });
+  if (!initialPolicy.ok) {
+    throw new Error(`SQLite query template is incompatible with the configured Schema: ${initialPolicy.code}`);
   }
   const descriptor = dataSource.describe();
   const runtimeName = `${descriptor.engine}-readonly`;
@@ -144,12 +142,29 @@ async function createV1SQLiteQueryRuntime(options = {}) {
   const executionMode =
     descriptor.engine === 'sqlite' ? 'worker-readonly-sqlite' : 'network-readonly-sql';
 
-  function buildPlan(currentSnapshot = snapshot, currentPolicy = policy) {
+  function generatePlan(input, currentSnapshot) {
+    const generated = planConstrainedText2Sql({
+      piiRedacted: input.piiRedacted,
+      redactedText: input.redactedText,
+      schema: currentSnapshot.schema
+    });
+    if (!generated.ok) return { generated };
+    const currentPolicy = validateReadOnlySqlPlan({
+      sql: generated.sql,
+      parameters: generated.parameters,
+      schema: currentSnapshot.schema
+    });
+    return { generated, currentPolicy };
+  }
+
+  function buildPlan(currentSnapshot, generated, currentPolicy) {
     return Object.freeze({
       status: 'verified',
-      sql: SQLITE_QUERY_SQL,
-      parameters: SQLITE_QUERY_PARAMETERS,
-      explanation: '按年份读取未签劳动合同案例，再计算案例数、劳动者胜诉率和胜诉赔偿中位数。',
+      templateId: generated.templateId,
+      sql: generated.sql,
+      parameters: generated.parameters,
+      explanation: generated.explanation,
+      semanticQuery: generated.semanticQuery,
       operationType: currentPolicy.operationType,
       readOnly: true,
       schemaVerified: true,
@@ -161,8 +176,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     });
   }
 
-  function buildPlannedResult(input, currentSnapshot = snapshot, currentPolicy = policy) {
-    const plan = buildPlan(currentSnapshot, currentPolicy);
+  function buildPlannedResult(input, currentSnapshot, generated, currentPolicy) {
+    const plan = buildPlan(currentSnapshot, generated, currentPolicy);
     return {
       status: 'awaiting_confirmation',
       runtime: runtimeName,
@@ -217,25 +232,26 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     },
 
     plan(input) {
-      if (WRITE_PATTERN.test(input.redactedText)) {
+      const { generated, currentPolicy } = generatePlan(input, snapshot);
+      if (!generated.ok) {
         return reject(
           input,
-          'WRITE_OPERATION_BLOCKED',
-          `${descriptor.engine} 模式当前只允许只读查询，写操作不会执行。`,
+          generated.code,
+          generated.message,
           'v1.sql.query.rejected',
           runtimeName
         );
       }
-      if (!inputSupported(input.redactedText)) {
+      if (!currentPolicy.ok) {
         return reject(
           input,
-          'QUERY_TEMPLATE_NOT_SUPPORTED',
-          `当前 ${descriptor.engine} 模式仅支持“近三年未签劳动合同胜诉率与赔偿中位数”查询模板。`,
+          currentPolicy.code,
+          '生成的查询未通过只读 SQL 策略。',
           'v1.sql.query.rejected',
           runtimeName
         );
       }
-      return buildPlannedResult(input);
+      return buildPlannedResult(input, snapshot, generated, currentPolicy);
     },
 
     async replan(input) {
@@ -257,15 +273,12 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           { schemaDrift: drift, replanRequired: true }
         );
       }
-      const currentPolicy = validateReadOnlySqlPlan({
-        sql: SQLITE_QUERY_SQL,
-        parameters: SQLITE_QUERY_PARAMETERS,
-        schema: currentSnapshot.schema
-      });
-      if (!currentPolicy.ok) {
+      const { generated, currentPolicy } = generatePlan(input, currentSnapshot);
+      if (!generated.ok || !currentPolicy?.ok) {
+        const code = generated.ok ? currentPolicy.code : generated.code;
         return reject(
           input,
-          currentPolicy.code,
+          code,
           '当前 Schema 无法生成安全的只读查询计划。',
           'v1.sql.query.replan.rejected',
           runtimeName,
@@ -273,8 +286,7 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         );
       }
       snapshot = currentSnapshot;
-      policy = currentPolicy;
-      const replanned = buildPlannedResult(input, currentSnapshot, currentPolicy);
+      const replanned = buildPlannedResult(input, currentSnapshot, generated, currentPolicy);
       return {
         ...replanned,
         replanned: true,
@@ -289,9 +301,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
     },
 
     async execute(input) {
-      if (WRITE_PATTERN.test(input.redactedText) || !inputSupported(input.redactedText)) {
-        return this.plan(input);
-      }
+      const initialPlanning = generatePlan(input, snapshot);
+      if (!initialPlanning.generated.ok || !initialPlanning.currentPolicy?.ok) return this.plan(input);
       const expectedSchema = input.expectedSchemaSnapshot ?? snapshot.schema;
       if (
         input.expectedSchemaFingerprint !== undefined &&
@@ -329,12 +340,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
           { schemaDrift, replanRequired: true }
         );
       }
-      const currentPolicy = validateReadOnlySqlPlan({
-        sql: SQLITE_QUERY_SQL,
-        parameters: SQLITE_QUERY_PARAMETERS,
-        schema: currentSnapshot.schema
-      });
-      if (!currentPolicy.ok || input.expectedPlanHash !== currentPolicy.planHash) {
+      const { generated, currentPolicy } = generatePlan(input, currentSnapshot);
+      if (!generated.ok || !currentPolicy?.ok || input.expectedPlanHash !== currentPolicy.planHash) {
         return reject(
           input,
           'PLAN_DRIFT',
@@ -346,8 +353,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
       let queryResult;
       try {
         queryResult = await dataSource.executeReadOnly({
-          sql: SQLITE_QUERY_SQL,
-          parameters: SQLITE_QUERY_PARAMETERS,
+          sql: generated.sql,
+          parameters: generated.parameters,
           expectedSchemaFingerprint: currentSnapshot.schemaFingerprint
         });
       } catch (error) {
@@ -374,7 +381,13 @@ async function createV1SQLiteQueryRuntime(options = {}) {
       }
 
       const rows = buildYearlyRows(queryResult.rows);
-      const artifact = buildArtifact(input.runId, descriptor.id, queryResult.rowCount, rows);
+      const artifact = buildArtifact(
+        input.runId,
+        descriptor.id,
+        queryResult.rowCount,
+        rows,
+        generated.parameters
+      );
       return {
         status: 'completed',
         runtime: runtimeName,
@@ -383,7 +396,7 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         executionMode,
         sqlExecutionProvider: providerName,
         schema: currentSnapshot.schema,
-        plan: buildPlan(currentSnapshot, currentPolicy),
+        plan: buildPlan(currentSnapshot, generated, currentPolicy),
         result: {
           columns: ['year', 'case_count', 'employee_win_rate', 'median_compensation'],
           rows,
@@ -393,7 +406,7 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         },
         chart: {
           type: 'bar',
-          title: '近三年劳动者胜诉率（已配置数据源）',
+          title: `${generated.parameters.start_year}-${generated.parameters.end_year} 年劳动者胜诉率（已配置数据源）`,
           labels: rows.map((row) => String(row.year)),
           series: [{ name: '胜诉率 %', values: rows.map((row) => row.employee_win_rate) }]
         },

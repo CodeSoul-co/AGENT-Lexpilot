@@ -112,6 +112,58 @@ test('plans and executes the supported template against the configured SQLite da
   }
 });
 
+test('binds an explicit year range into parameters and limits the executed rows', async () => {
+  const fixture = createFixture();
+  const queryText = '统计2024年至2025年案例库中未签劳动合同案件的胜诉率和赔偿中位数。';
+  try {
+    const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
+    const planned = runtime.plan(runtimeInput(queryText));
+
+    assert.equal(planned.status, 'awaiting_confirmation');
+    assert.equal(planned.plan.templateId, 'labor-case-yearly-outcome-statistics.v1');
+    assert.deepEqual(planned.plan.parameters, {
+      start_year: 2024,
+      end_year: 2025,
+      issue_type: '未签劳动合同'
+    });
+    assert.equal(planned.plan.sql.includes('2024'), false);
+    assert.deepEqual(planned.plan.semanticQuery.yearRange, [2024, 2025]);
+
+    const executed = await runtime.execute({
+      ...runtimeInput(queryText),
+      expectedPlanHash: planned.plan.planHash,
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
+    });
+    assert.equal(executed.status, 'completed');
+    assert.equal(executed.result.sourceRowCount, 3);
+    assert.deepEqual(executed.result.rows.map((row) => row.year), [2024, 2025]);
+    assert.match(executed.artifact.content, /2024-2025 年未签劳动合同案例分析/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('stops execution when the natural-language range changes after confirmation', async () => {
+  const fixture = createFixture();
+  try {
+    const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
+    const planned = runtime.plan(runtimeInput());
+    const changed = await runtime.execute({
+      ...runtimeInput('统计2024年至2025年未签劳动合同案件的胜诉率和赔偿中位数。'),
+      expectedPlanHash: planned.plan.planHash,
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
+    });
+
+    assert.equal(changed.status, 'rejected');
+    assert.equal(changed.errorCode, 'PLAN_DRIFT');
+    assert.equal(changed.executionAttempted, false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('rejects writes and unsupported natural-language templates before SQLite execution', async () => {
   const fixture = createFixture();
   try {
@@ -125,6 +177,15 @@ test('rejects writes and unsupported natural-language templates before SQLite ex
     assert.equal(unsupported.status, 'rejected');
     assert.equal(unsupported.errorCode, 'QUERY_TEMPLATE_NOT_SUPPORTED');
     assert.equal(unsupported.executionAttempted, false);
+
+    const rawSql = runtime.plan(
+      runtimeInput(
+        'SELECT year FROM labor_cases; 统计2025年未签劳动合同案件的胜诉率和赔偿中位数。'
+      )
+    );
+    assert.equal(rawSql.status, 'rejected');
+    assert.equal(rawSql.errorCode, 'RAW_SQL_INPUT_BLOCKED');
+    assert.equal(rawSql.executionAttempted, false);
   } finally {
     fixture.cleanup();
   }
