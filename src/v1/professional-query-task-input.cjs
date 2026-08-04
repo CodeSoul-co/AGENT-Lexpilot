@@ -142,7 +142,7 @@ function createProfessionalQueryTaskReceipt(input) {
   });
 }
 
-function restoreProfessionalQueryTaskInput(receipt, query) {
+function assertProfessionalQueryTaskReceipt(receipt) {
   if (
     !receipt ||
     typeof receipt !== 'object' ||
@@ -164,13 +164,25 @@ function restoreProfessionalQueryTaskInput(receipt, query) {
   );
   if (
     JSON.stringify(requestedOutputFormats) !==
-    JSON.stringify(receipt.requestedOutputFormats) ||
+    JSON.stringify(receipt.requestedOutputFormats)
+  ) {
+    fail('PROFESSIONAL_QUERY_TASK_RECEIPT_INVALID', 'Task receipt output formats are invalid.');
+  }
+  return receipt;
+}
+
+function restoreProfessionalQueryTaskInput(receipt, query) {
+  assertProfessionalQueryTaskReceipt(receipt);
+  if (
     typeof query !== 'string' ||
     query.trim().length < 1 ||
     query.length > 5000
   ) {
     fail('PROFESSIONAL_QUERY_TASK_RECEIPT_INVALID', 'Task receipt cannot restore safe input.');
   }
+  const requestedOutputFormats = normalizeRequestedOutputFormats(
+    receipt.requestedOutputFormats
+  );
   return Object.freeze({
     schema: receipt.schema,
     query: query.trim(),
@@ -185,6 +197,7 @@ module.exports = {
   PROFESSIONAL_QUERY_TASK_SCHEMA,
   ProfessionalQueryTaskInputError,
   SUPPORTED_OUTPUT_FORMATS,
+  assertProfessionalQueryTaskReceipt,
   createProfessionalQueryTaskInput,
   createProfessionalQueryTaskReceipt,
   normalizeRequestedOutputFormats,

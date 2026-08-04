@@ -7,6 +7,11 @@ const {
   PROFESSIONAL_QUERY_TASK_SCHEMA,
   SUPPORTED_OUTPUT_FORMATS
 } = require('../v1/professional-query-task-input.cjs');
+const {
+  QUERY_WORKSPACE_ARCHIVE_DAYS,
+  QUERY_WORKSPACE_ARCHIVE_SCHEMA,
+  QUERY_WORKSPACE_LIFECYCLE_SCHEMA
+} = require('../v1/query-workspace-lifecycle.cjs');
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_SANDBOX_JSON_BODY_BYTES = 24 * 1024 * 1024;
@@ -187,7 +192,12 @@ function createDemoWebHandler(options = {}) {
             defaultOutputFormats: DEFAULT_OUTPUT_FORMATS,
             dataSourceSelection: 'administrator-bound-active-runtime',
             workspaceKind: 'logical-query-session',
-            workspacePathExposed: false
+            workspacePathExposed: false,
+            workspaceLifecycleSchema: QUERY_WORKSPACE_LIFECYCLE_SCHEMA,
+            workspaceArchiveSchema: QUERY_WORKSPACE_ARCHIVE_SCHEMA,
+            archiveAfterInactiveDays: QUERY_WORKSPACE_ARCHIVE_DAYS,
+            archiveTrigger: 'startup-and-daily-session-entry',
+            restorePolicy: 'explicit-new-task-only'
           }
         });
         return;

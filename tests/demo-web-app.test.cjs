@@ -767,6 +767,16 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
     ]);
     assert.equal(config.body.v1TaskInput.dataSourceSelection, 'administrator-bound-active-runtime');
     assert.equal(config.body.v1TaskInput.workspacePathExposed, false);
+    assert.equal(config.body.v1TaskInput.archiveAfterInactiveDays, 30);
+    assert.equal(
+      config.body.v1TaskInput.workspaceLifecycleSchema,
+      'workspace-lifecycle.legal-query@1.0.0'
+    );
+    assert.equal(
+      config.body.v1TaskInput.workspaceArchiveSchema,
+      'workspace-archive.legal-query@1.0.0'
+    );
+    assert.equal(config.body.v1TaskInput.restorePolicy, 'explicit-new-task-only');
     assert.ok(Array.isArray(config.body.v1DemoSchema.columns));
     assert.ok(config.body.v1DemoSchema.columns.length > 0);
     assert.equal(typeof config.body.v1DemoSchema.columns[0].name, 'string');

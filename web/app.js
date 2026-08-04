@@ -215,7 +215,7 @@ function renderStatus(result) {
     needs_clarification: '需要补充信息', needs_domain_clarification: '需要确认领域', completed: '任务已完成',
     information_ready: '信息已收集', rejected: '已安全拒绝', unsupported_domain: '暂不支持该领域',
     clarification_limit_reached: '已到追问上限', failed: '处理失败',
-    awaiting_confirmation: '等待执行确认', cancelled: '已取消执行'
+    awaiting_confirmation: '等待执行确认', cancelled: '已取消执行', archived: '已归档'
   };
   elements.sessionStatus.textContent = labels[result.status] ?? '处理中';
   elements.sessionRound.textContent = result.taskType === 'professional_data_query'
@@ -728,7 +728,8 @@ function renderLogs(logs, integrity) {
     sandbox_plan: 'Sandbox 计划',
     sandbox_execute: 'Sandbox 执行',
     sandbox_reject: 'Sandbox 拒绝',
-    sandbox_expire: 'Sandbox 过期'
+    sandbox_expire: 'Sandbox 过期',
+    workspace_archive: 'Workspace 归档'
   };
   for (const log of logs) {
     const item = node('div', 'log-item');
@@ -933,6 +934,11 @@ function renderResult(result) {
     } else if (result.status === 'cancelled') {
       addV1PlanCard(result);
       addMessage('assistant', result.assistantMessage ?? '已按你的选择取消本次专业数据分析，查询未执行。', '安全边界');
+    } else if (result.status === 'archived') {
+      addMessage('assistant', '该逻辑查询 Workspace 已因超过 30 天未活动而归档。结果与 Artifact 引用保持只读，继续查询请新建任务。', 'Workspace 归档');
+      if (result.v1?.result && result.v1?.artifact) {
+        addV1Result({ ...result, v1: { ...result.v1, status: 'completed' } });
+      }
     } else if (result.v1?.schemaDrift?.detected) {
       addMessage('assistant', result.assistantMessage ?? result.v1.schemaDrift.notification, 'Schema 变化');
       addSchemaDriftCard(result);
@@ -1109,7 +1115,7 @@ async function submitText(text) {
 async function loadHistory() {
   const result = await api('/api/sessions'); elements.historyList.replaceChildren();
   if (!result.sessions.length) { elements.historyList.append(node('p', 'muted compact', '暂无历史会话')); return; }
-  const v1StatusLabels = { awaiting_confirmation: '等待确认', replanning: '重新规划中', cancelled: '已取消', rejected: '已拒绝' };
+  const v1StatusLabels = { awaiting_confirmation: '等待确认', replanning: '重新规划中', cancelled: '已取消', rejected: '已拒绝', archived: '已归档' };
   for (const session of result.sessions) {
     const button = node('button', 'history-item'); button.type = 'button'; button.dataset.sessionId = session.sessionId;
     if (session.sessionId === state.activeSessionId) button.classList.add('active');

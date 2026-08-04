@@ -6,6 +6,14 @@ const {
   restoreProfessionalQueryTaskInput
 } = require('../v1/professional-query-task-input.cjs');
 const {
+  QUERY_WORKSPACE_ARCHIVE_DAYS,
+  archiveQueryWorkspaceIfInactive,
+  assertQueryWorkspaceLifecycle,
+  createQueryWorkspaceLifecycle,
+  touchQueryWorkspace,
+  verifyQueryWorkspaceArchive
+} = require('../v1/query-workspace-lifecycle.cjs');
+const {
   assertCapabilityReferenceSnapshot,
   capabilitySnapshotRef,
   createCapabilityBoundSessionStore
@@ -54,7 +62,8 @@ const TERMINAL_STATUSES = new Set([
   'failed',
   'awaiting_confirmation',
   'cancelled',
-  'rejected'
+  'rejected',
+  'archived'
 ]);
 
 function safeEvent(type, data) {
@@ -149,7 +158,11 @@ function historySummary(session) {
     resultCardCount: session.resultCards?.length ?? 0,
     ...publicPrivacyAuthorization(session),
     createdAt: session.createdAt,
-    updatedAt: session.updatedAt
+    updatedAt: session.updatedAt,
+    workspaceStatus:
+      session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY
+        ? session.v1?.workspace?.status
+        : undefined
   };
 }
 
@@ -257,6 +270,9 @@ class LegalSelfCheckConversationService {
     ) {
       throw new TypeError('artifactRepository must expose storeAnalysisArtifact(input).');
     }
+    this.lastWorkspaceArchive = this.autoCleanup
+      ? this.archiveInactiveQueryWorkspaces()
+      : null;
     this.lastCleanup = this.autoCleanup ? this.cleanupInactiveSessions() : null;
     this.lastCleanupAt = this.autoCleanup ? this.clock() : null;
   }
@@ -275,6 +291,7 @@ class LegalSelfCheckConversationService {
     ) {
       return;
     }
+    this.lastWorkspaceArchive = this.archiveInactiveQueryWorkspaces();
     this.lastCleanup = this.cleanupInactiveSessions();
     this.lastCleanupAt = this.clock();
   }
@@ -364,6 +381,7 @@ class LegalSelfCheckConversationService {
   }
 
   start(input) {
+    this.maybeCleanupInactiveSessions();
     const prepared = prepareLegalSelfCheckInput(input);
     if (prepared.status !== 'ready') {
       return { ...prepared };
@@ -695,12 +713,14 @@ class LegalSelfCheckConversationService {
 
   finishV1QueryPlan(session, prepared, taskRecognition, runId, taskInput, planned) {
     const now = this.clock();
+    const taskInputReceipt = createProfessionalQueryTaskReceipt(taskInput);
     session.updatedAt = now;
     session.status = planned.status === 'rejected' ? 'rejected' : 'awaiting_confirmation';
     session.v1 = {
       runId,
       status: planned.status,
-      taskInput: createProfessionalQueryTaskReceipt(taskInput),
+      taskInput: taskInputReceipt,
+      workspace: createQueryWorkspaceLifecycle({ taskInputReceipt, now }),
       plan: planned.plan ?? null,
       schema: planned.schema ?? null,
       safety: planned.safety ?? null,
@@ -750,9 +770,15 @@ class LegalSelfCheckConversationService {
   }
 
   confirmV1Execution(sessionId, confirmation = {}) {
+    this.maybeCleanupInactiveSessions();
     const session = this.store.get(sessionId, this.ownerId);
     if (!session) {
       return this.sessionError(sessionId, V0_ERROR_CODES.SESSION_NOT_FOUND, '没有找到对应会话。');
+    }
+    if (
+      session.v1?.workspace?.status === 'archived'
+    ) {
+      return this.archivedV1WorkspaceError(session);
     }
     if (
       session.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY ||
@@ -768,6 +794,11 @@ class LegalSelfCheckConversationService {
 
     const now = this.clock();
     session.updatedAt = now;
+    try {
+      session.v1.workspace = touchQueryWorkspace(session.v1.workspace, now);
+    } catch {
+      return this.failV1Workspace(session, 'execute');
+    }
 
     if (confirmation?.confirmed !== true) {
       if (
@@ -868,9 +899,15 @@ class LegalSelfCheckConversationService {
   }
 
   replanV1Execution(sessionId) {
+    this.maybeCleanupInactiveSessions();
     const session = this.store.get(sessionId, this.ownerId);
     if (!session) {
       return this.sessionError(sessionId, V0_ERROR_CODES.SESSION_NOT_FOUND, '没有找到对应会话。');
+    }
+    if (
+      session.v1?.workspace?.status === 'archived'
+    ) {
+      return this.archivedV1WorkspaceError(session);
     }
     if (
       session.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY ||
@@ -899,6 +936,11 @@ class LegalSelfCheckConversationService {
     }
     const runId = randomUUID();
     const replannedAt = this.clock();
+    try {
+      session.v1.workspace = touchQueryWorkspace(session.v1.workspace, replannedAt);
+    } catch {
+      return this.failV1Workspace(session, 'replan');
+    }
     const replanning = this.v1Runtime.replan({
       runId,
       sessionId: session.id,
@@ -1173,6 +1215,84 @@ class LegalSelfCheckConversationService {
     session.latestTrace = [failedEvent];
   }
 
+  archiveInactiveQueryWorkspaces() {
+    const now = this.clock();
+    const result = {
+      status: 'completed',
+      archiveAfterInactiveDays: QUERY_WORKSPACE_ARCHIVE_DAYS,
+      archivedCount: 0,
+      activeCount: 0,
+      verifiedArchiveCount: 0,
+      failedCount: 0
+    };
+    let sessions;
+    try {
+      sessions = this.store.list(this.ownerId);
+    } catch {
+      result.status = 'partial_failure';
+      result.failedCount = 1;
+      return result;
+    }
+    for (const session of sessions) {
+      if (
+        session.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY ||
+        !session.v1?.workspace ||
+        !session.v1?.taskInput
+      ) {
+        continue;
+      }
+      try {
+        const current = assertQueryWorkspaceLifecycle(session.v1.workspace);
+        if (current.status === 'archived') {
+          verifyQueryWorkspaceArchive({
+            lifecycle: current,
+            taskInputReceipt: session.v1.taskInput,
+            artifact: session.v1.artifact
+          });
+          result.verifiedArchiveCount += 1;
+          continue;
+        }
+        const archived = archiveQueryWorkspaceIfInactive({
+          lifecycle: current,
+          taskInputReceipt: session.v1.taskInput,
+          artifact: session.v1.artifact,
+          previousTaskStatus: session.status,
+          now
+        });
+        if (archived.status !== 'archived') {
+          result.activeCount += 1;
+          continue;
+        }
+        session.v1.workspace = archived;
+        session.v1.status = 'archived';
+        session.status = 'archived';
+        const archiveEvent = safeEvent('v1.query-workspace.archived', {
+          inactiveDaysThreshold: QUERY_WORKSPACE_ARCHIVE_DAYS,
+          artifactReferenceCount: archived.archiveReceipt.artifactReference ? 1 : 0,
+          receiptSha256: archived.archiveReceipt.receiptSha256
+        });
+        session.trace.push(archiveEvent);
+        session.latestTrace = [archiveEvent];
+        const archiveLog = this.appendV1ExecutionLog(session, {
+          operationType: 'workspace_archive',
+          status: 'archived',
+          workspaceId: archived.workspaceId,
+          workspaceArchiveReceiptSha256: archived.archiveReceipt.receiptSha256,
+          workspaceInactiveDays: QUERY_WORKSPACE_ARCHIVE_DAYS,
+          artifactReferenceCount: archived.archiveReceipt.artifactReference ? 1 : 0,
+          executionAttempted: false
+        });
+        session.v1.executionLogId = archiveLog.entryId;
+        this.store.save(session, this.ownerId);
+        result.archivedCount += 1;
+      } catch {
+        result.failedCount += 1;
+      }
+    }
+    if (result.failedCount > 0) result.status = 'partial_failure';
+    return result;
+  }
+
   failV1TaskInput(session, operationType) {
     session.status = 'failed';
     session.v1.status = 'failed';
@@ -1198,6 +1318,55 @@ class LegalSelfCheckConversationService {
     }
     this.store.save(session, this.ownerId);
     return { ...publicResult(session), v1: session.v1 };
+  }
+
+  failV1Workspace(session, operationType) {
+    session.status = 'failed';
+    session.v1.status = 'failed';
+    session.v1.reason = '逻辑查询 Workspace 回执缺失或发生漂移，操作已安全停止。';
+    session.v1.result = null;
+    session.v1.chart = null;
+    session.v1.artifact = null;
+    session.v1.workspace = null;
+    const failedEvent = safeEvent('v1.query-workspace.invalid', {
+      operationType,
+      executionAttempted: false
+    });
+    session.trace.push(failedEvent);
+    session.latestTrace = [failedEvent];
+    try {
+      const failureLog = this.appendV1ExecutionLog(session, {
+        operationType,
+        status: 'failed',
+        error: session.v1.reason,
+        errorCode: 'QUERY_WORKSPACE_INVALID'
+      });
+      session.v1.executionLogId = failureLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, false);
+    }
+    this.store.save(session, this.ownerId);
+    return { ...publicResult(session), v1: session.v1 };
+  }
+
+  archivedV1WorkspaceError(session) {
+    try {
+      verifyQueryWorkspaceArchive({
+        lifecycle: session.v1.workspace,
+        taskInputReceipt: session.v1.taskInput,
+        artifact: session.v1.artifact
+      });
+    } catch {
+      return this.failV1Workspace(session, 'archived-access');
+    }
+    return {
+      ...publicResult(session),
+      v1: session.v1,
+      error: {
+        code: 'V1_WORKSPACE_ARCHIVED',
+        message: '该专业查询 Workspace 已因超过 30 天未活动而归档，请新建任务。'
+      }
+    };
   }
 
   deleteSession(sessionId, confirmation = {}) {
@@ -1233,6 +1402,18 @@ class LegalSelfCheckConversationService {
   getHistory(sessionId) {
     this.maybeCleanupInactiveSessions();
     const session = this.store.get(sessionId, this.ownerId);
+    if (session?.v1?.workspace?.status === 'archived') {
+      try {
+        verifyQueryWorkspaceArchive({
+          lifecycle: session.v1.workspace,
+          taskInputReceipt: session.v1.taskInput,
+          artifact: session.v1.artifact
+        });
+      } catch {
+        this.failV1Workspace(session, 'history');
+        return historyDetail(this.store.get(sessionId, this.ownerId));
+      }
+    }
     return session ? historyDetail(session) : null;
   }
 

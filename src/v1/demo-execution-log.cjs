@@ -50,7 +50,11 @@ const ENTRY_KEYS = Object.freeze([
   'executionAttempted',
   'sandboxCleanupVerified',
   'processTreeTerminationVerified',
-  'resourceAccountingMode'
+  'resourceAccountingMode',
+  'workspaceId',
+  'workspaceArchiveReceiptSha256',
+  'workspaceInactiveDays',
+  'artifactReferenceCount'
 ]);
 
 class ExecutionLogIntegrityError extends Error {
@@ -133,7 +137,9 @@ function validateReceiptFields(record) {
     'affectedFieldCount',
     'inputFileCount',
     'inputBytes',
-    'generatedArtifactCount'
+    'generatedArtifactCount',
+    'workspaceInactiveDays',
+    'artifactReferenceCount'
   ]) {
     if (
       record[key] !== undefined &&
@@ -190,6 +196,18 @@ function validateReceiptFields(record) {
     if (!/^[A-Z0-9_]{1,80}$/.test(record.errorCode)) {
       throw new TypeError('entry.errorCode must be a safe structured error code.');
     }
+  }
+  if (
+    record.workspaceId !== undefined &&
+    !/^query-workspace-[0-9a-f]{32}$/.test(record.workspaceId)
+  ) {
+    throw new TypeError('entry.workspaceId must be a safe Query Workspace id.');
+  }
+  if (
+    record.workspaceArchiveReceiptSha256 !== undefined &&
+    !/^sha256:[0-9a-f]{64}$/.test(record.workspaceArchiveReceiptSha256)
+  ) {
+    throw new TypeError('entry.workspaceArchiveReceiptSha256 must be a prefixed SHA-256 digest.');
   }
   for (const key of ['previousSchemaFingerprint', 'currentSchemaFingerprint']) {
     if (record[key] !== undefined && !/^[0-9a-f]{64}$/.test(record[key])) {
