@@ -18,6 +18,7 @@
     "audit:sql:postgresql": "node scripts/audit-sql-provider.cjs postgresql",
     "preflight:sandbox:docker": "node scripts/preflight-docker-sandbox.cjs",
     "audit:sandbox:docker": "node scripts/audit-docker-sandbox.cjs",
+    "manage:execution-log": "node scripts/manage-execution-log.cjs",
     "verify:baseline": "node scripts/verify-baseline.cjs",
     "verify:domain": "node scripts/verify-domain-pack.cjs",
     "verify:replay": "node scripts/verify-replay-fixtures.cjs",

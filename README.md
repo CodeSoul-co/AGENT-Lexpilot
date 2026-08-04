@@ -42,6 +42,22 @@
 
 Schema 差异只包含数据源清单授权的表和字段，不扫描或输出其他客户 Schema。漂移事件、旧/新指纹、受影响表/字段数量和重新规划状态会写入哈希链审计日志；数据库路径、主机、账号、密码和字段数据不会进入通知或日志。对应接口为 `POST /api/sessions/:sessionId/schema-replan`，请求体固定为 `{ "requested": true }`。
 
+### 执行日志归档与恢复
+
+执行日志维护必须在应用停止写入的维护窗口内进行。`archive` 先验证完整哈希链，再原子写入日志快照和不含本机路径的 SHA-256 清单；归档不会自动删除在线日志。只有归档再次验证通过、在线日志与归档逐字节一致且操作员输入固定确认短语时，才允许删除在线副本。恢复会再次校验归档内容和哈希链，并且绝不覆盖已经存在的在线日志。归档目录、日志和清单都属于私有运行数据，已由 `data/` 规则排除在 Git 之外。
+
+```bash
+# 1. 创建归档；输出 archiveId
+npm run manage:execution-log -- archive
+# 2. 独立复核归档
+npm run manage:execution-log -- verify <archiveId>
+# 3. 灾备演练：确认归档后删除在线副本，再从归档恢复
+npm run manage:execution-log -- delete-source <archiveId> DELETE_VERIFIED_EXECUTION_LOG_SOURCE
+npm run manage:execution-log -- restore <archiveId>
+```
+
+线上策略应把归档目录放在访问受控、具备备份与不可篡改能力的独立存储中，并由组织的数据保留制度确定保存期限。本项目不擅自设定统一法定期限，也不提供自动删除归档的命令。
+
 ## 运行
 
 要求：Node.js ≥ 18，以及按 `hypha.lock.json` 基线克隆的 Hypha 仓库。Hypha 默认位于本项目的同级目录 `../Hypha`；如目录不同，应更新 `hypha.lock.json` 中的 `localPath`，不得在业务代码中复制 Hypha 实现。
