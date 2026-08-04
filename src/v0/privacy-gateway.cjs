@@ -79,6 +79,9 @@ function prepareLegalSelfCheckInput(input, options = {}) {
       piiRedacted: true,
       redactedText: result.redactedText,
       redactionSummary: result.redactionSummary,
+      ...(validatedInput.requestedOutputFormats
+        ? { requestedOutputFormats: validatedInput.requestedOutputFormats }
+        : {}),
       trace
     };
   } catch (_error) {

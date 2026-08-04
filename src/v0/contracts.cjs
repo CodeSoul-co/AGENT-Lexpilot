@@ -1,3 +1,5 @@
+const { normalizeRequestedOutputFormats } = require('../v1/professional-query-task-input.cjs');
+
 const V0_DOMAIN_PACK_VERSION = '0.16.0';
 const PRIVACY_POLICY_VERSION = 'legal-compliance-privacy-v0.1';
 
@@ -39,7 +41,12 @@ function validateLegalSelfCheckInput(input) {
     throw new V0ContractError(V0_ERROR_CODES.INVALID_USER_TEXT, '输入必须是对象。');
   }
 
-  const allowedKeys = new Set(['userText', 'privacyConsent', 'privacyPolicyVersion']);
+  const allowedKeys = new Set([
+    'userText',
+    'privacyConsent',
+    'privacyPolicyVersion',
+    'requestedOutputFormats'
+  ]);
   const unknownKeys = Object.keys(input).filter((key) => !allowedKeys.has(key));
   if (unknownKeys.length > 0) {
     throw new V0ContractError(V0_ERROR_CODES.INVALID_USER_TEXT, '输入包含未声明字段。');
@@ -65,10 +72,23 @@ function validateLegalSelfCheckInput(input) {
     );
   }
 
+  let requestedOutputFormats;
+  if (input.requestedOutputFormats !== undefined) {
+    try {
+      requestedOutputFormats = normalizeRequestedOutputFormats(input.requestedOutputFormats);
+    } catch {
+      throw new V0ContractError(
+        V0_ERROR_CODES.INVALID_USER_TEXT,
+        'requestedOutputFormats 只允许声明受支持且不重复的 V1 输出格式。'
+      );
+    }
+  }
+
   return {
     userText: normalizedText,
     privacyConsent: input.privacyConsent,
-    privacyPolicyVersion: input.privacyPolicyVersion
+    privacyPolicyVersion: input.privacyPolicyVersion,
+    ...(requestedOutputFormats ? { requestedOutputFormats } : {})
   };
 }
 

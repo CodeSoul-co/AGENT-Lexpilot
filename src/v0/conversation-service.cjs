@@ -1,6 +1,11 @@
 const { randomUUID } = require('node:crypto');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const {
+  createProfessionalQueryTaskInput,
+  createProfessionalQueryTaskReceipt,
+  restoreProfessionalQueryTaskInput
+} = require('../v1/professional-query-task-input.cjs');
+const {
   assertCapabilityReferenceSnapshot,
   capabilitySnapshotRef,
   createCapabilityBoundSessionStore
@@ -225,9 +230,10 @@ class LegalSelfCheckConversationService {
     if (
       this.v1Runtime !== null &&
       (typeof this.v1Runtime.plan !== 'function' ||
-        typeof this.v1Runtime.execute !== 'function')
+        typeof this.v1Runtime.execute !== 'function' ||
+        typeof this.v1Runtime.describe !== 'function')
     ) {
-      throw new TypeError('v1Runtime must expose plan(input) and execute(input).');
+      throw new TypeError('v1Runtime must expose describe(), plan(input), and execute(input).');
     }
     this.executionLog = options.executionLog ?? null;
     this.artifactRepository = options.artifactRepository ?? null;
@@ -370,6 +376,25 @@ class LegalSelfCheckConversationService {
         piiRedacted: true,
         error: taskRecognition.error,
         trace: [...prepared.trace, ...taskRecognition.trace]
+      };
+    }
+    if (
+      prepared.requestedOutputFormats !== undefined &&
+      taskRecognition.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY
+    ) {
+      return {
+        status: 'failed',
+        domainPackVersion: V0_DOMAIN_PACK_VERSION,
+        piiRedacted: true,
+        error: {
+          code: V0_ERROR_CODES.INVALID_USER_TEXT,
+          message: 'requestedOutputFormats 仅适用于 V1 专业数据查询。'
+        },
+        trace: [
+          ...prepared.trace,
+          ...taskRecognition.trace,
+          safeEvent('v1.task-input.rejected', { code: 'TASK_TYPE_MISMATCH' })
+        ]
       };
     }
 
@@ -605,6 +630,23 @@ class LegalSelfCheckConversationService {
 
   startV1QueryPlan(session, prepared, taskRecognition) {
     const runId = randomUUID();
+    let taskInput;
+    try {
+      const descriptor = this.v1Runtime.describe();
+      taskInput = createProfessionalQueryTaskInput({
+        piiRedacted: true,
+        query: prepared.redactedText,
+        sessionId: session.id,
+        dataSourceId: descriptor?.dataSource,
+        requestedOutputFormats: prepared.requestedOutputFormats
+      });
+    } catch {
+      return this.sessionError(
+        session.id,
+        'V1_TASK_INPUT_INVALID',
+        'V1 任务输入与当前固定数据源绑定不一致，查询计划未生成。'
+      );
+    }
     const planned = this.v1Runtime.plan({
       runId,
       sessionId: session.id,
@@ -612,29 +654,53 @@ class LegalSelfCheckConversationService {
       piiRedacted: true,
       redactedText: prepared.redactedText,
       clarificationRound: 0,
-      knownFacts: {}
+      knownFacts: {},
+      taskInput
     });
     if (planned && typeof planned.then === 'function') {
       return planned.then(
-        (result) => this.finishV1QueryPlan(session, prepared, taskRecognition, runId, result),
+        (result) =>
+          this.finishV1QueryPlan(
+            session,
+            prepared,
+            taskRecognition,
+            runId,
+            taskInput,
+            result
+          ),
         () =>
-          this.finishV1QueryPlan(session, prepared, taskRecognition, runId, {
-            status: 'rejected',
-            reason: '生成受治理数据库计划失败，操作未执行。',
-            trace: [safeEvent('v1.query.plan.failed', { code: 'RUNTIME_REJECTED' })]
-          })
+          this.finishV1QueryPlan(
+            session,
+            prepared,
+            taskRecognition,
+            runId,
+            taskInput,
+            {
+              status: 'rejected',
+              reason: '生成受治理数据库计划失败，操作未执行。',
+              trace: [safeEvent('v1.query.plan.failed', { code: 'RUNTIME_REJECTED' })]
+            }
+          )
       );
     }
-    return this.finishV1QueryPlan(session, prepared, taskRecognition, runId, planned);
+    return this.finishV1QueryPlan(
+      session,
+      prepared,
+      taskRecognition,
+      runId,
+      taskInput,
+      planned
+    );
   }
 
-  finishV1QueryPlan(session, prepared, taskRecognition, runId, planned) {
+  finishV1QueryPlan(session, prepared, taskRecognition, runId, taskInput, planned) {
     const now = this.clock();
     session.updatedAt = now;
     session.status = planned.status === 'rejected' ? 'rejected' : 'awaiting_confirmation';
     session.v1 = {
       runId,
       status: planned.status,
+      taskInput: createProfessionalQueryTaskReceipt(taskInput),
       plan: planned.plan ?? null,
       schema: planned.schema ?? null,
       safety: planned.safety ?? null,
@@ -725,6 +791,15 @@ class LegalSelfCheckConversationService {
     }
 
     const startedAt = Date.now();
+    let taskInput;
+    try {
+      taskInput = restoreProfessionalQueryTaskInput(
+        session.v1.taskInput,
+        session.messages.map((message) => message.redactedText).join('\n')
+      );
+    } catch {
+      return this.failV1TaskInput(session, 'execute');
+    }
     const execution = this.v1Runtime.execute({
       runId: session.v1.runId,
       sessionId: session.id,
@@ -738,7 +813,8 @@ class LegalSelfCheckConversationService {
       expectedSchemaSnapshot: session.v1.plan.schemaSnapshot ?? session.v1.schema,
       governedInvocationId: session.v1.plan.governedInvocationId,
       confirmedAt: now,
-      confirmedPlan: session.v1.plan
+      confirmedPlan: session.v1.plan,
+      taskInput
     });
     if (execution && typeof execution.then === 'function') {
       session.status = 'executing';
@@ -812,6 +888,15 @@ class LegalSelfCheckConversationService {
 
     const previousPlan = session.v1.plan;
     const previousDrift = session.v1.schemaDrift;
+    let taskInput;
+    try {
+      taskInput = restoreProfessionalQueryTaskInput(
+        session.v1.taskInput,
+        session.messages.map((message) => message.redactedText).join('\n')
+      );
+    } catch {
+      return this.failV1TaskInput(session, 'replan');
+    }
     const runId = randomUUID();
     const replannedAt = this.clock();
     const replanning = this.v1Runtime.replan({
@@ -822,7 +907,8 @@ class LegalSelfCheckConversationService {
       redactedText: session.messages.map((message) => message.redactedText).join('\n'),
       clarificationRound: 0,
       knownFacts: {},
-      expectedSchemaSnapshot: previousPlan.schemaSnapshot ?? session.v1.schema
+      expectedSchemaSnapshot: previousPlan.schemaSnapshot ?? session.v1.schema,
+      taskInput
     });
     if (replanning && typeof replanning.then === 'function') {
       session.status = 'replanning';
@@ -1085,6 +1171,33 @@ class LegalSelfCheckConversationService {
     });
     session.trace.push(failedEvent);
     session.latestTrace = [failedEvent];
+  }
+
+  failV1TaskInput(session, operationType) {
+    session.status = 'failed';
+    session.v1.status = 'failed';
+    session.v1.reason = 'V1 TaskSchema 回执缺失或发生漂移，操作已安全停止。';
+    session.v1.result = null;
+    session.v1.chart = null;
+    session.v1.artifact = null;
+    const failedEvent = safeEvent('v1.task-input.invalid', {
+      operationType,
+      executionAttempted: false
+    });
+    session.trace.push(failedEvent);
+    session.latestTrace = [failedEvent];
+    try {
+      const failureLog = this.appendV1ExecutionLog(session, {
+        operationType,
+        status: 'failed',
+        error: session.v1.reason
+      });
+      session.v1.executionLogId = failureLog.entryId;
+    } catch {
+      this.failV1ForAuditLog(session, false);
+    }
+    this.store.save(session, this.ownerId);
+    return { ...publicResult(session), v1: session.v1 };
   }
 
   deleteSession(sessionId, confirmation = {}) {

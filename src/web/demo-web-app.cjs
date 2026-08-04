@@ -2,6 +2,11 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { PRIVACY_POLICY_VERSION, V0_DOMAIN_PACK_VERSION } = require('../v0/contracts.cjs');
+const {
+  DEFAULT_OUTPUT_FORMATS,
+  PROFESSIONAL_QUERY_TASK_SCHEMA,
+  SUPPORTED_OUTPUT_FORMATS
+} = require('../v1/professional-query-task-input.cjs');
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_SANDBOX_JSON_BODY_BYTES = 24 * 1024 * 1024;
@@ -175,7 +180,15 @@ function createDemoWebHandler(options = {}) {
             maxInputBytes: 16 * 1024 * 1024
           },
           v1DemoDataSource: v1Descriptor?.dataSource ?? null,
-          v1DemoSchema: v1Descriptor?.schema ?? null
+          v1DemoSchema: v1Descriptor?.schema ?? null,
+          v1TaskInput: {
+            schema: PROFESSIONAL_QUERY_TASK_SCHEMA,
+            supportedOutputFormats: SUPPORTED_OUTPUT_FORMATS,
+            defaultOutputFormats: DEFAULT_OUTPUT_FORMATS,
+            dataSourceSelection: 'administrator-bound-active-runtime',
+            workspaceKind: 'logical-query-session',
+            workspacePathExposed: false
+          }
         });
         return;
       }
@@ -241,7 +254,11 @@ function createDemoWebHandler(options = {}) {
 
       if (request.method === 'POST' && url.pathname === '/api/sessions') {
         const body = await readJsonBody(request);
-        if (!requireExactKeys(body, ['userText', 'privacyConsent', 'privacyPolicyVersion'])) {
+        const baseKeys = ['userText', 'privacyConsent', 'privacyPolicyVersion'];
+        if (
+          !requireExactKeys(body, baseKeys) &&
+          !requireExactKeys(body, [...baseKeys, 'requestedOutputFormats'])
+        ) {
           sendError(response, 400, 'INVALID_REQUEST', '开始会话请求字段无效。');
           return;
         }

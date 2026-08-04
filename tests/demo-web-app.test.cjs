@@ -691,7 +691,8 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
       body: JSON.stringify({
         userText: '统计近三年案例库未签劳动合同的胜诉率和赔偿中位数。',
         privacyConsent: true,
-        privacyPolicyVersion: PRIVACY_POLICY_VERSION
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+        requestedOutputFormats: ['pdf', 'table']
       })
     });
     assert.equal(started.response.status, 200);
@@ -699,6 +700,33 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
     assert.match(started.body.v1.plan.sql, /^SELECT/);
     assert.equal(started.body.v1.plan.requiresConfirmation, true);
     assert.equal(started.body.v1.result, null);
+    assert.equal(
+      started.body.v1.taskInput.schema,
+      'task-input.legal-professional-query@1.0.0'
+    );
+    assert.equal(started.body.v1.taskInput.dataSourceId, 'demo.labor_cases');
+    assert.deepEqual(started.body.v1.taskInput.requestedOutputFormats, ['table', 'pdf']);
+    assert.equal(started.body.v1.taskInput.workspacePathExposed, false);
+    assert.equal(
+      JSON.stringify(started.body.v1.taskInput).includes(
+        '统计近三年案例库未签劳动合同'
+      ),
+      false
+    );
+
+    const forgedSelector = await jsonRequest(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userText: '统计近三年案例库未签劳动合同的胜诉率和赔偿中位数。',
+        privacyConsent: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+        requestedOutputFormats: ['table'],
+        dataSourceId: 'private.unbound.source'
+      })
+    });
+    assert.equal(forgedSelector.response.status, 400);
+    assert.equal(forgedSelector.body.error.code, 'INVALID_REQUEST');
 
     const invalidReplan = await jsonRequest(
       `${baseUrl}/api/sessions/${started.body.sessionId}/schema-replan`,
@@ -727,6 +755,18 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
     assert.equal(config.body.v1DemoDataSource, 'demo.labor_cases');
     assert.equal(config.body.v1DemoSchema.dataSource, 'demo.labor_cases');
     assert.equal(config.body.v1DemoSchema.displayName, '匿名劳动争议案例库');
+    assert.equal(
+      config.body.v1TaskInput.schema,
+      'task-input.legal-professional-query@1.0.0'
+    );
+    assert.deepEqual(config.body.v1TaskInput.supportedOutputFormats, [
+      'table',
+      'chart',
+      'analysis-document',
+      'pdf'
+    ]);
+    assert.equal(config.body.v1TaskInput.dataSourceSelection, 'administrator-bound-active-runtime');
+    assert.equal(config.body.v1TaskInput.workspacePathExposed, false);
     assert.ok(Array.isArray(config.body.v1DemoSchema.columns));
     assert.ok(config.body.v1DemoSchema.columns.length > 0);
     assert.equal(typeof config.body.v1DemoSchema.columns[0].name, 'string');

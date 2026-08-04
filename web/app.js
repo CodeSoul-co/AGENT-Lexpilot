@@ -1089,7 +1089,17 @@ async function submitText(text) {
   try {
     const result = continuing
       ? await api(`/api/sessions/${state.activeSessionId}/answers`, { method: 'POST', body: JSON.stringify({ userText: text }) })
-      : await api('/api/sessions', { method: 'POST', body: JSON.stringify({ userText: text, privacyConsent: true, privacyPolicyVersion: state.config.privacyPolicyVersion }) });
+      : await api('/api/sessions', {
+          method: 'POST',
+          body: JSON.stringify({
+            userText: text,
+            privacyConsent: true,
+            privacyPolicyVersion: state.config.privacyPolicyVersion,
+            ...(state.mode === 'v1'
+              ? { requestedOutputFormats: state.config.v1TaskInput.defaultOutputFormats }
+              : {})
+          })
+        });
     elements.conversation.querySelector('[data-loading="true"]')?.remove(); renderResult(result); await loadHistory();
   } catch (error) {
     elements.conversation.querySelector('[data-loading="true"]')?.remove(); addMessage('assistant', error.message, '请求失败');
