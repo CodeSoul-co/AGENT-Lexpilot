@@ -25,6 +25,7 @@ async function main() {
     v1Descriptor,
     sandboxCoordinator,
     sandboxDescriptor,
+    dataSourceAdmin,
     executionLogFilePath,
     artifactDirectory,
     close
@@ -34,7 +35,8 @@ async function main() {
     agentDescriptor,
     v1Descriptor,
     sandboxCoordinator,
-    sandboxDescriptor
+    sandboxDescriptor,
+    dataSourceAdmin
   });
   server.on('error', (error) => {
     process.stderr.write(`本地网页 Demo 启动失败：${error.message}\n`);

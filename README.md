@@ -130,6 +130,8 @@ docker pull "python:3.12-alpine@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33
 
 PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
 
+本地网页的“数据源管理”入口会列出 SQLite、PostgreSQL、MySQL 三个只读清单、授权表/字段、执行上限以及各环境变量是否已配置。页面没有凭据输入框，接口也只接受固定 `profileId`；主机、数据库路径、账号、密码和 Provider 原始错误不会进入响应。点击“验证连接与 Schema”后，服务端才使用启动前设置的私有环境变量进行连接和白名单 Schema 核验。该入口仅绑定本机回环地址，生产部署仍须补充独立管理员身份认证与权限控制。
+
 ```bash
 # 二选一，并在 .env 中填写对应 LEGAL_V1_PG_* 或 LEGAL_V1_MYSQL_* 变量
 LEGAL_V1_RUNTIME=postgresql

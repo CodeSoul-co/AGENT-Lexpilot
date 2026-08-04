@@ -21,6 +21,9 @@
         <button class="primary-button new-session" id="new-session" type="button">
           <span>＋</span> 新建 Agent 任务
         </button>
+        <button class="ghost-button data-source-admin-button" id="open-data-source-admin" type="button">
+          数据源管理
+        </button>
 
         <div class="sidebar-heading">
           <span>最近会话</span>
@@ -235,6 +238,20 @@
         </div>
         <p class="policy-version">固定演示 Schema · 匿名合成数据</p>
         <button class="primary-button schema-close" id="schema-close" type="button">关闭</button>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="data-source-admin-modal" role="dialog" aria-modal="true" aria-labelledby="data-source-admin-title">
+      <section class="privacy-card data-source-admin-card">
+        <div class="privacy-symbol">管理</div>
+        <p class="eyebrow">本机管理员入口</p>
+        <h2 id="data-source-admin-title">数据源配置与验证</h2>
+        <p>这里只显示公开清单、环境变量是否已配置和白名单策略，不接收或展示主机、路径、账号、密码等值。连接验证使用服务启动前设置的私有环境变量。</p>
+        <div class="data-source-profile-list" id="data-source-profile-list">
+          <p class="muted compact">正在读取数据源清单……</p>
+        </div>
+        <p class="policy-version">仅限本机回环地址 · 只读数据源 · 不保存凭据</p>
+        <button class="primary-button schema-close" id="data-source-admin-close" type="button">关闭</button>
       </section>
     </div>
 

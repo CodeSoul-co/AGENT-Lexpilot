@@ -17,6 +17,10 @@ const elements = {
   confirmSql: $('#confirm-sql'), confirmAccept: $('#confirm-accept'), confirmCancel: $('#confirm-cancel'),
   schemaModal: $('#schema-modal'), schemaDescription: $('#schema-description'),
   schemaTableBody: $('#schema-table-body'), openSchema: $('#open-schema'), schemaClose: $('#schema-close'),
+  dataSourceAdminModal: $('#data-source-admin-modal'),
+  dataSourceProfileList: $('#data-source-profile-list'),
+  openDataSourceAdmin: $('#open-data-source-admin'),
+  dataSourceAdminClose: $('#data-source-admin-close'),
   artifactsSection: $('#artifacts-section'), artifactList: $('#artifact-list'),
   logsSection: $('#logs-section'), logFilter: $('#log-filter'), logList: $('#log-list'),
   sandboxControls: $('#sandbox-controls'), sandboxLanguage: $('#sandbox-language'),
@@ -751,6 +755,108 @@ function openSchemaModal() {
   elements.schemaModal.classList.remove('hidden');
 }
 
+function dataSourceStatusLabel(status) {
+  if (status === 'ready' || status === 'verified') return '已就绪';
+  if (status === 'missing_environment' || status === 'not_configured') return '待配置';
+  if (status === 'failed') return '验证失败';
+  return status;
+}
+
+function renderDataSourceValidation(container, result) {
+  container.replaceChildren();
+  container.className = `data-source-validation ${result.status}`;
+  if (result.status === 'verified') {
+    container.append(
+      node('strong', '', '连接与白名单 Schema 已验证'),
+      node('span', '', `字段 ${result.columnCount} 个 · 指纹 ${result.schemaFingerprint.slice(0, 12)}…`)
+    );
+    return;
+  }
+  if (result.status === 'not_configured') {
+    container.append(
+      node('strong', '', '尚未发起连接'),
+      node('span', '', `缺少环境变量：${result.missingEnvironmentNames.join('、')}`)
+    );
+    return;
+  }
+  container.append(
+    node('strong', '', '连接或 Schema 验证失败'),
+    node('span', '', '响应已隐藏 Provider 错误和所有连接值，请检查服务端私有配置。')
+  );
+}
+
+async function validateDataSourceProfile(profileId, button, validation) {
+  button.disabled = true;
+  button.textContent = '验证中…';
+  try {
+    const result = await api('/api/v1/admin/data-sources/validation', {
+      method: 'POST',
+      body: JSON.stringify({ profileId })
+    });
+    renderDataSourceValidation(validation, result);
+  } catch (error) {
+    validation.replaceChildren(node('strong', '', '验证请求失败'), node('span', '', error.message));
+    validation.className = 'data-source-validation failed';
+  } finally {
+    button.disabled = false;
+    button.textContent = '验证连接与 Schema';
+  }
+}
+
+function renderDataSourceProfiles(result) {
+  elements.dataSourceProfileList.replaceChildren();
+  for (const profile of result.profiles) {
+    const card = node('article', 'data-source-profile');
+    const heading = node('div', 'data-source-profile-heading');
+    const title = node('div');
+    title.append(
+      node('strong', '', profile.engine.toUpperCase()),
+      node('span', '', `${profile.profileId}${profile.active ? ' · 当前运行模式' : ''}`)
+    );
+    heading.append(
+      title,
+      node(
+        'span',
+        `data-source-state ${profile.configurationStatus}`,
+        dataSourceStatusLabel(profile.configurationStatus)
+      )
+    );
+    const environment = node('dl', 'data-source-environment');
+    for (const item of profile.environment) {
+      const row = node('div');
+      row.append(
+        node('dt', '', item.name),
+        node('dd', item.configured ? 'configured' : 'missing', item.configured ? '已配置' : '缺失')
+      );
+      environment.append(row);
+    }
+    const policy = node(
+      'p',
+      'data-source-policy',
+      `只读 · ${profile.allowedTables.length} 个授权表 · ${profile.allowedColumns.length} 个授权字段 · 最多 ${profile.limits.maxRows} 行`
+    );
+    const validation = node('div', 'data-source-validation idle');
+    validation.append(node('span', '', '尚未执行本次连接验证。'));
+    const button = node('button', 'ghost-button data-source-validate', '验证连接与 Schema');
+    button.type = 'button';
+    button.addEventListener('click', () =>
+      validateDataSourceProfile(profile.profileId, button, validation)
+    );
+    card.append(heading, environment, policy, validation, button);
+    elements.dataSourceProfileList.append(card);
+  }
+}
+
+async function openDataSourceAdmin() {
+  elements.dataSourceAdminModal.classList.remove('hidden');
+  elements.dataSourceProfileList.replaceChildren(node('p', 'muted compact', '正在读取数据源清单……'));
+  try {
+    renderDataSourceProfiles(await api('/api/v1/admin/data-sources'));
+  } catch (error) {
+    elements.dataSourceProfileList.replaceChildren(node('p', 'data-source-load-error', error.message));
+  }
+}
+
 function renderResult(result) {
   state.activeSessionId = result.sessionId ?? state.activeSessionId;
   state.activeStatus = result.status;
@@ -983,6 +1089,8 @@ elements.sandboxFiles.addEventListener('change', () => {
 });
 elements.openSchema.addEventListener('click', openSchemaModal);
 elements.schemaClose.addEventListener('click', () => elements.schemaModal.classList.add('hidden'));
+elements.openDataSourceAdmin.addEventListener('click', () => openDataSourceAdmin());
+elements.dataSourceAdminClose.addEventListener('click', () => elements.dataSourceAdminModal.classList.add('hidden'));
 elements.logFilter.addEventListener('change', () => loadLogs().catch((error) => toast(error.message)));
 
 async function initialize() {

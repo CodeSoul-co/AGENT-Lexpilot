@@ -85,6 +85,55 @@ async function withSandboxServer(run) {
   }
 }
 
+async function withDataSourceAdminServer(run) {
+  const validationCalls = [];
+  const dataSourceAdmin = {
+    listProfiles() {
+      return {
+        status: 'ok',
+        activeRuntime: 'demo',
+        credentialInputAccepted: false,
+        credentialValuesExposed: false,
+        profiles: [
+          {
+            profileId: 'network.legal_cases.postgresql',
+            engine: 'postgresql',
+            accessMode: 'read-only',
+            configurationStatus: 'ready',
+            environment: [{ name: 'LEGAL_V1_PG_PASSWORD', required: true, configured: true }],
+            allowedTables: ['labor_cases'],
+            allowedColumns: ['year'],
+            credentialValuesExposed: false
+          }
+        ]
+      };
+    },
+    async validateProfile(profileId) {
+      validationCalls.push(profileId);
+      return {
+        status: 'verified',
+        profileId,
+        connectionAttempted: true,
+        connectionStatus: 'connected',
+        schemaStatus: 'verified',
+        schemaFingerprint: 'a'.repeat(64),
+        credentialValuesExposed: false
+      };
+    }
+  };
+  const server = createDemoWebServer({ service: createService(), dataSourceAdmin });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  try {
+    await run(`http://127.0.0.1:${port}`, validationCalls);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 async function jsonRequest(url, options) {
   const response = await fetch(url, options);
   return { response, body: await response.json() };
@@ -138,6 +187,53 @@ test('exposes a localhost health contract with defensive browser headers', async
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  });
+});
+
+test('exposes a credential-free data-source admin list and fixed validation action', async () => {
+  await withDataSourceAdminServer(async (baseUrl, validationCalls) => {
+    const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`);
+    assert.equal(listed.response.status, 200);
+    assert.equal(listed.body.credentialInputAccepted, false);
+    assert.equal(listed.body.credentialValuesExposed, false);
+    assert.equal(JSON.stringify(listed.body).includes('LEGAL_V1_PG_PASSWORD'), true);
+    assert.equal(JSON.stringify(listed.body).includes('TEST_ONLY_PASSWORD_VALUE'), false);
+
+    const validated = await jsonRequest(
+      `${baseUrl}/api/v1/admin/data-sources/validation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ profileId: 'network.legal_cases.postgresql' })
+      }
+    );
+    assert.equal(validated.response.status, 200);
+    assert.equal(validated.body.status, 'verified');
+    assert.deepEqual(validationCalls, ['network.legal_cases.postgresql']);
+
+    const credentialInjection = await jsonRequest(
+      `${baseUrl}/api/v1/admin/data-sources/validation`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          profileId: 'network.legal_cases.postgresql',
+          password: 'TEST_ONLY_PASSWORD_VALUE'
+        })
+      }
+    );
+    assert.equal(credentialInjection.response.status, 400);
+    assert.equal(credentialInjection.body.error.code, 'INVALID_REQUEST');
+    assert.deepEqual(validationCalls, ['network.legal_cases.postgresql']);
+    assert.equal(JSON.stringify(credentialInjection.body).includes('TEST_ONLY_PASSWORD_VALUE'), false);
+  });
+});
+
+test('keeps data-source admin routes unavailable when no admin coordinator is configured', async () => {
+  await withServer(async (baseUrl) => {
+    const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`);
+    assert.equal(listed.response.status, 501);
+    assert.equal(listed.body.error.code, 'DATA_SOURCE_ADMIN_UNAVAILABLE');
   });
 });
 
@@ -238,6 +334,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, /data-mode="sandbox"/);
     assert.match(pageText, /id="sandbox-language"/);
     assert.match(pageText, /id="sandbox-files"/);
+    assert.match(pageText, /id="open-data-source-admin"/);
+    assert.match(pageText, /id="data-source-admin-modal"/);
+    assert.doesNotMatch(pageText, /type="password"/);
     assert.match(pageText, /src="\/v1-presentation\.js"/);
     assert.equal(presentationScript.status, 200);
     assert.match(presentationScript.headers.get('content-type'), /text\/javascript/);
@@ -253,6 +352,8 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /mode === 'demo'/);
     assert.match(scriptText, /submitSandboxScript/);
     assert.match(scriptText, /confirmSandboxExecution/);
+    assert.match(scriptText, /openDataSourceAdmin/);
+    assert.match(scriptText, /\/api\/v1\/admin\/data-sources\/validation/);
     assert.match(scriptText, /Provider 未识别/);
     assert.equal(styles.status, 200);
     assert.match(styles.headers.get('content-type'), /text\/css/);

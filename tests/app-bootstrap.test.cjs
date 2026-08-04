@@ -243,6 +243,13 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     assert.equal(application.sandboxDescriptor.available, true);
     assert.equal(application.sandboxDescriptor.runtime, 'mock-sandbox');
     assert.equal(typeof application.sandboxCoordinator.plan, 'function');
+    const profiles = application.dataSourceAdmin.listProfiles();
+    assert.deepEqual(
+      profiles.profiles.map((profile) => profile.engine),
+      ['sqlite', 'postgresql', 'mysql']
+    );
+    assert.equal(profiles.credentialInputAccepted, false);
+    assert.equal(JSON.stringify(profiles).includes(directory), false);
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });

@@ -2,6 +2,7 @@ const path = require('node:path');
 const { AgentBackedConversationService } = require('../agent/agent-backed-conversation-service.cjs');
 const { createAgentInferenceProvider } = require('../agent/inference-provider.cjs');
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
+const { createDataSourceAdmin } = require('../v1/data-source-admin.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
@@ -122,6 +123,13 @@ async function createLocalLegalAgentApplication(options = {}) {
     options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
   );
   const executionLog = createDemoExecutionLog({ filePath: executionLogFilePath });
+  const dataSourceAdmin =
+    options.dataSourceAdmin ??
+    createDataSourceAdmin({
+      projectRoot,
+      env: environment,
+      sourceFactory: options.dataSourceAdminSourceFactory
+    });
   const artifactDirectory = path.resolve(
     projectRoot,
     environment.LEGAL_V1_ARTIFACT_DIR?.trim() || 'data/web-demo/v1-artifacts'
@@ -200,6 +208,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     v1Descriptor: v1Runtime.describe(),
     sandboxCoordinator: sandboxCoordinator ?? null,
     sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
+    dataSourceAdmin,
     executionLogFilePath,
     artifactDirectory,
     async close() {

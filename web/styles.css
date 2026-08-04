@@ -225,6 +225,30 @@ button { cursor: pointer; }
 .consent-row input { margin-top: 2px; accent-color: var(--green); }
 .privacy-accept { width: 100%; margin-top: 14px; padding: 12px; }
 .policy-version { margin: 9px 0 0; color: #8b948f; font-size: 9px; text-align: center; }
+.data-source-admin-button { width: 100%; margin-top: 9px; }
+.data-source-admin-card { width: min(760px, 100%); max-height: min(820px, 90vh); overflow: auto; }
+.data-source-profile-list { display: grid; gap: 12px; margin: 18px 0; }
+.data-source-profile { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; }
+.data-source-profile-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.data-source-profile-heading strong, .data-source-profile-heading span { display: block; }
+.data-source-profile-heading strong { font-size: 13px; }
+.data-source-profile-heading div > span { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.data-source-state { padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; }
+.data-source-state.ready { color: #176646; background: #e5f5ed; }
+.data-source-state.missing_environment { color: #8a5a19; background: #fff1dc; }
+.data-source-environment { margin: 12px 0; }
+.data-source-environment > div { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px dashed #d8dfdb; font-size: 9px; }
+.data-source-environment dt { color: var(--muted); }
+.data-source-environment dd { margin: 0; font-weight: 800; }
+.data-source-environment dd.configured { color: var(--green); }
+.data-source-environment dd.missing { color: #a76b1c; }
+.data-source-policy { margin: 9px 0; color: var(--muted); font-size: 9px; }
+.data-source-validation { display: grid; gap: 3px; margin: 10px 0; padding: 10px; border-radius: 9px; background: #f0f4f2; font-size: 9px; }
+.data-source-validation strong, .data-source-validation span { display: block; }
+.data-source-validation.verified { color: #176646; background: #e8f6ef; }
+.data-source-validation.not_configured { color: #7b541e; background: #fff4e4; }
+.data-source-validation.failed, .data-source-load-error { color: #9b3434; background: #faecec; }
+.data-source-validate { width: 100%; }
 
 .toast { position: fixed; z-index: 30; right: 24px; bottom: 24px; max-width: 320px; padding: 11px 14px; border-radius: 10px; color: #fff; background: #18382e; box-shadow: var(--shadow); font-size: 11px; opacity: 0; pointer-events: none; transform: translateY(10px); transition: .2s ease; }
 .toast.show { opacity: 1; transform: translateY(0); }

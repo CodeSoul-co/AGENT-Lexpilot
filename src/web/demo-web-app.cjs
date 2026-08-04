@@ -119,6 +119,7 @@ function createDemoWebHandler(options = {}) {
   const v1Descriptor = options.v1Descriptor ?? null;
   const sandboxCoordinator = options.sandboxCoordinator ?? null;
   const sandboxDescriptor = options.sandboxDescriptor ?? sandboxCoordinator?.describe?.() ?? { available: false };
+  const dataSourceAdmin = options.dataSourceAdmin ?? null;
   const staticDirectory = path.resolve(
     options.staticDirectory ?? path.join(__dirname, '..', '..', 'web')
   );
@@ -176,6 +177,32 @@ function createDemoWebHandler(options = {}) {
           v1DemoDataSource: v1Descriptor?.dataSource ?? null,
           v1DemoSchema: v1Descriptor?.schema ?? null
         });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/v1/admin/data-sources') {
+        if (!dataSourceAdmin) {
+          sendError(response, 501, 'DATA_SOURCE_ADMIN_UNAVAILABLE', '数据源管理能力尚未配置。');
+          return;
+        }
+        sendJson(response, 200, dataSourceAdmin.listProfiles());
+        return;
+      }
+
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/api/v1/admin/data-sources/validation'
+      ) {
+        if (!dataSourceAdmin) {
+          sendError(response, 501, 'DATA_SOURCE_ADMIN_UNAVAILABLE', '数据源管理能力尚未配置。');
+          return;
+        }
+        const body = await readJsonBody(request);
+        if (!requireExactKeys(body, ['profileId']) || typeof body.profileId !== 'string') {
+          sendError(response, 400, 'INVALID_REQUEST', '数据源验证请求只能包含 profileId。');
+          return;
+        }
+        sendJson(response, 200, await dataSourceAdmin.validateProfile(body.profileId));
         return;
       }
 
@@ -337,6 +364,14 @@ function createDemoWebHandler(options = {}) {
       }
       if (error?.code === 'SANDBOX_PENDING_LIMIT') {
         sendError(response, 429, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'DATA_SOURCE_PROFILE_NOT_FOUND') {
+        sendError(response, 404, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'PROFILE_ID_INVALID') {
+        sendError(response, 400, error.code, error.message);
         return;
       }
       if (error instanceof TypeError && requestPathname.startsWith('/api/v1/sandbox/')) {
