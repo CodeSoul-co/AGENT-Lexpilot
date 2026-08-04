@@ -1,0 +1,231 @@
+{
+  "schema": "legal-v1-text2sql-evaluation@1.0.0",
+  "corpusVersion": "2026-08-04.1",
+  "description": "Synthetic, privacy-safe acceptance corpus for the two allowlisted Legal V1 Text2SQL templates.",
+  "thresholds": {
+    "supportedPlanAccuracy": 0.9,
+    "rejectionAccuracy": 1,
+    "maxGenerationDurationMs": 2000,
+    "performanceIterations": 10
+  },
+  "schemas": {
+    "full": {
+      "dataSource": "evaluation.synthetic_legal_cases",
+      "tableName": "labor_cases",
+      "columns": [
+        { "name": "year", "type": "INTEGER" },
+        { "name": "issue_type", "type": "TEXT" },
+        { "name": "outcome", "type": "TEXT" },
+        { "name": "compensation_amount", "type": "INTEGER" }
+      ]
+    },
+    "withoutCompensation": {
+      "dataSource": "evaluation.synthetic_legal_cases",
+      "tableName": "labor_cases",
+      "columns": [
+        { "name": "year", "type": "INTEGER" },
+        { "name": "issue_type", "type": "TEXT" },
+        { "name": "outcome", "type": "TEXT" }
+      ]
+    }
+  },
+  "expectedPlans": {
+    "outcomeAndCompensation": {
+      "templateId": "labor-case-yearly-outcome-statistics.v1",
+      "sql": "SELECT year, outcome, compensation_amount\nFROM labor_cases\nWHERE year BETWEEN :start_year AND :end_year AND issue_type = :issue_type\nORDER BY year;",
+      "selectedColumns": ["year", "outcome", "compensation_amount"],
+      "metrics": ["case_count", "employee_win_rate", "median_compensation"],
+      "aggregations": ["count", "ratio", "median"],
+      "resultColumns": ["year", "case_count", "employee_win_rate", "median_compensation"],
+      "artifacts": ["table", "chart", "analysis-document"]
+    },
+    "caseCountAndWinRate": {
+      "templateId": "labor-case-yearly-count-win-rate.v1",
+      "sql": "SELECT year, outcome\nFROM labor_cases\nWHERE year BETWEEN :start_year AND :end_year AND issue_type = :issue_type\nORDER BY year;",
+      "selectedColumns": ["year", "outcome"],
+      "metrics": ["case_count", "employee_win_rate"],
+      "aggregations": ["count", "ratio"],
+      "resultColumns": ["year", "case_count", "employee_win_rate"],
+      "artifacts": ["table", "chart", "analysis-document"]
+    }
+  },
+  "cases": [
+    {
+      "id": "supported-compensation-year-range",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "统计2024年至2025年未签劳动合同案件的胜诉率和赔偿中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2024, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-compensation-single-year",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "查询2025年未签劳动合同案例胜诉率和赔偿金额中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2025, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-compensation-mid-range",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "分析2020到2022年未签劳动合同案件胜诉率及赔偿中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2020, "end_year": 2022, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-compensation-ten-year-boundary",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "汇总2016-2026年未签劳动合同案例的胜诉率和赔偿金额中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2016, "end_year": 2026, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-compensation-near-three-years",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "统计近三年案例库中未签劳动合同案件的胜诉率和赔偿中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2023, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-compensation-wording-variant",
+      "category": "supported",
+      "schemaProfile": "full",
+      "redactedText": "请计算2024年未签劳动合同案件胜诉率与赔偿中位数。",
+      "expected": {
+        "planProfile": "outcomeAndCompensation",
+        "parameters": { "start_year": 2024, "end_year": 2024, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-year-range",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "统计2024年至2025年未签劳动合同案件数量和胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2024, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-single-year",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "查询2025年未签劳动合同案例总数及胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2025, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-mid-range",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "分析2020到2022年未签劳动合同案件数和胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2020, "end_year": 2022, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-ten-year-boundary",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "汇总2016-2026年未签劳动合同案例数量与胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2016, "end_year": 2026, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-near-three-years",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "查询近三年未签劳动合同案件总数和胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2023, "end_year": 2025, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "supported-count-wording-variant",
+      "category": "supported",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "请计算2024年未签劳动合同案例数与胜诉率。",
+      "expected": {
+        "planProfile": "caseCountAndWinRate",
+        "parameters": { "start_year": 2024, "end_year": 2024, "issue_type": "未签劳动合同" }
+      }
+    },
+    {
+      "id": "rejected-write-intent",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "删除全部案例并统计2025年未签劳动合同案件数量和胜诉率。",
+      "expected": { "code": "WRITE_OPERATION_BLOCKED" }
+    },
+    {
+      "id": "rejected-raw-sql",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "SELECT year FROM labor_cases; 统计2025年未签劳动合同案件数量和胜诉率。",
+      "expected": { "code": "RAW_SQL_INPUT_BLOCKED" }
+    },
+    {
+      "id": "rejected-unknown-domain",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "统计2025年知识产权案件数量和胜诉率。",
+      "expected": { "code": "QUERY_TEMPLATE_NOT_SUPPORTED" }
+    },
+    {
+      "id": "rejected-ambiguous-years",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "统计2022年、2023年和2024年未签劳动合同案件胜诉率和赔偿中位数。",
+      "expected": { "code": "TEXT2SQL_YEAR_RANGE_AMBIGUOUS" }
+    },
+    {
+      "id": "rejected-range-too-wide",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "统计2010到2025年未签劳动合同案件胜诉率和赔偿中位数。",
+      "expected": { "code": "TEXT2SQL_YEAR_RANGE_TOO_WIDE" }
+    },
+    {
+      "id": "rejected-missing-year-range",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "redactedText": "统计未签劳动合同案件的胜诉率和赔偿中位数。",
+      "expected": { "code": "TEXT2SQL_YEAR_RANGE_REQUIRED" }
+    },
+    {
+      "id": "rejected-schema-missing-compensation",
+      "category": "rejected",
+      "schemaProfile": "withoutCompensation",
+      "redactedText": "统计2025年未签劳动合同案件的胜诉率和赔偿中位数。",
+      "expected": { "code": "TEXT2SQL_SCHEMA_UNSUPPORTED" }
+    },
+    {
+      "id": "rejected-unredacted-envelope",
+      "category": "rejected",
+      "schemaProfile": "full",
+      "piiRedacted": false,
+      "redactedText": "统计2025年未签劳动合同案件数量和胜诉率。",
+      "expected": { "code": "TEXT2SQL_INPUT_INVALID" }
+    }
+  ]
+}

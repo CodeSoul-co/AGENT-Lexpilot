@@ -92,6 +92,8 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 DataSource/Schema 能力绑定位于 `configs/capability-bindings/legal-v1-data-sources.json`，可选的 SQLite 只读配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。`LEGAL_V1_SQLITE_MANIFEST` 只能选择能力绑定中已登记的只读或受治理写入清单，任意私有路径或临时清单都会在数据库打开前拒绝。当前真实数据模式开放两个受审计的受约束 Text2SQL 模板：一是按年度统计未签劳动合同案例的案件数、胜诉率和赔偿中位数，二是仅统计案件数和胜诉率。两者均接受一个年份、最多十年的年份范围，或确定性配置的“近三年”；第二个模板只读取 `year`、`issue_type`、`outcome`，不会读取赔偿字段。网页结果表和导出 PDF 也只按照查询计划中的输出契约展示白名单统计列，未知字段不会直接渲染。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少相应模板所需字段的 Schema 会关闭失败。
 
+`configs/evaluations/legal-v1-text2sql.json` 是不含真实案件、用户文本或凭证的版本化合成验收语料。它把 12 个受支持查询变体与 8 个危险/不支持输入分开计分，逐项核对模板、参数化 SQL、Schema 字段、指标和输出列，并进行 200 次生成耗时采样。`npm run audit:text2sql` 要求受支持计划准确率不低于 90%、拒绝准确率为 100%，且任一生成耗时必须小于 2 秒；门禁失败时命令返回非零状态。该结果只证明当前两个白名单模板在固定语料上的回归质量，不代表通用或开放域 Text2SQL 准确率，也不替代 PostgreSQL/MySQL 真实 Provider 验收。
+
 只读 SQL 使用 `constrained-readonly-v2` 策略重新计算计划哈希。策略在 Provider 执行前隔离字符串字面量并拒绝 SQL 注释、带引号标识符、控制字符、未闭合字符串、CTE、子查询、JOIN、集合操作、`SELECT INTO` 及 SQLite/PostgreSQL/MySQL 的扩展命令；参数仅允许合法名称和有限数值、字符串、布尔值或 `null`。策略版本变化会使旧确认计划失效并要求重新规划。
 
 ```bash
@@ -154,11 +156,11 @@ npm run audit:sql:mysql
 ## 验证
 
 ```bash
-npm run verify   # verify:baseline + verify:domain + verify:replay + Package Test
+npm run verify   # verify:baseline + verify:domain + Text2SQL 评测 + verify:replay + Package Test
 npm test         # 仅 Package Test
 ```
 
-完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution、DataSource/Schema、Workflow State 与 Artifact/Output 项目侧能力绑定能否通过引用、指纹、完整状态覆盖、Repository 描述和安全发布契约校验；Session/Agent capability snapshot 与 Agent patch 的版本、哈希、当前 runtime 和组合关系是否一致；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
+完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution、DataSource/Schema、Workflow State 与 Artifact/Output 项目侧能力绑定能否通过引用、指纹、完整状态覆盖、Repository 描述和安全发布契约校验；Session/Agent capability snapshot 与 Agent patch 的版本、哈希、当前 runtime 和组合关系是否一致；当前两个受约束 Text2SQL 模板能否通过版本化准确率、拒绝率和 2 秒延迟门禁；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
 
 `verify` 还会加载 `configs/replay-fixtures/` 中两份版本化、SHA-256 固定的 V0/V1 脱敏合成 Fixture，通过 Hypha `ReplayEngine` / `RegressionRunner` 将当前业务路径与黄金事件、状态路径、策略决策、工具调用和最终输出逐项比较，并在临时目录执行一次清单约束的恢复复验。Fixture 不保存用户原文、会话标识、客户数据或凭证；缺失、篡改、PII/Secret 检测或业务输出漂移均会使验证失败。
 
@@ -170,6 +172,7 @@ npm run audit:law-coverage  # 覆盖度（语料不足 100 条时按设计失败
 npm run audit:law-sources   # 官方来源只读核对（需联网）
 npm run audit:sql:mysql     # MySQL 真实只读 Provider 验收（需专用凭证）
 npm run audit:sql:postgresql # PostgreSQL 真实只读 Provider 验收（需专用凭证）
+npm run audit:text2sql      # 两个白名单模板的合成准确率、拒绝率和生成延迟门禁
 npm run audit:sandbox:docker # Docker 脚本沙箱真实隔离验收（需 Docker 与 digest 固定镜像）
 npm run verify:replay       # V0/V1 脱敏 Replay、Regression 与临时恢复验收
 ```
