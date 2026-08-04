@@ -113,7 +113,16 @@ for (const engine of ['postgresql', 'mysql']) {
 }
 
 test('network profiles reject writes and stop on allowed-column Schema drift', async () => {
-  const stable = createSource('postgresql');
+  let unsafeExecutionCalls = 0;
+  const stable = createSource(
+    'postgresql',
+    fakeClient({
+      async executeReadOnly() {
+        unsafeExecutionCalls += 1;
+        return [];
+      }
+    })
+  );
   const stableSnapshot = await stable.inspectSchema();
   await assert.rejects(
     stable.executeReadOnly({
@@ -124,6 +133,30 @@ test('network profiles reject writes and stop on allowed-column Schema drift', a
     (error) =>
       error instanceof NetworkSQLDataSourceError && error.code === 'SQL_NOT_SINGLE_SELECT'
   );
+  for (const [sql, code] of [
+    [
+      'SELECT year FROM labor_cases WHERE year = :year; -- hidden provider command',
+      'SQL_COMMENT_BLOCKED'
+    ],
+    [
+      'SELECT year FROM labor_cases WHERE year IN (SELECT year FROM labor_cases WHERE year = :year);',
+      'SQL_COMPLEX_QUERY_BLOCKED'
+    ],
+    [
+      'SELECT year FROM labor_cases WHERE year = :year UNION SELECT year FROM private_cases;',
+      'SQL_COMPLEX_QUERY_BLOCKED'
+    ]
+  ]) {
+    await assert.rejects(
+      stable.executeReadOnly({
+        sql,
+        parameters: { year: 2025 },
+        expectedSchemaFingerprint: stableSnapshot.schemaFingerprint
+      }),
+      (error) => error instanceof NetworkSQLDataSourceError && error.code === code
+    );
+  }
+  assert.equal(unsafeExecutionCalls, 0);
 
   let schemaCalls = 0;
   const source = createSource(

@@ -122,6 +122,7 @@ test('blocks writes before execution and rejects a changed Schema fingerprint', 
   try {
     const source = createSource(fixture.databasePath);
     const schema = await source.inspectSchema();
+    const beforeRejectedPlans = fs.readFileSync(fixture.databasePath);
     await assert.rejects(
       source.executeReadOnly({
         sql: 'DELETE FROM labor_cases WHERE year = :year;',
@@ -130,6 +131,26 @@ test('blocks writes before execution and rejects a changed Schema fingerprint', 
       }),
       (error) => error instanceof SQLiteDataSourceError && error.code === 'SQL_NOT_SINGLE_SELECT'
     );
+    for (const [sql, code] of [
+      [
+        'SELECT year FROM labor_cases WHERE year = :year; -- hidden provider command',
+        'SQL_COMMENT_BLOCKED'
+      ],
+      [
+        'SELECT year FROM labor_cases WHERE year IN (SELECT year FROM labor_cases WHERE year = :year);',
+        'SQL_COMPLEX_QUERY_BLOCKED'
+      ]
+    ]) {
+      await assert.rejects(
+        source.executeReadOnly({
+          sql,
+          parameters: { year: 2025 },
+          expectedSchemaFingerprint: schema.schemaFingerprint
+        }),
+        (error) => error instanceof SQLiteDataSourceError && error.code === code
+      );
+    }
+    assert.deepEqual(fs.readFileSync(fixture.databasePath), beforeRejectedPlans);
 
     const sqlite = loadHyphaAdaptersLocal(path.resolve(__dirname, '..')).loadSqlite(true);
     const writable = new sqlite.DatabaseSync(fixture.databasePath);

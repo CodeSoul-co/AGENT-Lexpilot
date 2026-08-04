@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  POLICY_VERSION,
   createSchemaFingerprint,
   validateReadOnlySqlPlan,
   validateWriteSqlPlan
@@ -36,8 +37,145 @@ test('accepts a single parameterized SELECT against the declared schema', () => 
   assert.equal(result.ok, true);
   assert.equal(result.operationType, 'select');
   assert.equal(result.readOnly, true);
+  assert.equal(result.policyVersion, 'constrained-readonly-v2');
+  assert.equal(POLICY_VERSION, 'constrained-readonly-v2');
   assert.equal(result.schemaFingerprint, createSchemaFingerprint(SCHEMA));
   assert.match(result.planHash, /^[0-9a-f]{64}$/);
+});
+
+test('rejects comments, quoted identifiers, malformed strings, and control characters', () => {
+  const cases = [
+    {
+      sql: 'SELECT year FROM labor_cases WHERE year = :year; -- hidden tail',
+      code: 'SQL_COMMENT_BLOCKED'
+    },
+    {
+      sql: 'SELECT year /* hidden */ FROM labor_cases WHERE year = :year;',
+      code: 'SQL_COMMENT_BLOCKED'
+    },
+    {
+      sql: 'SELECT `year` FROM labor_cases WHERE year = :year;',
+      code: 'SQL_QUOTED_IDENTIFIER_BLOCKED'
+    },
+    {
+      sql: "SELECT year FROM labor_cases WHERE issue_type = 'unterminated AND year = :year;",
+      code: 'SQL_STRING_LITERAL_INVALID'
+    },
+    {
+      sql: 'SELECT year\u0000 FROM labor_cases WHERE year = :year;',
+      code: 'SQL_CONTROL_CHARACTER_BLOCKED'
+    }
+  ];
+
+  for (const input of cases) {
+    const result = validateReadOnlySqlPlan({
+      sql: input.sql,
+      parameters: { year: 2025 },
+      schema: SCHEMA
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, input.code);
+  }
+});
+
+test('rejects CTEs, subqueries, joins, set operations, and provider-specific commands', () => {
+  const cases = [
+    {
+      sql: 'WITH recent AS (SELECT year FROM labor_cases) SELECT year FROM recent WHERE year = :year;',
+      feature: 'with'
+    },
+    {
+      sql: 'SELECT year FROM labor_cases WHERE year IN (SELECT year FROM labor_cases WHERE year = :year);'
+    },
+    {
+      sql: 'SELECT year FROM labor_cases JOIN private_cases ON year = :year;',
+      feature: 'join'
+    },
+    {
+      sql: 'SELECT year FROM labor_cases WHERE year = :year UNION SELECT year FROM private_cases;',
+      feature: 'union'
+    },
+    {
+      sql: 'SELECT year INTO private_backup FROM labor_cases WHERE year = :year;',
+      feature: 'into'
+    },
+    { sql: 'PRAGMA table_info(labor_cases);', feature: 'pragma' },
+    { sql: "ATTACH DATABASE 'private.sqlite' AS private_db;", feature: 'attach' },
+    { sql: 'EXPLAIN SELECT year FROM labor_cases WHERE year = :year;', feature: 'explain' }
+  ];
+
+  for (const input of cases) {
+    const result = validateReadOnlySqlPlan({
+      sql: input.sql,
+      parameters: { year: 2025 },
+      schema: SCHEMA
+    });
+    assert.equal(result.ok, false, input.sql);
+    assert.equal(result.code, 'SQL_COMPLEX_QUERY_BLOCKED', input.sql);
+    if (input.feature) assert.equal(result.blockedFeature, input.feature);
+  }
+});
+
+test('does not treat blocked words or comment markers inside string literals as SQL structure', () => {
+  const result = validateReadOnlySqlPlan({
+    sql: "SELECT year FROM labor_cases WHERE issue_type = 'delete -- /* ;' AND year = :year;",
+    parameters: { year: 2025 },
+    schema: SCHEMA
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('rejects non-scalar parameters, invalid names, and duplicate Schema fields', () => {
+  const invalidValue = validateReadOnlySqlPlan({
+    sql: 'SELECT year FROM labor_cases WHERE year = :year;',
+    parameters: { year: { nested: 2025 } },
+    schema: SCHEMA
+  });
+  assert.equal(invalidValue.code, 'SQL_PARAMETER_VALUE_INVALID');
+  assert.equal(invalidValue.parameterName, 'year');
+
+  const invalidName = validateReadOnlySqlPlan({
+    sql: 'SELECT year FROM labor_cases WHERE year = :year;',
+    parameters: { year: 2025, 'bad-name': 1 },
+    schema: SCHEMA
+  });
+  assert.equal(invalidName.code, 'SQL_PARAMETER_NAME_INVALID');
+
+  const duplicateSchema = validateReadOnlySqlPlan({
+    sql: 'SELECT year FROM labor_cases WHERE year = :year;',
+    parameters: { year: 2025 },
+    schema: { ...SCHEMA, columns: [...SCHEMA.columns, { name: 'YEAR', type: 'INTEGER' }] }
+  });
+  assert.equal(duplicateSchema.code, 'SCHEMA_INVALID');
+});
+
+test('rejects hidden or accessor parameters that would be omitted from the plan hash', () => {
+  const hidden = { year: 2025 };
+  Object.defineProperty(hidden, 'issue_type', {
+    enumerable: false,
+    value: '未签劳动合同'
+  });
+  const hiddenResult = validateReadOnlySqlPlan({
+    sql: 'SELECT year FROM labor_cases WHERE year = :year AND issue_type = :issue_type;',
+    parameters: hidden,
+    schema: SCHEMA
+  });
+  assert.equal(hiddenResult.code, 'PARAMETERS_INVALID');
+
+  const accessor = {};
+  Object.defineProperty(accessor, 'year', {
+    enumerable: true,
+    get() {
+      return 2025;
+    }
+  });
+  const accessorResult = validateReadOnlySqlPlan({
+    sql: 'SELECT year FROM labor_cases WHERE year = :year;',
+    parameters: accessor,
+    schema: SCHEMA
+  });
+  assert.equal(accessorResult.code, 'PARAMETERS_INVALID');
 });
 
 test('rejects writes, multiple statements, unknown tables, and unbound values', () => {

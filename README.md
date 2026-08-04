@@ -71,6 +71,8 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。当前真实数据模式开放两个受审计的受约束 Text2SQL 模板：一是按年度统计未签劳动合同案例的案件数、胜诉率和赔偿中位数，二是仅统计案件数和胜诉率。两者均接受一个年份、最多十年的年份范围，或确定性配置的“近三年”；第二个模板只读取 `year`、`issue_type`、`outcome`，不会读取赔偿字段。网页结果表和导出 PDF 也只按照查询计划中的输出契约展示白名单统计列，未知字段不会直接渲染。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少相应模板所需字段的 Schema 会关闭失败。
 
+只读 SQL 使用 `constrained-readonly-v2` 策略重新计算计划哈希。策略在 Provider 执行前隔离字符串字面量并拒绝 SQL 注释、带引号标识符、控制字符、未闭合字符串、CTE、子查询、JOIN、集合操作、`SELECT INTO` 及 SQLite/PostgreSQL/MySQL 的扩展命令；参数仅允许合法名称和有限数值、字符串、布尔值或 `null`。策略版本变化会使旧确认计划失效并要求重新规划。
+
 ```bash
 LEGAL_V1_RUNTIME=sqlite
 LEGAL_V1_SQLITE_PATH=D:/private-data/legal-cases.sqlite
