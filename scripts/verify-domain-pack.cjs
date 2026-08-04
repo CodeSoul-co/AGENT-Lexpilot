@@ -7,6 +7,10 @@ const {
   createCapabilityReferenceSnapshot
 } = require('../src/v1/capability-reference-snapshot.cjs');
 const { loadDataSourceSchemaProfile } = require('../src/v1/data-source-schema-profile.cjs');
+const {
+  artifactOutputBindingRef,
+  loadArtifactOutputCapabilityBinding
+} = require('../src/v1/artifact-output-capability-binding.cjs');
 const { loadWorkflowStateCapabilityMap } = require('../src/v1/workflow-state-capability-map.cjs');
 const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 
@@ -28,6 +32,7 @@ async function main() {
   const dataSourceSchemaProfile = loadDataSourceSchemaProfile({ projectRoot });
   const dataSourceSchema = dataSourceSchemaProfile.receipt;
   const workflowStateMap = loadWorkflowStateCapabilityMap({ projectRoot });
+  const artifactOutput = loadArtifactOutputCapabilityBinding({ projectRoot }).receipt;
   const workflowStateBinding = workflowStateMap.bindApplication({
     workspaceExecutionBinding: workspaceExecution,
     dataSourceSchemaBinding: dataSourceSchemaProfile.resolveRuntime({ runtime: 'demo' }).receipt,
@@ -56,6 +61,10 @@ async function main() {
         runtimeStateBindingCount: workflowStateBinding.runtimeStateBindingCount,
         compiledStateFsmSha256: workflowStateBinding.compiledFsmSha256,
         stateCapabilityReferencesRetained: workflowStateBinding.referencesRetained,
+        artifactOutputBinding: artifactOutputBindingRef(artifactOutput),
+        artifactProfile: `${artifactOutput.artifactProfileRef.id}@${artifactOutput.artifactProfileRef.version}`,
+        professionalOutputContract: `${artifactOutput.outputContractRef.id}@${artifactOutput.outputContractRef.version}`,
+        artifactStoreCount: Object.keys(artifactOutput.storeRefs).length,
         sessionAgentCapabilitySnapshot: capabilitySnapshotRef(capabilitySnapshot),
         agentCapabilityPatch: agentCapabilityPatchRef(capabilityPatch, capabilitySnapshot)
       },

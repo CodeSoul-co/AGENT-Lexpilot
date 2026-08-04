@@ -56,7 +56,8 @@ function safeEvent(type, data) {
   return { type, data };
 }
 
-function isGovernedArtifactReceipt(receipt, expectedContentSha256) {
+function isGovernedArtifactReceipt(receipt, expectedContentSha256, expectedBindingRef = null) {
+  const bindingRef = receipt?.artifactOutputBindingRef ?? null;
   return (
     receipt !== null &&
     typeof receipt === 'object' &&
@@ -64,7 +65,12 @@ function isGovernedArtifactReceipt(receipt, expectedContentSha256) {
     receipt.storeId.length > 0 &&
     typeof receipt.objectKey === 'string' &&
     /^analysis\/[0-9a-f]{64}\.md$/.test(receipt.objectKey) &&
-    receipt.contentSha256 === expectedContentSha256
+    receipt.contentSha256 === expectedContentSha256 &&
+    ((expectedBindingRef === null && bindingRef === null) ||
+      (expectedBindingRef !== null &&
+        bindingRef?.id === expectedBindingRef.id &&
+        bindingRef?.version === expectedBindingRef.version &&
+        bindingRef?.manifestCanonicalSha256 === expectedBindingRef.manifestCanonicalSha256))
   );
 }
 
@@ -225,6 +231,7 @@ class LegalSelfCheckConversationService {
     }
     this.executionLog = options.executionLog ?? null;
     this.artifactRepository = options.artifactRepository ?? null;
+    this.artifactOutputBindingRef = this.artifactRepository?.describe?.().artifactOutputBindingRef ?? null;
     if (
       this.executionLog !== null &&
       (typeof this.executionLog.append !== 'function' ||
@@ -925,14 +932,19 @@ class LegalSelfCheckConversationService {
         this.artifactRepository.storeAnalysisArtifact({
           sessionId: session.id,
           runId: session.v1.runId,
-          artifact: executed.artifact
+          artifact: executed.artifact,
+          publication: {
+            status: executed.status,
+            executionAttempted: executed.executionAttempted
+          }
         })
       )
         .then(
           (storageReceipt) =>
             isGovernedArtifactReceipt(
               storageReceipt,
-              executed.artifact.contentSha256
+              executed.artifact.contentSha256,
+              this.artifactOutputBindingRef
             )
               ? { persisted: true, storageReceipt }
               : { persisted: false },

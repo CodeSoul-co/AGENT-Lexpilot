@@ -36,6 +36,7 @@
 - DataSource/Schema Profile 由 `configs/capability-bindings/legal-v1-data-sources.json` 统一版本化：清单显式引用当前 DomainPack、SQLite 只读/受治理写入、PostgreSQL 只读和 MySQL 只读四份 manifest，并以规范化 JSON SHA-256 固定各自的引擎、权限、白名单和限制；初始 Schema 快照也携带 `schema-snapshot.allowlisted.v1@1.0.0` 契约引用。应用在读取数据库环境值或连接 Provider 前验证全部引用，并按当前 V1 runtime 只选择已登记的 manifest；缺失、未登记或任一内容漂移均关闭失败；
 - Workflow State 能力映射由 `configs/capability-bindings/legal-workflow-state-capabilities.json` 作为项目侧 companion manifest 统一版本化，不修改 Hypha：它逐一覆盖当前 DomainPack 的 13 个状态，并把专业查询的 12 个实际阶段编译为独立、不可变的项目侧 FSM；`EXECUTE_SCRIPT` 显式绑定 Workspace、Execution 和 Artifact，Schema/计划/SQL 状态绑定活动 DataSource，产物与终态绑定 Artifact 和 OutputContract。Domain workflow、依赖清单、状态覆盖、转移或任一引用发生缺失/错配/漂移时，应用会在读取会话密钥、打开数据 Provider 和写入运行数据前关闭失败；编译回执仅保留版本引用、计数与 SHA-256，不包含路径、连接值或用户内容；
 - Session/Agent 能力快照同样在项目侧实现，不修改 Hypha：应用启动时从已经验证的 Workflow State 绑定生成不可变、版本化的 capability reference snapshot，并把同一份快照写入每个加密 Session、绑定到 Agent patch 与 Session/Agent 组合边界。快照固定当前 runtime、Workspace、Execution、DataSource、Artifact、OutputContract 和 FSM SHA-256；会话恢复时缺失快照、内容或哈希漂移、切换 runtime 后继续使用旧会话、后续 patch 替换能力以及 Session/Agent 快照不一致均关闭失败。应用和 Agent 对外只暴露快照/补丁的版本引用与 SHA-256，不暴露路径、凭据、环境变量名或用户内容；升级前创建且没有快照的旧会话不会被静默继承，需要新建会话；
+- Artifact 输出绑定由 `configs/capability-bindings/legal-v1-artifact-outputs.json` 在项目侧独立版本化：清单以 canonical SHA-256 固定当前 Workflow State binding，并绑定 `artifact-profile.lexpilot.v1-output@1.0.0`、`output.legal-professional-query@1.0.0` 以及分析/Sandbox 两个私有 Hypha Store。应用会把实际 Repository 的 store ID、后端、可见性和大小上限与清单逐项比较；分析结果发布前验证成功执行状态、Markdown 类型、文件名、MIME、大小和内容 SHA-256，写入后再验证对象键、ETag、大小、后端与绑定引用。声明、运行实例、产物或回执任一漂移时停止发布结果；安全回执只含版本、哈希和非敏感 Store 标识，不含根路径、连接值、凭据或用户原文；
 - Schema 变化会在会话和网页中主动通知用户，并提供显式重新规划入口；重新规划只基于当前白名单 Schema 生成新计划，仍须再次人工确认，绝不会因重新规划而自动执行；漂移检测与重新规划同样适用于 SQLite、PostgreSQL 和 MySQL；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
@@ -157,7 +158,7 @@ npm run verify   # verify:baseline + verify:domain + verify:replay + Package Tes
 npm test         # 仅 Package Test
 ```
 
-完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution、DataSource/Schema 与 Workflow State 项目侧能力绑定能否通过引用、指纹、完整状态覆盖和安全契约校验；Session/Agent capability snapshot 与 Agent patch 的版本、哈希、当前 runtime 和组合关系是否一致；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
+完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution、DataSource/Schema、Workflow State 与 Artifact/Output 项目侧能力绑定能否通过引用、指纹、完整状态覆盖、Repository 描述和安全发布契约校验；Session/Agent capability snapshot 与 Agent patch 的版本、哈希、当前 runtime 和组合关系是否一致；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
 
 `verify` 还会加载 `configs/replay-fixtures/` 中两份版本化、SHA-256 固定的 V0/V1 脱敏合成 Fixture，通过 Hypha `ReplayEngine` / `RegressionRunner` 将当前业务路径与黄金事件、状态路径、策略决策、工具调用和最终输出逐项比较，并在临时目录执行一次清单约束的恢复复验。Fixture 不保存用户原文、会话标识、客户数据或凭证；缺失、篡改、PII/Secret 检测或业务输出漂移均会使验证失败。
 

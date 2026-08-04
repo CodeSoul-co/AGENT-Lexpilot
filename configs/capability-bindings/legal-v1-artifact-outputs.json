@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "binding.legal-v1-artifact-outputs",
+  "version": "1.0.0",
+  "stateCapabilityBindingRef": {
+    "id": "binding.legal-workflow-state-capabilities",
+    "version": "1.0.0",
+    "canonicalSha256": "sha256:34be922af8e5c40cf1497e4022968384419de3a63c7475c863023820ea6e155d"
+  },
+  "artifactProfileRef": {
+    "id": "artifact-profile.lexpilot.v1-output",
+    "version": "1.0.0"
+  },
+  "outputContractRef": {
+    "id": "output.legal-professional-query",
+    "version": "1.0.0"
+  },
+  "stores": [
+    {
+      "role": "analysis",
+      "storeId": "lexpilot.execution-artifacts.local",
+      "backend": "hypha.LocalFilesystemExecutionArtifactStore",
+      "visibility": "private-local",
+      "maxObjectBytes": 1048576
+    },
+    {
+      "role": "sandbox",
+      "storeId": "lexpilot.sandbox-artifacts.local",
+      "backend": "hypha.LocalFilesystemExecutionArtifactStore",
+      "visibility": "private-local",
+      "maxObjectBytes": 16777216
+    }
+  ],
+  "analysisArtifactContract": {
+    "artifactType": "analysis-document",
+    "mimeType": "text/markdown; charset=utf-8",
+    "objectKeyPattern": "^analysis/[0-9a-f]{64}\\.md$",
+    "contentSha256Pattern": "^[0-9a-f]{64}$",
+    "readBackVerificationRequired": true,
+    "immutableCreateRequired": true
+  },
+  "publicationContract": {
+    "completedStatus": "completed",
+    "executionAttemptedRequired": true,
+    "requiredArtifactFields": [
+      "artifactId",
+      "type",
+      "fileName",
+      "mimeType",
+      "executionTimeMs",
+      "content",
+      "contentSha256"
+    ],
+    "requiredStorageReceiptFields": [
+      "storeId",
+      "objectKey",
+      "etag",
+      "contentSha256",
+      "sizeBytes",
+      "backend"
+    ],
+    "optionalStorageReceiptFields": ["versionId"],
+    "resultWithheldOnPersistenceFailure": true,
+    "rawPathValuesAllowed": false,
+    "rawConnectionValuesAllowed": false,
+    "rawUserTextAllowed": false
+  }
+}

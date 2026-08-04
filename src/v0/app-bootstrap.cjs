@@ -5,6 +5,10 @@ const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.
 const { createDataSourceAdmin } = require('../v1/data-source-admin.cjs');
 const { loadDataSourceSchemaProfile } = require('../v1/data-source-schema-profile.cjs');
 const {
+  artifactOutputBindingRef,
+  loadArtifactOutputCapabilityBinding
+} = require('../v1/artifact-output-capability-binding.cjs');
+const {
   agentCapabilityPatchRef,
   capabilitySnapshotRef,
   createAgentCapabilityPatch,
@@ -174,6 +178,11 @@ async function createLocalLegalAgentApplication(options = {}) {
     workspaceExecutionPath: options.workspaceExecutionManifestPath,
     dataSourceSchemaPath: options.dataSourceSchemaBindingPath
   });
+  const artifactOutputCapability = loadArtifactOutputCapabilityBinding({
+    projectRoot,
+    manifestPath: options.artifactOutputBindingPath,
+    stateCapabilityPath: options.workflowStateCapabilityManifestPath
+  });
   const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
   const dataSourceSchemaBinding = dataSourceSchemaProfile.resolveRuntime({
     runtime: v1Mode,
@@ -253,10 +262,10 @@ async function createLocalLegalAgentApplication(options = {}) {
     projectRoot,
     environment.LEGAL_V1_ARTIFACT_DIR?.trim() || 'data/web-demo/v1-artifacts'
   );
-  const artifactRepository =
+  const rawArtifactRepository =
     options.artifactRepository ??
     createExecutionArtifactRepository({ rootPath: artifactDirectory, projectRoot });
-  let sandboxArtifactRepository;
+  let sandboxArtifactRepository = options.sandboxArtifactRepository;
   let sandboxCoordinator = options.sandboxCoordinator;
   if (sandboxEnabled && !sandboxCoordinator) {
     let sandboxRuntime = options.sandboxRuntime;
@@ -269,7 +278,7 @@ async function createLocalLegalAgentApplication(options = {}) {
         environment.LEGAL_V1_SANDBOX_ARTIFACT_ROOT?.trim() || 'data/sandbox-artifacts'
       );
       sandboxArtifactRepository =
-        options.sandboxArtifactRepository ??
+        sandboxArtifactRepository ??
         createSandboxArtifactRepository({ rootPath: sandboxArtifactDirectory, projectRoot });
       const providerFactory =
         options.sandboxProviderFactory ??
@@ -293,6 +302,13 @@ async function createLocalLegalAgentApplication(options = {}) {
       auditActorId
     });
   }
+  const artifactOutputBinding = artifactOutputCapability.bindApplication({
+    stateCapabilityBinding: workflowStateCapabilityBinding,
+    analysisRepository: rawArtifactRepository,
+    sandboxRepository: sandboxArtifactRepository,
+    sandboxEnabled: sandboxArtifactRepository !== undefined
+  });
+  const artifactRepository = artifactOutputBinding.analysisRepository;
   const local = createLocalLegalAgent({
     ...options,
     environment,
@@ -333,6 +349,8 @@ async function createLocalLegalAgentApplication(options = {}) {
     dataSourceAdmin,
     dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
     workflowStateCapabilityBinding,
+    artifactOutputBinding: artifactOutputBinding.receipt,
+    artifactOutputBindingRef: artifactOutputBindingRef(artifactOutputBinding.receipt),
     capabilitySnapshotRef: capabilitySnapshotRef(capabilitySnapshot),
     agentCapabilityPatchRef: agentCapabilityPatchRef(capabilityPatch, capabilitySnapshot),
     workspaceExecutionBinding: workspaceExecutionProfile.receipt,
@@ -340,7 +358,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     artifactDirectory,
     async close() {
       await sandboxArtifactRepository?.close?.();
-      await artifactRepository.close?.();
+      await rawArtifactRepository.close?.();
     }
   };
 }

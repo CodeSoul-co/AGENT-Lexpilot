@@ -483,6 +483,18 @@ test('boots the local application in explicit SQLite mode while demo remains the
     assert.equal(completed.status, 'completed');
     assert.equal(completed.v1.result.sourceRowCount, 5);
     assert.equal(completed.v1.artifact.storage.storeId, 'lexpilot.execution-artifacts.local');
+    assert.deepEqual(completed.v1.artifact.storage.artifactProfileRef, {
+      id: 'artifact-profile.lexpilot.v1-output',
+      version: '1.0.0'
+    });
+    assert.deepEqual(completed.v1.artifact.storage.outputContractRef, {
+      id: 'output.legal-professional-query',
+      version: '1.0.0'
+    });
+    assert.deepEqual(
+      completed.v1.artifact.storage.artifactOutputBindingRef,
+      application.artifactOutputBindingRef
+    );
     assert.equal(application.artifactDirectory.startsWith(fixture.directory), true);
   } finally {
     await application?.close();

@@ -456,6 +456,16 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     assert.match(application.capabilitySnapshotRef.snapshotSha256, /^sha256:[0-9a-f]{64}$/);
     assert.equal(application.agentCapabilityPatchRef.id, 'agent-patch.legal-capabilities');
     assert.match(application.agentCapabilityPatchRef.patchSha256, /^sha256:[0-9a-f]{64}$/);
+    assert.equal(
+      application.artifactOutputBindingRef.id,
+      'binding.legal-v1-artifact-outputs'
+    );
+    assert.match(
+      application.artifactOutputBindingRef.manifestCanonicalSha256,
+      /^sha256:[0-9a-f]{64}$/
+    );
+    assert.deepEqual(application.artifactOutputBinding.activeStores, ['analysis']);
+    assert.equal(application.artifactOutputBinding.repositoryDescriptorsValidated, true);
     assert.deepEqual(
       application.agentDescriptor.capabilitySnapshotRef,
       application.capabilitySnapshotRef
@@ -465,6 +475,7 @@ test('application composes an injected Sandbox runtime without requiring Docker 
       false
     );
     assert.equal(JSON.stringify(application.capabilitySnapshotRef).includes(directory), false);
+    assert.equal(JSON.stringify(application.artifactOutputBinding).includes(directory), false);
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });
