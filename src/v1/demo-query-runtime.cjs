@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
 const { validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
+const { buildExecutionEvidence } = require('./analysis-artifact-content.cjs');
 
 const DEMO_SCHEMA = Object.freeze({
   dataSource: 'demo.labor_cases',
@@ -89,13 +90,17 @@ function buildYearlyRows() {
   });
 }
 
-function buildArtifact(runId, rows) {
+function buildArtifact(runId, rows, executionTimeMs) {
   const matchedCaseCount = rows.reduce((total, row) => total + row.case_count, 0);
   const content = [
     '# 近三年未签劳动合同案例演示分析',
     '',
     `数据源：${DEMO_SCHEMA.displayName}（${DEMO_CASES.length} 条匿名合成演示案例）`,
     `本次查询匹配：${matchedCaseCount} 条，按 ${rows.length} 个年度汇总。`,
+    '',
+    ...buildExecutionEvidence({ sql: DEMO_QUERY_SQL, executionTimeMs, rows }),
+    '',
+    '## 查询结果',
     '',
     '| 年份 | 案例数 | 劳动者胜诉率 | 胜诉赔偿中位数 |',
     '| --- | ---: | ---: | ---: |',
@@ -111,6 +116,7 @@ function buildArtifact(runId, rows) {
     type: 'analysis-document',
     fileName: '案例统计分析.md',
     mimeType: 'text/markdown; charset=utf-8',
+    executionTimeMs,
     content,
     contentSha256: createHash('sha256').update(content, 'utf8').digest('hex')
   };
@@ -162,7 +168,10 @@ function buildDemoQueryPlan(requiresConfirmation, policy) {
   };
 }
 
-function buildCompletedResult(input, { requiresConfirmation, confirmationTrace, schema, policy }) {
+function buildCompletedResult(
+  input,
+  { requiresConfirmation, confirmationTrace, schema, policy, executionTimeMs }
+) {
   const rows = buildYearlyRows();
   const matchedCaseCount = rows.reduce((total, row) => total + row.case_count, 0);
 
@@ -189,7 +198,7 @@ function buildCompletedResult(input, { requiresConfirmation, confirmationTrace, 
       labels: rows.map((row) => String(row.year)),
       series: [{ name: '胜诉率 %', values: rows.map((row) => row.employee_win_rate) }]
     },
-    artifact: buildArtifact(input.runId, rows),
+    artifact: buildArtifact(input.runId, rows, executionTimeMs),
     safety: {
       readOnly: true,
       writeAttempted: false,
@@ -221,8 +230,12 @@ function buildCompletedResult(input, { requiresConfirmation, confirmationTrace, 
 
 function createV1DemoQueryRuntime(options = {}) {
   const schemaProvider = options.schemaProvider ?? (() => DEMO_SCHEMA);
+  const executionTimeMs = options.executionTimeMs ?? 0;
   if (typeof schemaProvider !== 'function') {
     throw new TypeError('schemaProvider must be a function.');
+  }
+  if (!Number.isSafeInteger(executionTimeMs) || executionTimeMs < 0) {
+    throw new TypeError('executionTimeMs must be a non-negative safe integer.');
   }
 
   function currentPlan(requiresConfirmation) {
@@ -341,7 +354,8 @@ function createV1DemoQueryRuntime(options = {}) {
         requiresConfirmation: true,
         confirmationTrace: [safeTrace('v1.query.confirmation.recorded', { confirmed: true })],
         schema,
-        policy
+        policy,
+        executionTimeMs
       });
     },
 
@@ -358,7 +372,8 @@ function createV1DemoQueryRuntime(options = {}) {
         requiresConfirmation: false,
         confirmationTrace: [],
         schema,
-        policy
+        policy,
+        executionTimeMs
       });
     }
   });

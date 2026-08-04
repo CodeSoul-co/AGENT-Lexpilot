@@ -143,7 +143,7 @@
       "timestamp": "2026-08-03T08:00:16.000Z",
       "payload": {
         "storeId": "lexpilot.execution-artifacts.local",
-        "contentSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217"
+        "contentSha256": "c70df60f322491c7eda88344557e362cafe84986a0701224c55398ec3d3e7d2c"
       }
     },
     {
@@ -162,7 +162,7 @@
           "rowCount": 3,
           "matchedCaseCount": 672,
           "artifactStoreId": "lexpilot.execution-artifacts.local",
-          "artifactSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217",
+          "artifactSha256": "c70df60f322491c7eda88344557e362cafe84986a0701224c55398ec3d3e7d2c",
           "auditLogStatus": "verified",
           "businessTraceTypes": [
             "v1.schema.loaded",
@@ -219,7 +219,7 @@
     "rowCount": 3,
     "matchedCaseCount": 672,
     "artifactStoreId": "lexpilot.execution-artifacts.local",
-    "artifactSha256": "c5cd6506dd88561f089fc3f4cb9f6c95104365731d497d2031d9b1df94beb217",
+    "artifactSha256": "c70df60f322491c7eda88344557e362cafe84986a0701224c55398ec3d3e7d2c",
     "auditLogStatus": "verified",
     "businessTraceTypes": [
       "v1.schema.loaded",

@@ -660,7 +660,8 @@ function renderV1ReportCanvas(data, executionMs) {
 
 async function exportV1Pdf(data) {
   try {
-    const canvas = renderV1ReportCanvas(data, state.lastExecutionMs);
+    const executionTimeMs = data.providerReceipt?.durationMs ?? data.artifact?.executionTimeMs ?? state.lastExecutionMs;
+    const canvas = renderV1ReportCanvas(data, executionTimeMs);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
     if (!blob) throw new Error('canvas export failed');
     const jpegBytes = new Uint8Array(await blob.arrayBuffer());

@@ -42,6 +42,15 @@ test('V1 demo produces a verified read-only plan, table, chart, and artifact', a
   assert.equal(result.chart.labels.length, 3);
   assert.equal(result.artifact.type, 'analysis-document');
   assert.match(result.artifact.contentSha256, /^[0-9a-f]{64}$/);
+  assert.equal(Number.isSafeInteger(result.artifact.executionTimeMs), true);
+  assert.match(result.artifact.content, /## 执行信息/);
+  assert.match(result.artifact.content, /执行耗时：\d+ ms/);
+  assert.match(result.artifact.content, /```sql\nSELECT year/);
+  assert.match(result.artifact.content, /:start_year/);
+  assert.match(result.artifact.content, /参数化 SQL 原文（不包含绑定参数值）/);
+  assert.match(result.artifact.content, /## 劳动者胜诉率图表/);
+  assert.match(result.artifact.content, /2023 \| [█░]+ 61\.9%/);
+  assert.match(result.artifact.content, /## 查询结果/);
   assert.match(result.artifact.content, /720 条匿名合成演示案例/);
   assert.match(result.artifact.content, /本次查询匹配：672 条/);
   assert.equal(result.sqlExecutionProvider, 'not_available_in_current_hypha');

@@ -2,6 +2,7 @@ const { createHash } = require('node:crypto');
 const { createSchemaFingerprint, validateReadOnlySqlPlan } = require('./sql-policy-guard.cjs');
 const { createSchemaDrift } = require('./schema-drift.cjs');
 const { createGovernedSQLiteWriteRuntime } = require('./governed-sqlite-write-runtime.cjs');
+const { buildExecutionEvidence } = require('./analysis-artifact-content.cjs');
 const {
   DEFAULT_QUERY_PARAMETERS: SQLITE_QUERY_PARAMETERS,
   DEFAULT_QUERY_SQL: SQLITE_QUERY_SQL,
@@ -52,7 +53,7 @@ function buildYearlyRows(sourceRows, metrics) {
     });
 }
 
-function buildArtifact(runId, dataSource, sourceRowCount, rows, generated) {
+function buildArtifact(runId, dataSource, sourceRowCount, rows, generated, executionTimeMs) {
   const includeMedianCompensation = generated.semanticQuery.metrics.includes(
     'median_compensation'
   );
@@ -69,6 +70,10 @@ function buildArtifact(runId, dataSource, sourceRowCount, rows, generated) {
     `# ${title}`,
     '',
     `数据源：${dataSource}（本次只读查询匹配 ${sourceRowCount} 条记录）`,
+    '',
+    ...buildExecutionEvidence({ sql: generated.sql, executionTimeMs, rows }),
+    '',
+    '## 查询结果',
     '',
     tableHeader,
     tableAlignment,
@@ -88,6 +93,7 @@ function buildArtifact(runId, dataSource, sourceRowCount, rows, generated) {
     type: 'analysis-document',
     fileName: generated.expectedOutput.artifactFileName,
     mimeType: 'text/markdown; charset=utf-8',
+    executionTimeMs,
     content,
     contentSha256: createHash('sha256').update(content, 'utf8').digest('hex')
   });
@@ -410,7 +416,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         descriptor.id,
         queryResult.rowCount,
         rows,
-        generated
+        generated,
+        queryResult.durationMs
       );
       return {
         status: 'completed',

@@ -109,6 +109,18 @@ test('plans and executes the supported template against the configured SQLite da
     assert.equal(executed.providerReceipt.readOnly, true);
     assert.equal(executed.providerReceipt.sourceRowCount, 5);
     assert.match(executed.artifact.contentSha256, /^[0-9a-f]{64}$/);
+    assert.equal(executed.artifact.executionTimeMs, executed.providerReceipt.durationMs);
+    assert.match(executed.artifact.content, /## 执行信息/);
+    assert.match(
+      executed.artifact.content,
+      new RegExp(`执行耗时：${executed.providerReceipt.durationMs} ms`)
+    );
+    assert.match(executed.artifact.content, /```sql\nSELECT year/);
+    assert.match(executed.artifact.content, /:start_year/);
+    assert.equal(executed.artifact.content.includes('2023 AND 2025'), false);
+    assert.equal(executed.artifact.content.includes("= '未签劳动合同'"), false);
+    assert.match(executed.artifact.content, /## 劳动者胜诉率图表/);
+    assert.match(executed.artifact.content, /## 查询结果/);
     assert.equal(JSON.stringify(executed.trace).includes(fixture.databasePath), false);
   } finally {
     fixture.cleanup();
