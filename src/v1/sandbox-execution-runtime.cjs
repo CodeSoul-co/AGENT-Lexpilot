@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { loadHyphaCore, loadHyphaTools } = require('../../scripts/hypha-paths.cjs');
 const { buildSandboxEnvironment, requireSandboxRequest } = require('./sandbox-execution-policy.cjs');
 
@@ -105,8 +106,16 @@ async function createSandboxExecutionRuntime(options = {}) {
     throw new TypeError('workspaceRoot is required.');
   }
   const workspaceRoot = path.resolve(options.workspaceRoot);
-  const environment = buildSandboxEnvironment(options);
-  const { InMemoryEventStore } = loadHyphaCore();
+  const { InMemoryEventStore, validateExecutionEnvironmentSpec } = loadHyphaCore();
+  const environment = validateExecutionEnvironmentSpec(buildSandboxEnvironment(options));
+  if (options.expectedExecutionEnvironment !== undefined) {
+    const expectedEnvironment = validateExecutionEnvironmentSpec(
+      options.expectedExecutionEnvironment
+    );
+    if (!isDeepStrictEqual(environment, expectedEnvironment)) {
+      throw new Error('Versioned Execution Profile has drifted from the Sandbox runtime policy.');
+    }
+  }
   const { GovernedToolRunner, ToolRegistry } = loadHyphaTools();
   const events = options.eventStore ?? new InMemoryEventStore();
   const registry = new ToolRegistry();

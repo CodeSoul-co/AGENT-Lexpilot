@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { loadHyphaDomain } = require('./hypha-paths.cjs');
+const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 
 async function main() {
   const projectRoot = path.resolve(__dirname, '..');
@@ -15,6 +16,7 @@ async function main() {
     agentRef: { id: 'agent.legal-compliance', version: '0.16.0' },
     taskSchemaId: 'task.legal-self-check'
   });
+  const workspaceExecution = loadWorkspaceExecutionProfile({ projectRoot }).receipt;
 
   console.log(
     JSON.stringify(
@@ -23,7 +25,10 @@ async function main() {
         workflow: `${compiled.bindings.workflow.id}@${compiled.bindings.workflow.version}`,
         initialState: compiled.fsmProcess.initialState,
         terminalStates: compiled.fsmProcess.terminalStates,
-        harnessedSystem: `${compiled.harnessedSystem.id}@${compiled.harnessedSystem.version}`
+        harnessedSystem: `${compiled.harnessedSystem.id}@${compiled.harnessedSystem.version}`,
+        workspaceProfile: `${workspaceExecution.workspaceProfileRef.id}@${workspaceExecution.workspaceProfileRef.version}`,
+        executionProfile: `${workspaceExecution.executionProfileRef.id}@${workspaceExecution.executionProfileRef.version}`,
+        executionProfileValidated: workspaceExecution.hyphaExecutionEnvironmentValidated
       },
       null,
       2

@@ -217,6 +217,29 @@ test('validates an invalid command before reading environment configuration', ()
   assert.equal(failure.error.message.includes('LEGAL_SESSION_KEY_BASE64'), false);
 });
 
+test('application fails before composition when the Workspace/Execution manifest is missing', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-missing-execution-profile-'));
+  try {
+    await assert.rejects(
+      createLocalLegalAgentApplication({
+        projectRoot,
+        workspaceExecutionManifestPath: path.join(directory, 'missing.json'),
+        environment: {
+          LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+          LEGAL_SESSION_OWNER_ID: 'missing-profile-owner',
+          LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+          LEGAL_V1_RUNTIME: 'demo',
+          LEGAL_AGENT_PROVIDER: 'demo'
+        }
+      }),
+      (error) => error.code === 'WORKSPACE_EXECUTION_PROFILE_MISSING'
+    );
+    assert.equal(fs.existsSync(path.join(directory, 'sessions')), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('application composes an injected Sandbox runtime without requiring Docker configuration', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-sandbox-bootstrap-'));
   const sandboxRuntime = {
@@ -289,6 +312,12 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     );
     assert.equal(profiles.credentialInputAccepted, false);
     assert.equal(JSON.stringify(profiles).includes(directory), false);
+    assert.deepEqual(application.workspaceExecutionBinding.executionProfileRef, {
+      id: 'execution-environment.lexpilot.scripts',
+      version: '1.0.0'
+    });
+    assert.equal(application.workspaceExecutionBinding.hyphaExecutionEnvironmentValidated, true);
+    assert.equal(JSON.stringify(application.workspaceExecutionBinding).includes(directory), false);
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });

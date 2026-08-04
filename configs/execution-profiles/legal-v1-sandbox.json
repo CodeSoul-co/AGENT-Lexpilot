@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "id": "binding.legal-v1-sandbox",
+  "version": "1.0.0",
+  "bindings": {
+    "domainPackRef": {
+      "id": "domain.legal-compliance.v0-v1",
+      "version": "0.16.0"
+    },
+    "workspaceProfileRef": {
+      "id": "workspace.legal-v1-sandbox",
+      "version": "1.0.0"
+    },
+    "executionProfileRef": {
+      "id": "execution-environment.lexpilot.scripts",
+      "version": "1.0.0"
+    }
+  },
+  "workspaceProfile": {
+    "id": "workspace.legal-v1-sandbox",
+    "version": "1.0.0",
+    "rootEnvironmentName": "LEGAL_V1_SANDBOX_WORKSPACE_ROOT",
+    "defaultRelativeRoot": "data/sandbox-workspaces",
+    "isolation": "per-run",
+    "mount": {
+      "sourceRef": "workspace:current",
+      "targetPath": "/workspace",
+      "mode": "rw",
+      "type": "workspace"
+    }
+  },
+  "executionProfile": {
+    "id": "execution-environment.lexpilot.scripts",
+    "version": "1.0.0",
+    "provider": "docker",
+    "image": {
+      "referenceEnvironmentName": "LEGAL_V1_SANDBOX_IMAGE",
+      "digestEnvironmentName": "LEGAL_V1_SANDBOX_IMAGE_DIGEST",
+      "pullPolicy": "if_not_present",
+      "requireDigestPin": true
+    },
+    "process": {
+      "shellEnabled": false,
+      "allowedExecutables": ["python3", "/bin/sh"],
+      "executableResolution": "container_path",
+      "killProcessTreeOnExit": true,
+      "inheritHostEnvironment": false
+    },
+    "resources": {
+      "cpuCores": 1,
+      "memoryMb": 512,
+      "pidsLimit": 64,
+      "tempBytes": 16777216,
+      "maxStdoutBytes": 1048576,
+      "maxStderrBytes": 1048576,
+      "maxCombinedOutputBytes": 2097152,
+      "maxExecutionSeconds": 30
+    },
+    "filesystem": {
+      "rootFilesystem": "read_only",
+      "mounts": [
+        {
+          "sourceRef": "workspace:current",
+          "targetPath": "/workspace",
+          "mode": "rw",
+          "type": "workspace"
+        }
+      ],
+      "tmpfs": [
+        {
+          "targetPath": "/tmp",
+          "sizeBytes": 16777216
+        }
+      ],
+      "allowDeviceAccess": false,
+      "allowHostPathMounts": false
+    },
+    "network": {
+      "mode": "disabled",
+      "dnsPolicy": "disabled"
+    },
+    "security": {
+      "runAsUser": "65534",
+      "runAsGroup": "65534",
+      "nonRootRequired": true,
+      "noNewPrivileges": true,
+      "privileged": false,
+      "dropCapabilities": ["ALL"],
+      "allowNestedContainers": false
+    },
+    "secrets": {
+      "injectionMode": "none",
+      "redactFromOutput": true,
+      "redactFromEvents": true
+    },
+    "logging": {
+      "captureStdout": true,
+      "captureStderr": true,
+      "streamOutput": true,
+      "persistOutputAsArtifact": true
+    },
+    "lifecycle": {
+      "reuse": "never",
+      "cleanupOnSuccess": true,
+      "cleanupOnFailure": true
+    },
+    "workingDirectoryPolicy": "workspace_only",
+    "defaultTimeoutMs": 30000
+  }
+}

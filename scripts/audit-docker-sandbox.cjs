@@ -6,18 +6,9 @@ const { createDockerSandboxPreflight } = require('../src/v1/docker-sandbox-prefl
 const { createSandboxArtifactRepository } = require('../src/v1/sandbox-artifact-repository.cjs');
 const { createDockerSandboxProviderFactory } = require('../src/v1/docker-sandbox-provider-factory.cjs');
 const { createSandboxExecutionRuntime } = require('../src/v1/sandbox-execution-runtime.cjs');
+const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 
 loadLocalEnv();
-
-function requireEnvironment(name) {
-  const value = process.env[name];
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    const error = new Error(`${name} is required.`);
-    error.code = 'SANDBOX_AUDIT_CONFIG_MISSING';
-    throw error;
-  }
-  return value;
-}
 
 function emptyDirectory(directory) {
   return !fs.existsSync(directory) || fs.readdirSync(directory).length === 0;
@@ -115,14 +106,13 @@ async function main() {
   // acceptance runs independent without deleting evidence from earlier runs.
   const auditId = randomUUID();
   const projectRoot = path.resolve(__dirname, '..');
-  const workspaceRoot = path.resolve(
-    process.env.LEGAL_V1_SANDBOX_WORKSPACE_ROOT ?? path.join(projectRoot, 'data', 'sandbox-workspaces')
-  );
+  const workspaceExecution = loadWorkspaceExecutionProfile({ projectRoot }).resolve(process.env);
+  const workspaceRoot = workspaceExecution.workspaceRoot;
   const artifactRoot = path.resolve(
     process.env.LEGAL_V1_SANDBOX_ARTIFACT_ROOT ?? path.join(projectRoot, 'data', 'sandbox-artifacts')
   );
-  const imageReference = requireEnvironment('LEGAL_V1_SANDBOX_IMAGE');
-  const imageDigest = requireEnvironment('LEGAL_V1_SANDBOX_IMAGE_DIGEST');
+  const imageReference = workspaceExecution.executionEnvironment.image.reference;
+  const imageDigest = workspaceExecution.executionEnvironment.image.digest;
   const dockerPath = process.env.LEGAL_V1_DOCKER_PATH || 'docker';
   const preflight = createDockerSandboxPreflight().check({
     dockerPath,
@@ -135,6 +125,7 @@ async function main() {
       workspaceRoot,
       imageReference,
       imageDigest,
+      expectedExecutionEnvironment: workspaceExecution.executionEnvironment,
       artifactRepository,
       providerFactory: createDockerSandboxProviderFactory({
         projectRoot,

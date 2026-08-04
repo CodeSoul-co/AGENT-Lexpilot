@@ -39,6 +39,7 @@
 - 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
 - SQLite 写入专用配置通过 Hypha `GovernedToolRunner` 创建真实待审批 invocation；拒绝时 handler 不执行，批准后只执行一次。Worker 使用单个事务，失败、超时或影响超过 1 行时不提交，写操作不自动重试。审计日志仅记录 invocation ID、审批状态、事件数量、事务状态和影响行数，不记录参数、数据库路径或凭证。PostgreSQL/MySQL 在取得专用写账号和独立验收环境前继续保持只读。
 - Python / Shell 脚本执行同样强制进入 Hypha Human Review。批准后才把已校验路径、数量、总大小与 SHA-256 的输入文件写入独立的一次性 Workspace，并调用锁定 Hypha 基线公开导出的 `DockerSandboxProviderFactory`：网络与 DNS 默认关闭，根文件系统只读，只挂载当前 Workspace，固定非 root 用户、丢弃全部 capability，最多 1 核 CPU、512 MiB 内存和 30 秒命令执行时间。标准输出、标准错误和生成文件通过 Hypha Artifact Store 接口持久化；成功、失败和超时都必须验证执行容器已删除，再清理逻辑 Sandbox 与临时 Workspace。
+- Workspace 与 Execution Profile 由 `configs/execution-profiles/legal-v1-sandbox.json` 统一版本化：清单固定引用当前 DomainPack、一次性 Workspace、Docker 执行环境及镜像环境变量名。应用组合根在任何运行模式下都先用锁定 Hypha 的 `ExecutionEnvironmentSpec` 校验该清单；启用真实 Sandbox 时还会把解析后的清单与运行时代码生成的安全策略逐字段比较。清单缺失、引用版本不一致、网络/挂载/非 root/资源/清理策略漂移或镜像 digest 未固定时均在执行和运行数据写入前关闭失败。该绑定回执只含版本引用与清单 SHA-256，不含 Workspace 路径、镜像值或凭证。
 
 Schema 差异只包含数据源清单授权的表和字段，不扫描或输出其他客户 Schema。漂移事件、旧/新指纹、受影响表/字段数量和重新规划状态会写入哈希链审计日志；数据库路径、主机、账号、密码和字段数据不会进入通知或日志。对应接口为 `POST /api/sessions/:sessionId/schema-replan`，请求体固定为 `{ "requested": true }`。
 
@@ -108,7 +109,7 @@ npm run demo:web
 
 支持的自然语言模板为：“新增案例 LC-2026-1，年份 2026，事项 未签劳动合同，结果 employee_win，赔偿 20000”“将案例 LC-2026-1 的赔偿金额更新为 12000”“删除案例 LC-2026-1”。这不是通用 Text2SQL；不符合模板的写入会关闭失败。
 
-受治理脚本沙箱已提供项目层运行时、网页“计划—确认—执行—结果”入口与独立真实 Docker 验收命令。镜像必须同时提供 `python3`、`/bin/sh`、`sleep` 与 `ln`，并使用不可变 SHA-256 digest；不能只写可漂移的镜像标签：
+受治理脚本沙箱已提供项目层运行时、网页“计划—确认—执行—结果”入口与独立真实 Docker 验收命令。版本化 Workspace/Execution 绑定位于 `configs/execution-profiles/legal-v1-sandbox.json`；其中只保存环境变量名称和安全策略，不保存镜像值、主机路径或凭证。镜像必须同时提供 `python3`、`/bin/sh`、`sleep` 与 `ln`，并使用不可变 SHA-256 digest；不能只写可漂移的镜像标签：
 
 ```bash
 LEGAL_V1_SANDBOX_ENABLED=true
@@ -130,7 +131,7 @@ docker pull "python:3.12-alpine@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33
 
 PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
 
-本地网页的“数据源管理”入口会列出 SQLite、PostgreSQL、MySQL 三个只读清单、授权表/字段、执行上限以及各环境变量是否已配置。页面没有凭据输入框，接口也只接受固定 `profileId`；主机、数据库路径、账号、密码和 Provider 原始错误不会进入响应。点击“验证连接与 Schema”后，服务端才使用启动前设置的私有环境变量进行连接和白名单 Schema 核验。该入口仅绑定本机回环地址，生产部署仍须补充独立管理员身份认证与权限控制。
+本地网页的“数据源管理”入口会列出 SQLite、PostgreSQL、MySQL 三个只读清单、授权表/字段、执行上限以及各环境变量是否已配置。页面没有凭据输入框，接口也只接受固定 `profileId`；主机、数据库路径、账号、密码和 Provider 原始错误不会进入响应。点击“验证连接与 Schema”后，服务端才使用启动前设置的私有环境变量进行连接和白名单 Schema 核验，并展示深冻结的初始 Schema 快照；快照只复制白名单表名以及列名、类型、可空性和主键序号，不透传 Provider 的其他元数据。该入口仅绑定本机回环地址，生产部署仍须补充独立管理员身份认证与权限控制。
 
 ```bash
 # 二选一，并在 .env 中填写对应 LEGAL_V1_PG_* 或 LEGAL_V1_MYSQL_* 变量

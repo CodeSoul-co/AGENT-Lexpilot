@@ -8,6 +8,16 @@ const MAX_EXECUTION_MS = 30_000;
 const MAX_MEMORY_MB = 512;
 const MAX_CPU_CORES = 1;
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])])
+  );
+}
+
 function requireSafeScript(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new TypeError('Sandbox script request must be an object.');
@@ -101,10 +111,9 @@ function buildSandboxEnvironment({ imageReference, imageDigest }) {
   if (typeof imageDigest !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
     throw new TypeError('imageDigest must be an immutable SHA-256 Docker digest.');
   }
-  return Object.freeze({
+  const environment = {
     id: 'execution-environment.lexpilot.scripts',
     version: '1.0.0',
-    revision: createHash('sha256').update(`${imageReference}@${imageDigest}`).digest('hex'),
     provider: 'docker',
     image: {
       reference: imageReference,
@@ -160,6 +169,11 @@ function buildSandboxEnvironment({ imageReference, imageDigest }) {
     lifecycle: { reuse: 'never', cleanupOnSuccess: true, cleanupOnFailure: true },
     workingDirectoryPolicy: 'workspace_only',
     defaultTimeoutMs: MAX_EXECUTION_MS
+  };
+  const canonical = JSON.stringify(canonicalize(environment));
+  return Object.freeze({
+    ...environment,
+    revision: createHash('sha256').update(canonical).digest('hex')
   });
 }
 

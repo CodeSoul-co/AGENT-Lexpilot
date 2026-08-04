@@ -157,6 +157,23 @@ test('Sandbox policy is immutable, schema-valid, and fixed to the requirement li
   );
 });
 
+test('Sandbox runtime rejects a valid Hypha environment when its versioned profile has drifted', async () => {
+  const value = fixture();
+  try {
+    const expectedExecutionEnvironment = {
+      ...buildSandboxEnvironment({ imageReference, imageDigest }),
+      defaultTimeoutMs: 29_999
+    };
+    await assert.rejects(
+      runtimeFor(value, { expectedExecutionEnvironment }),
+      /Execution Profile has drifted/
+    );
+    assert.deepEqual(value.calls, []);
+  } finally {
+    value.cleanup();
+  }
+});
+
 test('Docker factory consumes the pinned Hypha public provider without contacting Docker', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lexpilot-docker-factory-'));
   try {

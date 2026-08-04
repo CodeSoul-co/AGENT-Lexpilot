@@ -14,6 +14,7 @@ const { createDockerSandboxProviderFactory } = require('../v1/docker-sandbox-pro
 const { createSandboxExecutionRuntime } = require('../v1/sandbox-execution-runtime.cjs');
 const { createSandboxWebCoordinator } = require('../v1/sandbox-web-coordinator.cjs');
 const { createV1SQLQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
+const { loadWorkspaceExecutionProfile } = require('../v1/workspace-execution-profile.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
 const {
   EncryptedFileLegalSessionStore,
@@ -93,6 +94,11 @@ function createLocalLegalAgent(options = {}) {
 async function createLocalLegalAgentApplication(options = {}) {
   const environment = options.environment ?? process.env;
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
+  const workspaceExecutionProfile = loadWorkspaceExecutionProfile({
+    projectRoot,
+    manifestPath: options.workspaceExecutionManifestPath,
+    domainPackPath: options.domainPackPath
+  });
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
   const auditActorKey = parseBase64EncryptionKey(
     requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey)
@@ -106,6 +112,14 @@ async function createLocalLegalAgentApplication(options = {}) {
     auditActorKey.fill(0);
   }
   const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
+  const sandboxEnabled =
+    options.sandboxCoordinator !== undefined ||
+    options.sandboxRuntime !== undefined ||
+    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
+  const resolvedWorkspaceExecution =
+    sandboxEnabled && options.sandboxCoordinator === undefined && options.sandboxRuntime === undefined
+      ? workspaceExecutionProfile.resolve(environment)
+      : null;
   let v1Runtime = options.v1Runtime;
   if (!v1Runtime) {
     if (v1Mode === 'demo') {
@@ -155,17 +169,14 @@ async function createLocalLegalAgentApplication(options = {}) {
   const artifactRepository =
     options.artifactRepository ??
     createExecutionArtifactRepository({ rootPath: artifactDirectory, projectRoot });
-  const sandboxEnabled =
-    options.sandboxCoordinator !== undefined ||
-    options.sandboxRuntime !== undefined ||
-    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
   let sandboxArtifactRepository;
   let sandboxCoordinator = options.sandboxCoordinator;
   if (sandboxEnabled && !sandboxCoordinator) {
     let sandboxRuntime = options.sandboxRuntime;
     if (!sandboxRuntime) {
-      const imageReference = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.sandboxImage);
-      const imageDigest = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.sandboxImageDigest);
+      const executionEnvironment = resolvedWorkspaceExecution.executionEnvironment;
+      const imageReference = executionEnvironment.image.reference;
+      const imageDigest = executionEnvironment.image.digest;
       const sandboxArtifactDirectory = path.resolve(
         projectRoot,
         environment.LEGAL_V1_SANDBOX_ARTIFACT_ROOT?.trim() || 'data/sandbox-artifacts'
@@ -181,12 +192,10 @@ async function createLocalLegalAgentApplication(options = {}) {
           dockerPath: environment.LEGAL_V1_DOCKER_PATH?.trim() || undefined
         });
       sandboxRuntime = await createSandboxExecutionRuntime({
-        workspaceRoot: path.resolve(
-          projectRoot,
-          environment.LEGAL_V1_SANDBOX_WORKSPACE_ROOT?.trim() || 'data/sandbox-workspaces'
-        ),
+        workspaceRoot: resolvedWorkspaceExecution.workspaceRoot,
         imageReference,
         imageDigest,
+        expectedExecutionEnvironment: executionEnvironment,
         providerFactory,
         artifactRepository: sandboxArtifactRepository
       });
@@ -232,6 +241,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     sandboxCoordinator: sandboxCoordinator ?? null,
     sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
     dataSourceAdmin,
+    workspaceExecutionBinding: workspaceExecutionProfile.receipt,
     executionLogFilePath,
     artifactDirectory,
     async close() {
