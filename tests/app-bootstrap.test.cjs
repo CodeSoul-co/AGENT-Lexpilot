@@ -221,8 +221,23 @@ test('application composes an injected Sandbox runtime without requiring Docker 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-sandbox-bootstrap-'));
   const sandboxRuntime = {
     describe: () => ({ runtime: 'mock-sandbox', policy: { network: 'disabled' } }),
-    plan: async () => ({ status: 'awaiting_confirmation', invocationId: 'mock-invocation', plan: {} }),
-    approve: async () => ({ status: 'completed' }),
+    plan: async (input) => ({
+      status: 'awaiting_confirmation',
+      invocationId: `lexpilot-sandbox.${input.runId}`,
+      plan: {
+        language: input.language,
+        scriptSha256: `sha256:${'a'.repeat(64)}`,
+        planHash: `sha256:${'b'.repeat(64)}`,
+        inputFileCount: input.inputFiles.length,
+        inputBytes: 0
+      }
+    }),
+    approve: async () => ({
+      status: 'completed',
+      executionAttempted: true,
+      result: { generatedArtifactRefs: [] },
+      governanceReceipt: { eventCount: 2 }
+    }),
     reject: async () => ({ status: 'rejected' })
   };
   let application;
@@ -243,6 +258,30 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     assert.equal(application.sandboxDescriptor.available, true);
     assert.equal(application.sandboxDescriptor.runtime, 'mock-sandbox');
     assert.equal(typeof application.sandboxCoordinator.plan, 'function');
+    assert.equal(application.sandboxDescriptor.auditLog, 'append-only-sha256-chain');
+    const sandboxPlan = await application.sandboxCoordinator.plan({
+      language: 'python',
+      script: 'print("private-bootstrap-script")',
+      inputFiles: []
+    });
+    await application.sandboxCoordinator.confirm(sandboxPlan.planId, { confirmed: true });
+    const queryPlan = await application.service.start({
+      userText: '统计近三年案例库未签劳动合同的胜诉率和赔偿中位数。',
+      privacyConsent: true,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION
+    });
+    await application.service.confirmV1Execution(queryPlan.sessionId, { confirmed: true });
+    const auditText = fs.readFileSync(application.executionLogFilePath, 'utf8');
+    const auditRecords = auditText.trim().split('\n').map(JSON.parse);
+    assert.equal(auditRecords.length, 4);
+    assert.equal(auditRecords.every((record) => record.actorId === auditRecords[0].actorId), true);
+    assert.match(auditRecords[0].actorId, /^actor-hmac-sha256-[0-9a-f]{64}$/);
+    assert.deepEqual(
+      auditRecords.map((record) => record.operationType),
+      ['sandbox_plan', 'sandbox_execute', 'plan', 'execute']
+    );
+    assert.equal(auditText.includes('sandbox-bootstrap-owner'), false);
+    assert.equal(auditText.includes('private-bootstrap-script'), false);
     const profiles = application.dataSourceAdmin.listProfiles();
     assert.deepEqual(
       profiles.profiles.map((profile) => profile.engine),

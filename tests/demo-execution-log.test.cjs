@@ -19,6 +19,7 @@ function withTemporaryLog(run) {
 
 function entry(overrides = {}) {
   return {
+    actorId: `actor-sha256-${'a'.repeat(64)}`,
     sessionId: 'session-1',
     runId: 'run-1',
     operationType: 'execute',
@@ -44,6 +45,7 @@ test('appends jsonl entries and lists them newest first', () => {
     assert.equal(lines.length, 2);
     const first = JSON.parse(lines[0]);
     assert.equal(first.loggedAt, '2026-07-21T03:00:00.000Z');
+    assert.equal(first.actorId, `actor-sha256-${'a'.repeat(64)}`);
     assert.equal(first.sessionId, 'session-a');
     assert.equal(first.operationType, 'execute');
     assert.equal(first.schemaVersion, 1);
@@ -96,6 +98,7 @@ test('drops undeclared entry fields so user text never reaches the log', () => {
     assert.equal(raw.includes('张三'), false);
     const [record] = log.list();
     assert.deepEqual(Object.keys(record).sort(), [
+      'actorId',
       'durationMs',
       'entryHash',
       'entryId',
@@ -110,6 +113,46 @@ test('drops undeclared entry fields so user text never reaches the log', () => {
       'sql',
       'status'
     ]);
+  });
+});
+
+test('records only hashed Sandbox inputs and structured lifecycle receipts', () => {
+  withTemporaryLog((filePath) => {
+    const log = createDemoExecutionLog({ filePath });
+    const privateScript = 'print("private-script-value")';
+    const record = log.append(
+      entry({
+        operationType: 'sandbox_execute',
+        sql: undefined,
+        language: 'python',
+        scriptSha256: `sha256:${'b'.repeat(64)}`,
+        sandboxInvocationId: 'lexpilot-sandbox.sandbox-run-plan-1',
+        inputFileCount: 1,
+        inputBytes: 64,
+        generatedArtifactCount: 2,
+        executionAttempted: true,
+        humanReviewRequired: true,
+        humanReviewStatus: 'approved',
+        executionProvider: 'docker-sandbox-provider',
+        sandboxCleanupVerified: true,
+        processTreeTerminationVerified: true,
+        resourceAccountingMode: 'docker-stats',
+        script: privateScript,
+        inputFiles: [{ path: 'private.txt', content: 'private-file-value' }]
+      })
+    );
+
+    assert.equal(record.operationType, 'sandbox_execute');
+    assert.equal(record.generatedArtifactCount, 2);
+    assert.equal(record.sandboxCleanupVerified, true);
+    const raw = fs.readFileSync(filePath, 'utf8');
+    assert.equal(raw.includes(privateScript), false);
+    assert.equal(raw.includes('private-file-value'), false);
+    assert.equal(log.verifyIntegrity().status, 'verified');
+    assert.throws(
+      () => log.append(entry({ scriptSha256: 'sha256:unsafe' })),
+      /scriptSha256/
+    );
   });
 });
 

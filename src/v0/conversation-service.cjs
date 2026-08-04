@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const {
   V0_DOMAIN_PACK_VERSION,
   V0_ERROR_CODES,
@@ -190,6 +191,9 @@ class LegalSelfCheckConversationService {
     if (typeof this.ownerId !== 'string' || this.ownerId.trim().length === 0) {
       throw new TypeError('ownerId must be a non-empty string.');
     }
+    this.auditActorId = requireAuditActorId(
+      options.auditActorId ?? createAuditActorId(this.ownerId)
+    );
     this.idFactory = options.idFactory ?? randomUUID;
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.retentionDays = options.retentionDays ?? SESSION_RETENTION_DAYS;
@@ -1022,6 +1026,7 @@ class LegalSelfCheckConversationService {
       throw new Error('V1 execution log is unavailable.');
     }
     return this.executionLog.append({
+      actorId: this.auditActorId,
       sessionId: session.id,
       runId: session.v1?.runId,
       sql: session.v1?.plan?.sql,

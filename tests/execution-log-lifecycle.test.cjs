@@ -29,6 +29,7 @@ function appendRecords(filePath, count = 2) {
   });
   for (let index = 0; index < count; index += 1) {
     log.append({
+      actorId: `actor-sha256-${'a'.repeat(64)}`,
       sessionId: `session-${index + 1}`,
       runId: `run-${index + 1}`,
       operationType: 'execute',
@@ -118,6 +119,7 @@ test('refuses deletion when the live log advanced after the selected archive', (
     const lifecycle = createLifecycle(directory);
     lifecycle.archive();
     log.append({
+      actorId: `actor-sha256-${'a'.repeat(64)}`,
       sessionId: 'session-3',
       runId: 'run-3',
       operationType: 'execute',

@@ -366,6 +366,17 @@ function createDemoWebHandler(options = {}) {
         sendError(response, 429, error.code, error.message);
         return;
       }
+      if (error?.code === 'AUDIT_LOG_WRITE_FAILED') {
+        sendError(response, 500, error.code, error.message);
+        return;
+      }
+      if (
+        error?.code === 'SANDBOX_EXECUTION_FAILED' ||
+        error?.code === 'SANDBOX_REJECTION_FAILED'
+      ) {
+        sendError(response, 500, error.code, error.message);
+        return;
+      }
       if (error?.code === 'DATA_SOURCE_PROFILE_NOT_FOUND') {
         sendError(response, 404, error.code, error.message);
         return;

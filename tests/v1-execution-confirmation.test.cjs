@@ -173,6 +173,8 @@ test('confirmed execution completes the session and appends an immutable log ent
     assert.equal(logs.length, 2);
     const executionLog = logs.find((log) => log.operationType === 'execute');
     assert.equal(executionLog.sessionId, started.sessionId);
+    assert.match(executionLog.actorId, /^actor-sha256-[0-9a-f]{64}$/);
+    assert.equal(JSON.stringify(logs).includes('v1-confirmation-test'), false);
     assert.equal(executionLog.status, 'completed');
     assert.equal(executionLog.rowCount, 3);
     assert.equal(typeof executionLog.durationMs, 'number');

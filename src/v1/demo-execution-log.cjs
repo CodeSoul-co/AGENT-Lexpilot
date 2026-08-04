@@ -1,12 +1,14 @@
 const { createHash, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { requireAuditActorId } = require('./audit-identity.cjs');
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
 const LOG_SCHEMA_VERSION = 1;
 const GENESIS_HASH = '0'.repeat(64);
 const ENTRY_KEYS = Object.freeze([
+  'actorId',
   'sessionId',
   'runId',
   'operationType',
@@ -37,7 +39,18 @@ const ENTRY_KEYS = Object.freeze([
   'status',
   'durationMs',
   'rowCount',
-  'error'
+  'error',
+  'errorCode',
+  'language',
+  'scriptSha256',
+  'sandboxInvocationId',
+  'inputFileCount',
+  'inputBytes',
+  'generatedArtifactCount',
+  'executionAttempted',
+  'sandboxCleanupVerified',
+  'processTreeTerminationVerified',
+  'resourceAccountingMode'
 ]);
 
 class ExecutionLogIntegrityError extends Error {
@@ -74,6 +87,22 @@ function requireNonEmptyString(value, fieldName) {
 }
 
 function validateReceiptFields(record) {
+  requireAuditActorId(record.actorId);
+  if (record.language !== undefined && !['python', 'shell'].includes(record.language)) {
+    throw new TypeError('entry.language must be python or shell.');
+  }
+  if (
+    record.scriptSha256 !== undefined &&
+    !/^sha256:[0-9a-f]{64}$/.test(record.scriptSha256)
+  ) {
+    throw new TypeError('entry.scriptSha256 must be a prefixed SHA-256 digest.');
+  }
+  if (record.sandboxInvocationId !== undefined) {
+    requireNonEmptyString(record.sandboxInvocationId, 'entry.sandboxInvocationId');
+    if (!/^lexpilot-sandbox\.[A-Za-z0-9_.-]{1,160}$/.test(record.sandboxInvocationId)) {
+      throw new TypeError('entry.sandboxInvocationId must be a safe Sandbox invocation id.');
+    }
+  }
   for (const key of ['artifactStoreId', 'artifactObjectKey']) {
     if (record[key] !== undefined) {
       requireNonEmptyString(record[key], `entry.${key}`);
@@ -101,7 +130,10 @@ function validateReceiptFields(record) {
     'affectedRows',
     'governanceEventCount',
     'affectedTableCount',
-    'affectedFieldCount'
+    'affectedFieldCount',
+    'inputFileCount',
+    'inputBytes',
+    'generatedArtifactCount'
   ]) {
     if (
       record[key] !== undefined &&
@@ -137,6 +169,26 @@ function validateReceiptFields(record) {
   for (const key of ['schemaDriftDetected', 'replanRequired']) {
     if (record[key] !== undefined && typeof record[key] !== 'boolean') {
       throw new TypeError(`entry.${key} must be a boolean when present.`);
+    }
+  }
+  for (const key of ['sandboxCleanupVerified', 'processTreeTerminationVerified']) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') {
+      throw new TypeError(`entry.${key} must be a boolean when present.`);
+    }
+  }
+  if (record.executionAttempted !== undefined && typeof record.executionAttempted !== 'boolean') {
+    throw new TypeError('entry.executionAttempted must be a boolean when present.');
+  }
+  if (record.resourceAccountingMode !== undefined) {
+    requireNonEmptyString(record.resourceAccountingMode, 'entry.resourceAccountingMode');
+    if (record.resourceAccountingMode.length > 64) {
+      throw new TypeError('entry.resourceAccountingMode must not exceed 64 characters.');
+    }
+  }
+  if (record.errorCode !== undefined) {
+    requireNonEmptyString(record.errorCode, 'entry.errorCode');
+    if (!/^[A-Z0-9_]{1,80}$/.test(record.errorCode)) {
+      throw new TypeError('entry.errorCode must be a safe structured error code.');
     }
   }
   for (const key of ['previousSchemaFingerprint', 'currentSchemaFingerprint']) {

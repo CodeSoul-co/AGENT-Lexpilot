@@ -3,6 +3,7 @@ const { AgentBackedConversationService } = require('../agent/agent-backed-conver
 const { createAgentInferenceProvider } = require('../agent/inference-provider.cjs');
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
 const { createDataSourceAdmin } = require('../v1/data-source-admin.cjs');
+const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
@@ -64,8 +65,12 @@ function createLocalLegalAgent(options = {}) {
     options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory]
   );
   const encryptionKey = parseBase64EncryptionKey(encodedKey);
+  let auditActorId;
   let store;
   try {
+    auditActorId = requireAuditActorId(
+      options.auditActorId ?? createAuditActorId(ownerId, encryptionKey)
+    );
     store = new EncryptedFileLegalSessionStore({ directory: dataDirectory, encryptionKey });
   } finally {
     encryptionKey.fill(0);
@@ -73,6 +78,7 @@ function createLocalLegalAgent(options = {}) {
   const service = new LegalSelfCheckConversationService({
     store,
     ownerId,
+    auditActorId,
     clock: options.clock,
     idFactory: options.idFactory,
     autoCleanup: options.autoCleanup,
@@ -88,6 +94,17 @@ async function createLocalLegalAgentApplication(options = {}) {
   const environment = options.environment ?? process.env;
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
+  const auditActorKey = parseBase64EncryptionKey(
+    requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey)
+  );
+  let auditActorId;
+  try {
+    auditActorId = requireAuditActorId(
+      options.auditActorId ?? createAuditActorId(ownerId, auditActorKey)
+    );
+  } finally {
+    auditActorKey.fill(0);
+  }
   const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
   let v1Runtime = options.v1Runtime;
   if (!v1Runtime) {
@@ -122,7 +139,8 @@ async function createLocalLegalAgentApplication(options = {}) {
     options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],
     options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
   );
-  const executionLog = createDemoExecutionLog({ filePath: executionLogFilePath });
+  const executionLog =
+    options.executionLog ?? createDemoExecutionLog({ filePath: executionLogFilePath });
   const dataSourceAdmin =
     options.dataSourceAdmin ??
     createDataSourceAdmin({
@@ -173,12 +191,17 @@ async function createLocalLegalAgentApplication(options = {}) {
         artifactRepository: sandboxArtifactRepository
       });
     }
-    sandboxCoordinator = createSandboxWebCoordinator({ sandboxRuntime });
+    sandboxCoordinator = createSandboxWebCoordinator({
+      sandboxRuntime,
+      executionLog,
+      auditActorId
+    });
   }
   const local = createLocalLegalAgent({
     ...options,
     environment,
     projectRoot,
+    auditActorId,
     v1Runtime,
     executionLog,
     artifactRepository

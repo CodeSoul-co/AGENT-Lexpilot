@@ -720,7 +720,16 @@ function renderLogs(logs, integrity) {
     );
   }
   if (!logs.length) { elements.logList.append(node('p', 'muted compact', '暂无执行日志')); return; }
-  const operationLabels = { plan: '计划', replan: '重新规划', execute: '执行', cancel: '取消' };
+  const operationLabels = {
+    plan: '计划',
+    replan: '重新规划',
+    execute: '执行',
+    cancel: '取消',
+    sandbox_plan: 'Sandbox 计划',
+    sandbox_execute: 'Sandbox 执行',
+    sandbox_reject: 'Sandbox 拒绝',
+    sandbox_expire: 'Sandbox 过期'
+  };
   for (const log of logs) {
     const item = node('div', 'log-item');
     const top = node('div', 'log-item-top');
@@ -731,9 +740,14 @@ function renderLogs(logs, integrity) {
     const meta = [log.loggedAt ? new Date(log.loggedAt).toLocaleString('zh-CN') : ''];
     if (typeof log.durationMs === 'number') meta.push(`${log.durationMs}ms`);
     if (typeof log.rowCount === 'number') meta.push(`${log.rowCount} 行`);
+    if (typeof log.generatedArtifactCount === 'number') {
+      meta.push(`${log.generatedArtifactCount} 个产物`);
+    }
     if (log.entryId) meta.push(`记录 ${log.entryId.slice(0, 8)}`);
     item.append(top, node('div', 'log-meta', meta.filter(Boolean).join(' · ')));
-    if (log.error) item.append(node('div', 'log-error', log.error));
+    if (log.error || log.errorCode) {
+      item.append(node('div', 'log-error', log.errorCode ?? log.error));
+    }
     elements.logList.append(item);
   }
 }
