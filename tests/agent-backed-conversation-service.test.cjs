@@ -60,6 +60,44 @@ test('V1 web conversation uses the same Agent but cannot execute before confirma
   assert.doesNotMatch(result.assistantMessage, /\bV[01]\b/);
 });
 
+test('keeps persisted archived Workspace state authoritative over the Agent result cache', () => {
+  const businessService = {
+    start() {},
+    getHistory() {
+      return {
+        sessionId: 'archived-session',
+        status: 'archived',
+        v1: {
+          status: 'archived',
+          workspace: { status: 'archived' },
+          artifact: { artifactId: 'artifact-safe', content: 'persisted-current-content' }
+        }
+      };
+    }
+  };
+  const service = new AgentBackedConversationService({
+    service: businessService,
+    agent: {
+      describe() { return { agentId: 'agent.test', runtime: 'test' }; },
+      run() {}
+    }
+  });
+  service.resultCache.set('archived-session', {
+    assistantMessage: 'cached message',
+    v1: {
+      status: 'completed',
+      workspace: { status: 'active' },
+      artifact: { artifactId: 'artifact-stale', content: 'stale-private-content' }
+    }
+  });
+
+  const history = service.getHistory('archived-session');
+  assert.equal(history.v1.status, 'archived');
+  assert.equal(history.v1.workspace.status, 'archived');
+  assert.equal(history.v1.artifact.artifactId, 'artifact-safe');
+  assert.equal(JSON.stringify(history).includes('stale-private-content'), false);
+});
+
 test('Agent-backed conversation keeps recognized terse medical facts', async () => {
   const service = await createService();
   const started = await service.start(

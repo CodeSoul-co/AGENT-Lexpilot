@@ -12,6 +12,10 @@ const {
   QUERY_WORKSPACE_ARCHIVE_SCHEMA,
   QUERY_WORKSPACE_LIFECYCLE_SCHEMA
 } = require('../v1/query-workspace-lifecycle.cjs');
+const {
+  ACCESS_ACTIONS,
+  createLocalAccessControl
+} = require('./local-access-control.cjs');
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_SANDBOX_JSON_BODY_BYTES = 24 * 1024 * 1024;
@@ -84,6 +88,16 @@ function isJsonContentType(value) {
 }
 
 function parseSessionRoute(pathname) {
+  const artifactDownloadMatch = pathname.match(
+    /^\/api\/sessions\/([A-Za-z0-9-]{1,100})\/artifacts\/([A-Za-z0-9-]{1,100})\/download$/
+  );
+  if (artifactDownloadMatch) {
+    return {
+      type: 'artifact-download',
+      sessionId: artifactDownloadMatch[1],
+      artifactId: artifactDownloadMatch[2]
+    };
+  }
   const answerMatch = pathname.match(/^\/api\/sessions\/([A-Za-z0-9-]{1,100})\/answers$/);
   if (answerMatch) return { type: 'answer', sessionId: answerMatch[1] };
   const confirmationMatch = pathname.match(
@@ -122,6 +136,36 @@ function validateService(service) {
   }
 }
 
+function requireAccess(response, accessControl, action) {
+  try {
+    accessControl.assertAllowed(action);
+    return true;
+  } catch (error) {
+    if (error?.code !== 'LOCAL_ACCESS_DENIED') throw error;
+    sendError(response, 403, error.code, error.message);
+    return false;
+  }
+}
+
+function presentHistoryForWeb(history) {
+  if (history?.v1?.workspace?.status !== 'archived' || !history.v1.artifact) {
+    return history;
+  }
+  const { content, ...safeArtifact } = history.v1.artifact;
+  return {
+    ...history,
+    v1: {
+      ...history.v1,
+      artifact: {
+        ...safeArtifact,
+        contentReturnedInHistory: false,
+        downloadPath:
+          `/api/sessions/${history.sessionId}/artifacts/${safeArtifact.artifactId}/download`
+      }
+    }
+  };
+}
+
 function createDemoWebHandler(options = {}) {
   const { service } = options;
   validateService(service);
@@ -130,6 +174,8 @@ function createDemoWebHandler(options = {}) {
   const sandboxCoordinator = options.sandboxCoordinator ?? null;
   const sandboxDescriptor = options.sandboxDescriptor ?? sandboxCoordinator?.describe?.() ?? { available: false };
   const dataSourceAdmin = options.dataSourceAdmin ?? null;
+  const accessControl =
+    options.accessControl ?? createLocalAccessControl({ subjectId: 'local-user', role: 'user' });
   const staticDirectory = path.resolve(
     options.staticDirectory ?? path.join(__dirname, '..', '..', 'web')
   );
@@ -166,7 +212,8 @@ function createDemoWebHandler(options = {}) {
           domainPackVersion: V0_DOMAIN_PACK_VERSION,
           agent: agentDescriptor,
           v1: v1Descriptor,
-          sandbox: sandboxDescriptor
+          sandbox: sandboxDescriptor,
+          access: accessControl.describe()
         });
         return;
       }
@@ -198,12 +245,14 @@ function createDemoWebHandler(options = {}) {
             archiveAfterInactiveDays: QUERY_WORKSPACE_ARCHIVE_DAYS,
             archiveTrigger: 'startup-and-daily-session-entry',
             restorePolicy: 'explicit-new-task-only'
-          }
+          },
+          access: accessControl.describe()
         });
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/v1/admin/data-sources') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.DATA_SOURCE_MANAGE)) return;
         if (!dataSourceAdmin) {
           sendError(response, 501, 'DATA_SOURCE_ADMIN_UNAVAILABLE', '数据源管理能力尚未配置。');
           return;
@@ -216,6 +265,7 @@ function createDemoWebHandler(options = {}) {
         request.method === 'POST' &&
         url.pathname === '/api/v1/admin/data-sources/validation'
       ) {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.DATA_SOURCE_MANAGE)) return;
         if (!dataSourceAdmin) {
           sendError(response, 501, 'DATA_SOURCE_ADMIN_UNAVAILABLE', '数据源管理能力尚未配置。');
           return;
@@ -230,6 +280,7 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (sandboxRoute?.type === 'plan' && request.method === 'POST') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         if (!sandboxCoordinator) {
           sendError(response, 501, 'SANDBOX_UNAVAILABLE', 'Docker Sandbox is not configured for this local Demo.');
           return;
@@ -244,6 +295,7 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (sandboxRoute?.type === 'confirmation' && request.method === 'POST') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.HUMAN_REVIEW_APPROVE)) return;
         if (!sandboxCoordinator) {
           sendError(response, 501, 'SANDBOX_UNAVAILABLE', 'Docker Sandbox is not configured for this local Demo.');
           return;
@@ -258,11 +310,13 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/sessions') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         sendJson(response, 200, { status: 'ok', sessions: service.listHistory() });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/sessions') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const body = await readJsonBody(request);
         const baseKeys = ['userText', 'privacyConsent', 'privacyPolicyVersion'];
         if (
@@ -277,6 +331,7 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (route?.type === 'answer' && request.method === 'POST') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const body = await readJsonBody(request);
         if (!requireExactKeys(body, ['userText']) || typeof body.userText !== 'string') {
           sendError(response, 400, 'INVALID_REQUEST', '补充回答请求字段无效。');
@@ -287,8 +342,16 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (route?.type === 'execution-confirmation' && request.method === 'POST') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         if (typeof service.confirmV1Execution !== 'function') {
           sendError(response, 501, 'V1_CONFIRMATION_UNAVAILABLE', '当前服务未接入执行确认能力。');
+          return;
+        }
+        const pending = service.getHistory(route.sessionId);
+        if (
+          pending?.v1?.plan?.readOnly === false &&
+          !requireAccess(response, accessControl, ACCESS_ACTIONS.HUMAN_REVIEW_APPROVE)
+        ) {
           return;
         }
         const body = await readJsonBody(request);
@@ -305,6 +368,7 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (route?.type === 'schema-replan' && request.method === 'POST') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         if (typeof service.replanV1Execution !== 'function') {
           sendError(response, 501, 'V1_REPLAN_UNAVAILABLE', '当前服务未接入 Schema 重新规划能力。');
           return;
@@ -319,6 +383,7 @@ function createDemoWebHandler(options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/v1/logs') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.EXECUTION_LOG_READ)) return;
         if (typeof service.listV1ExecutionLogs !== 'function') {
           sendError(response, 501, 'V1_EXECUTION_LOG_UNAVAILABLE', '当前服务未接入执行日志能力。');
           return;
@@ -345,17 +410,33 @@ function createDemoWebHandler(options = {}) {
         return;
       }
 
+      if (route?.type === 'artifact-download' && request.method === 'GET') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.ARTIFACT_DOWNLOAD)) return;
+        if (typeof service.readV1Artifact !== 'function') {
+          sendError(response, 501, 'ARTIFACT_DOWNLOAD_UNAVAILABLE', '分析产物下载能力尚未配置。');
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          await service.readV1Artifact(route.sessionId, route.artifactId)
+        );
+        return;
+      }
+
       if (route?.type === 'detail' && request.method === 'GET') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const history = service.getHistory(route.sessionId);
         if (!history) {
           sendError(response, 404, 'SESSION_NOT_FOUND', '没有找到对应会话。');
           return;
         }
-        sendJson(response, 200, { status: 'ok', session: history });
+        sendJson(response, 200, { status: 'ok', session: presentHistoryForWeb(history) });
         return;
       }
 
       if (route?.type === 'detail' && request.method === 'DELETE') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const body = await readJsonBody(request);
         if (!requireExactKeys(body, ['confirmed']) || body.confirmed !== true) {
           sendError(response, 400, 'CONFIRMATION_REQUIRED', '删除前必须明确确认。');
@@ -406,6 +487,21 @@ function createDemoWebHandler(options = {}) {
       }
       if (error?.code === 'DATA_SOURCE_PROFILE_NOT_FOUND') {
         sendError(response, 404, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'SESSION_NOT_FOUND' || error?.code === 'ARTIFACT_NOT_FOUND') {
+        sendError(response, 404, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'ARTIFACT_DOWNLOAD_UNAVAILABLE') {
+        sendError(response, 501, error.code, error.message);
+        return;
+      }
+      if (
+        error?.code === 'QUERY_WORKSPACE_INVALID' ||
+        error?.code === 'ARTIFACT_VERIFY_FAILED'
+      ) {
+        sendError(response, 409, error.code, error.message);
         return;
       }
       if (error?.code === 'PROFILE_ID_INVALID') {

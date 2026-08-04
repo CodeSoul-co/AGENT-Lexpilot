@@ -431,6 +431,8 @@ test('application composes an injected Sandbox runtime without requiring Docker 
       version: '1.0.0'
     });
     assert.equal(application.workspaceExecutionBinding.hyphaExecutionEnvironmentValidated, true);
+    assert.equal(application.accessControl.describe().role, 'user');
+    assert.equal(application.accessControl.describe().clientRoleSelectable, false);
     assert.equal(JSON.stringify(application.workspaceExecutionBinding).includes(directory), false);
     assert.equal(application.dataSourceSchemaBinding.runtime, 'demo');
     assert.equal(application.dataSourceSchemaBinding.selectedProfile, null);

@@ -1417,6 +1417,80 @@ class LegalSelfCheckConversationService {
     return session ? historyDetail(session) : null;
   }
 
+  async readV1Artifact(sessionId, artifactId) {
+    this.maybeCleanupInactiveSessions();
+    const session = this.store.get(sessionId, this.ownerId);
+    if (!session) {
+      const error = new Error('没有找到对应会话。');
+      error.code = 'SESSION_NOT_FOUND';
+      throw error;
+    }
+    const artifact = session.v1?.artifact;
+    if (
+      session.taskType !== TASK_TYPES.PROFESSIONAL_DATA_QUERY ||
+      !artifact ||
+      artifact.artifactId !== artifactId
+    ) {
+      const error = new Error('没有找到对应分析产物。');
+      error.code = 'ARTIFACT_NOT_FOUND';
+      throw error;
+    }
+    if (session.v1?.workspace?.status === 'archived') {
+      try {
+        verifyQueryWorkspaceArchive({
+          lifecycle: session.v1.workspace,
+          taskInputReceipt: session.v1.taskInput,
+          artifact
+        });
+      } catch {
+        this.failV1Workspace(session, 'artifact-download');
+        const error = new Error('归档产物引用校验失败。');
+        error.code = 'QUERY_WORKSPACE_INVALID';
+        throw error;
+      }
+    }
+    if (
+      !artifact.storage ||
+      !this.artifactRepository ||
+      typeof this.artifactRepository.readAnalysisArtifact !== 'function'
+    ) {
+      const error = new Error('分析产物下载能力尚未配置。');
+      error.code = 'ARTIFACT_DOWNLOAD_UNAVAILABLE';
+      throw error;
+    }
+    let stored;
+    try {
+      stored = await this.artifactRepository.readAnalysisArtifact(artifact.storage);
+    } catch {
+      const error = new Error('分析产物回读校验失败。');
+      error.code = 'ARTIFACT_VERIFY_FAILED';
+      throw error;
+    }
+    if (
+      stored.contentSha256 !== artifact.contentSha256 ||
+      typeof stored.content !== 'string'
+    ) {
+      const error = new Error('分析产物回读校验失败。');
+      error.code = 'ARTIFACT_VERIFY_FAILED';
+      throw error;
+    }
+    return Object.freeze({
+      status: 'verified',
+      sessionId: session.id,
+      workspaceStatus: session.v1?.workspace?.status ?? 'active',
+      readOnly: true,
+      artifact: Object.freeze({
+        artifactId: artifact.artifactId,
+        type: artifact.type,
+        fileName: artifact.fileName,
+        mimeType: stored.mimeType ?? artifact.mimeType,
+        contentSha256: stored.contentSha256,
+        sizeBytes: stored.sizeBytes,
+        content: stored.content
+      })
+    });
+  }
+
   analyze(session) {
     const combinedRedactedText = session.messages.map((message) => message.redactedText).join('\n');
     return analyzeInformationReadiness(

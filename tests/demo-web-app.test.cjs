@@ -14,6 +14,7 @@ const {
   MAX_SANDBOX_JSON_BODY_BYTES,
   createDemoWebServer
 } = require('../src/web/demo-web-app.cjs');
+const { createLocalAccessControl } = require('../src/web/local-access-control.cjs');
 
 function createService() {
   let nextId = 1;
@@ -26,8 +27,11 @@ function createService() {
   });
 }
 
-async function withServer(run) {
-  const server = createDemoWebServer({ service: createService() });
+async function withServer(run, options = {}) {
+  const server = createDemoWebServer({
+    ...options,
+    service: options.service ?? createService()
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -40,7 +44,7 @@ async function withServer(run) {
   }
 }
 
-async function withSandboxServer(run) {
+async function withSandboxServer(run, role = 'administrator') {
   const calls = [];
   const sandboxCoordinator = {
     describe() {
@@ -72,7 +76,11 @@ async function withSandboxServer(run) {
         : { status: 'rejected', executionAttempted: false };
     }
   };
-  const server = createDemoWebServer({ service: createService(), sandboxCoordinator });
+  const server = createDemoWebServer({
+    service: createService(),
+    sandboxCoordinator,
+    accessControl: createLocalAccessControl({ subjectId: 'web-demo-test-user', role })
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -85,7 +93,7 @@ async function withSandboxServer(run) {
   }
 }
 
-async function withDataSourceAdminServer(run) {
+async function withDataSourceAdminServer(run, role = 'administrator') {
   const validationCalls = [];
   const dataSourceAdmin = {
     listProfiles() {
@@ -134,7 +142,11 @@ async function withDataSourceAdminServer(run) {
       };
     }
   };
-  const server = createDemoWebServer({ service: createService(), dataSourceAdmin });
+  const server = createDemoWebServer({
+    service: createService(),
+    dataSourceAdmin,
+    accessControl: createLocalAccessControl({ subjectId: 'web-demo-test-user', role })
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -197,6 +209,9 @@ test('exposes a localhost health contract with defensive browser headers', async
     assert.equal(response.status, 200);
     assert.equal(body.status, 'ok');
     assert.equal(body.demoMode, true);
+    assert.equal(body.access.role, 'user');
+    assert.equal(body.access.clientRoleSelectable, false);
+    assert.deepEqual(body.access.grants, ['session:use', 'artifact:download']);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.match(response.headers.get('content-security-policy'), /default-src 'self'/);
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
@@ -254,11 +269,150 @@ test('exposes a credential-free data-source admin list and fixed validation acti
 });
 
 test('keeps data-source admin routes unavailable when no admin coordinator is configured', async () => {
+  await withServer(
+    async (baseUrl) => {
+      const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`);
+      assert.equal(listed.response.status, 501);
+      assert.equal(listed.body.error.code, 'DATA_SOURCE_ADMIN_UNAVAILABLE');
+    },
+    {
+      accessControl: createLocalAccessControl({
+        subjectId: 'web-demo-test-user',
+        role: 'administrator'
+      })
+    }
+  );
+});
+
+test('withholds archived Artifact content from history and downloads it through the owner-bound route', async () => {
+  const privateContent = '# archived private analysis';
+  const readCalls = [];
+  const service = {
+    start() {},
+    answer() {},
+    listHistory() { return []; },
+    deleteSession() { return { deleted: false }; },
+    getHistory(sessionId) {
+      if (sessionId !== 'archived-session') return null;
+      return {
+        sessionId,
+        status: 'archived',
+        taskType: 'professional_data_query',
+        messages: [],
+        v1: {
+          workspace: { status: 'archived' },
+          artifact: {
+            artifactId: 'artifact-abc123',
+            type: 'analysis-document',
+            fileName: 'analysis.md',
+            mimeType: 'text/markdown; charset=utf-8',
+            contentSha256: 'a'.repeat(64),
+            content: privateContent
+          }
+        }
+      };
+    },
+    async readV1Artifact(sessionId, artifactId) {
+      readCalls.push([sessionId, artifactId]);
+      return {
+        status: 'verified',
+        sessionId,
+        workspaceStatus: 'archived',
+        readOnly: true,
+        artifact: {
+          artifactId,
+          type: 'analysis-document',
+          fileName: 'analysis.md',
+          mimeType: 'text/markdown; charset=utf-8',
+          contentSha256: 'a'.repeat(64),
+          sizeBytes: Buffer.byteLength(privateContent),
+          content: privateContent
+        }
+      };
+    }
+  };
+
   await withServer(async (baseUrl) => {
-    const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`);
-    assert.equal(listed.response.status, 501);
-    assert.equal(listed.body.error.code, 'DATA_SOURCE_ADMIN_UNAVAILABLE');
-  });
+    const detail = await jsonRequest(`${baseUrl}/api/sessions/archived-session`);
+    assert.equal(detail.response.status, 200);
+    assert.equal(JSON.stringify(detail.body).includes(privateContent), false);
+    assert.equal(detail.body.session.v1.artifact.contentReturnedInHistory, false);
+    assert.equal(
+      detail.body.session.v1.artifact.downloadPath,
+      '/api/sessions/archived-session/artifacts/artifact-abc123/download'
+    );
+    assert.deepEqual(readCalls, []);
+
+    const downloaded = await jsonRequest(
+      `${baseUrl}${detail.body.session.v1.artifact.downloadPath}`,
+      { headers: { 'x-local-role': 'administrator' } }
+    );
+    assert.equal(downloaded.response.status, 200);
+    assert.equal(downloaded.body.readOnly, true);
+    assert.equal(downloaded.body.artifact.content, privateContent);
+    assert.deepEqual(readCalls, [['archived-session', 'artifact-abc123']]);
+  }, { service });
+});
+
+test('ordinary users cannot forge an administrator role for data-source routes', async () => {
+  await withDataSourceAdminServer(async (baseUrl, validationCalls) => {
+    const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`, {
+      headers: { 'x-local-role': 'administrator' }
+    });
+    assert.equal(listed.response.status, 403);
+    assert.equal(listed.body.error.code, 'LOCAL_ACCESS_DENIED');
+    assert.deepEqual(validationCalls, []);
+  }, 'user');
+});
+
+test('ordinary users cannot read the administrative execution log', async () => {
+  const service = createService();
+  let logReads = 0;
+  service.listV1ExecutionLogs = () => {
+    logReads += 1;
+    return [];
+  };
+  await withServer(async (baseUrl) => {
+    const denied = await jsonRequest(`${baseUrl}/api/v1/logs`, {
+      headers: { 'x-local-role': 'administrator' }
+    });
+    assert.equal(denied.response.status, 403);
+    assert.equal(denied.body.error.code, 'LOCAL_ACCESS_DENIED');
+    assert.equal(logReads, 0);
+  }, { service });
+});
+
+test('ordinary users cannot approve a governed database write', async () => {
+  let confirmations = 0;
+  const service = {
+    start() {},
+    answer() {},
+    listHistory() { return []; },
+    getHistory() {
+      return { sessionId: 'write-session', v1: { plan: { readOnly: false } } };
+    },
+    deleteSession() { return { deleted: false }; },
+    confirmV1Execution() {
+      confirmations += 1;
+      return { status: 'completed' };
+    }
+  };
+  await withServer(async (baseUrl) => {
+    const denied = await jsonRequest(
+      `${baseUrl}/api/sessions/write-session/execution-confirmation`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-local-role': 'administrator'
+        },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(denied.response.status, 403);
+    assert.equal(denied.body.error.code, 'LOCAL_ACCESS_DENIED');
+    assert.equal(confirmations, 0);
+  }, { service });
 });
 
 test('exposes Sandbox availability and runs the plan-confirm flow without echoing script content', async () => {
@@ -294,6 +448,32 @@ test('exposes Sandbox availability and runs the plan-confirm flow without echoin
     assert.deepEqual(confirmed.body.result.generatedArtifactRefs, ['artifact:mock:generated']);
     assert.deepEqual(calls.map((call) => call[0]), ['plan', 'confirm']);
   });
+});
+
+test('ordinary users may submit a Sandbox plan but cannot approve Human Review', async () => {
+  await withSandboxServer(async (baseUrl, calls) => {
+    const planned = await jsonRequest(`${baseUrl}/api/v1/sandbox/plans`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language: 'python', script: 'print(1)', inputFiles: [] })
+    });
+    assert.equal(planned.response.status, 200);
+
+    const denied = await jsonRequest(
+      `${baseUrl}/api/v1/sandbox/plans/${planned.body.planId}/confirmation`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-local-role': 'administrator'
+        },
+        body: JSON.stringify({ confirmed: true })
+      }
+    );
+    assert.equal(denied.response.status, 403);
+    assert.equal(denied.body.error.code, 'LOCAL_ACCESS_DENIED');
+    assert.deepEqual(calls.map(([operation]) => operation), ['plan']);
+  }, 'user');
 });
 
 test('Sandbox Web routes reject undeclared fields and remain unavailable by default', async () => {
@@ -668,7 +848,11 @@ async function withV1Server(run) {
   });
   const server = createDemoWebServer({
     service,
-    v1Descriptor: createV1DemoQueryRuntime().describe()
+    v1Descriptor: createV1DemoQueryRuntime().describe(),
+    accessControl: createLocalAccessControl({
+      subjectId: 'web-demo-test-user',
+      role: 'administrator'
+    })
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -777,6 +961,9 @@ test('runs the V1 plan-confirm-execute flow and exposes the execution log', asyn
       'workspace-archive.legal-query@1.0.0'
     );
     assert.equal(config.body.v1TaskInput.restorePolicy, 'explicit-new-task-only');
+    assert.equal(config.body.access.role, 'administrator');
+    assert.equal(config.body.access.productionAuthentication, false);
+    assert.equal(config.body.access.separationOfDuties, false);
     assert.ok(Array.isArray(config.body.v1DemoSchema.columns));
     assert.ok(config.body.v1DemoSchema.columns.length > 0);
     assert.equal(typeof config.body.v1DemoSchema.columns[0].name, 'string');
@@ -881,7 +1068,13 @@ test('returns 501 when the service does not expose V1 execution capabilities', a
       return { deleted: false };
     }
   };
-  const server = createDemoWebServer({ service: legacyService });
+  const server = createDemoWebServer({
+    service: legacyService,
+    accessControl: createLocalAccessControl({
+      subjectId: 'web-demo-test-user',
+      role: 'administrator'
+    })
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);

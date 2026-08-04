@@ -26,6 +26,7 @@ async function main() {
     sandboxCoordinator,
     sandboxDescriptor,
     dataSourceAdmin,
+    accessControl,
     executionLogFilePath,
     artifactDirectory,
     close
@@ -36,7 +37,8 @@ async function main() {
     v1Descriptor,
     sandboxCoordinator,
     sandboxDescriptor,
-    dataSourceAdmin
+    dataSourceAdmin,
+    accessControl
   });
   server.on('error', (error) => {
     process.stderr.write(`本地网页 Demo 启动失败：${error.message}\n`);
@@ -51,6 +53,7 @@ async function main() {
         `V1 执行日志：${executionLogFilePath}`,
         `统一 Agent：${agentDescriptor.agentId}（${agentDescriptor.inference.mode}）`,
         `功能范围：V0 法律自检 + V1 ${v1Descriptor.runtime} 只读分析`,
+        `本地角色：${accessControl.describe().role}（客户端不可切换）`,
         '按 Ctrl+C 停止。'
       ].join('\n') + '\n'
     );

@@ -28,6 +28,15 @@ const elements = {
 };
 
 const state = { activeSessionId: null, activeStatus: null, config: null, consentGranted: false, busy: false, mode: 'v0', artifacts: [], lastExecutionMs: null, pendingSandboxPlanId: null };
+const accessActions = {
+  dataSourceManage: 'data-source:manage',
+  executionLogRead: 'execution-log:read',
+  humanReviewApprove: 'human-review:approve'
+};
+
+function hasAccess(action) {
+  return state.config?.access?.grants?.includes(action) === true;
+}
 const taskLabels = { legal_self_check: '法律自检', professional_data_query: '专业数据分析' };
 const factLabels = {
   employmentDuration: '工作时长', writtenContractStatus: '书面合同', issueType: '事项类型',
@@ -128,8 +137,9 @@ function showMode(mode) {
     ? '同一个 Agent 会识别数据任务，加载固定演示 Schema，生成只读查询计划，确认执行后返回表格、图表与可下载分析文档。'
     : '统一 Agent 会先脱敏，再判断所属领域；信息不足时每轮最多追问两个问题。结果只引用本地已核验法条，不构成法律意见。';
   elements.artifactsSection.classList.toggle('hidden', !v1);
-  elements.logsSection.classList.toggle('hidden', !v1);
-  if (v1) refreshV1Panels();
+  const mayReadLogs = hasAccess(accessActions.executionLogRead);
+  elements.logsSection.classList.toggle('hidden', !v1 || !mayReadLogs);
+  if (v1 && mayReadLogs) refreshV1Panels();
   elements.scopeBanner.textContent = v1
     ? '当前使用匿名合成演示案例库，查询计划、汇总表、图表和分析文档均可完整演示。'
     : '当前法规库为 Demo 最小样本；未匹配不代表不存在相关法律。';
@@ -345,7 +355,9 @@ function addV1Result(result) {
   const note = node('div'); note.append(node('strong', '', data.artifact.fileName), node('span', '', '分析文档 · 本地生成'));
   const actions = node('div', 'artifact-actions');
   const download = node('button', 'artifact-button', '下载分析文档'); download.type = 'button';
-  download.addEventListener('click', () => downloadArtifact(data.artifact));
+  download.addEventListener('click', () =>
+    downloadArtifact(data.artifact).catch((error) => toast(error.message))
+  );
   const pdf = node('button', 'artifact-button', '导出 PDF'); pdf.type = 'button';
   pdf.addEventListener('click', () => exportV1Pdf(data));
   actions.append(download, pdf);
@@ -504,10 +516,21 @@ async function replanExecution() {
   }
 }
 
-function downloadArtifact(artifact) {
+async function downloadArtifact(artifact) {
+  const downloadable =
+    typeof artifact?.content === 'string'
+      ? artifact
+      : artifact?.downloadPath
+        ? (await api(artifact.downloadPath)).artifact
+        : null;
+  if (!downloadable || typeof downloadable.content !== 'string') {
+    throw new Error('分析产物正文不可下载。');
+  }
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([artifact.content], { type: artifact.mimeType }));
-  link.download = artifact.fileName; link.click();
+  link.href = URL.createObjectURL(
+    new Blob([downloadable.content], { type: downloadable.mimeType })
+  );
+  link.download = downloadable.fileName; link.click();
   window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
@@ -691,7 +714,9 @@ function renderArtifacts() {
     const row = node('div', 'artifact-row');
     const note = node('div'); note.append(node('strong', '', artifact.fileName), node('span', '', `${artifact.type ?? '分析文档'} · 本地生成`));
     const download = node('button', 'artifact-button', '下载'); download.type = 'button';
-    download.addEventListener('click', () => downloadArtifact(artifact));
+    download.addEventListener('click', () =>
+      downloadArtifact(artifact).catch((error) => toast(error.message))
+    );
     row.append(note, download);
     elements.artifactList.append(row);
   }
@@ -754,6 +779,7 @@ function renderLogs(logs, integrity) {
 }
 
 function refreshV1Panels() {
+  if (!hasAccess(accessActions.executionLogRead)) return;
   loadLogs().catch((error) => toast(error.message));
 }
 
@@ -1161,13 +1187,21 @@ elements.logFilter.addEventListener('change', () => loadLogs().catch((error) => 
 async function initialize() {
   try {
     const [health, config] = await Promise.all([api('/api/health'), api('/api/config')]); state.config = config;
+    elements.openDataSourceAdmin.classList.toggle(
+      'hidden',
+      !hasAccess(accessActions.dataSourceManage)
+    );
+    document.querySelector('.sandbox-mode-tab')?.classList.toggle(
+      'hidden',
+      !hasAccess(accessActions.humanReviewApprove)
+    );
     elements.privacyAccept.disabled = !elements.consent.checked; elements.policyVersion.textContent = `隐私政策版本：${config.privacyPolicyVersion}`;
     elements.runtime.classList.add('online');
     const provider = health.agent?.inference?.mode === 'demo'
       ? '演示推理'
       : health.agent?.inference?.model ?? 'Provider 未识别';
     const fallbackNotice = health.agent?.inference?.fallbackMode === 'demo' ? ' · 自动回退' : '';
-    elements.runtimeText.textContent = `Agent 在线 · ${provider}${fallbackNotice}`; elements.agentName.textContent = health.agent?.agentId ?? 'Agent 未连接'; elements.agentProvider.textContent = `${provider}${fallbackNotice}`;
+    elements.runtimeText.textContent = `Agent 在线 · ${provider}${fallbackNotice} · ${config.access?.role ?? 'user'}`; elements.agentName.textContent = health.agent?.agentId ?? 'Agent 未连接'; elements.agentProvider.textContent = `${provider}${fallbackNotice}`;
     await loadHistory();
   } catch (error) { elements.runtime.classList.add('offline'); elements.runtimeText.textContent = '本地服务不可用'; elements.policyVersion.textContent = error.message; }
 }

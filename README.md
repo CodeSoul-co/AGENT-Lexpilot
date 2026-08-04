@@ -35,12 +35,13 @@
 - 计划同时保存白名单范围内的 Schema 快照、Schema 指纹与计划哈希；确认时重新读取真实 Schema，发生漂移即在到达数据库前停止旧计划，并返回新增、移除或属性变化的表/字段清单；
 - DataSource/Schema Profile 由 `configs/capability-bindings/legal-v1-data-sources.json` 统一版本化：清单显式引用当前 DomainPack、SQLite 只读/受治理写入、PostgreSQL 只读和 MySQL 只读四份 manifest，并以规范化 JSON SHA-256 固定各自的引擎、权限、白名单和限制；初始 Schema 快照也携带 `schema-snapshot.allowlisted.v1@1.0.0` 契约引用。应用在读取数据库环境值或连接 Provider 前验证全部引用，并按当前 V1 runtime 只选择已登记的 manifest；缺失、未登记或任一内容漂移均关闭失败；
 - V1 专业查询输入通过项目侧 `task-input.legal-professional-query@1.0.0` 适配为需求中的 `query`、`data_source_id`、`workspace_id` 和可选 `requested_output_formats`：查询必须先脱敏，数据源 ID 只能取管理员绑定的活动 runtime，网页和 API 均不能提交任意数据源或 Workspace ID；Workspace ID 是不含会话原值与路径的稳定逻辑标识，供同一会话的计划、确认与重规划关联，绝不映射或暴露 Sandbox/宿主机目录；公开回执不保存查询文本，缺失、扩展字段或任一标识漂移会在 Provider 执行前停止；
-- 逻辑查询 Workspace 使用 `workspace-lifecycle.legal-query@1.0.0` 管理，并在严格超过 30 天未活动后自动生成 `workspace-archive.legal-query@1.0.0` 归档回执：应用启动和长运行进程每日首次会话入口执行扫描，归档回执以 SHA-256 固定 TaskSchema 回执与安全 Artifact 引用，不复制查询、Artifact 内容或路径；归档状态与回执写入加密 Session，并追加到既有哈希链执行日志。归档后旧计划不能确认或重规划，历史结果仍可只读查看，继续查询必须新建任务；归档不会修改 `session.updatedAt`，因此不会延后现有 90 天会话物理清理；
+- 逻辑查询 Workspace 使用 `workspace-lifecycle.legal-query@1.0.0` 管理，并在严格超过 30 天未活动后自动生成 `workspace-archive.legal-query@1.0.0` 归档回执：应用启动和长运行进程每日首次会话入口执行扫描，归档回执以 SHA-256 固定 TaskSchema 回执与安全 Artifact 引用，不复制查询、Artifact 内容或路径；归档状态与回执写入加密 Session，并追加到既有哈希链执行日志。归档后旧计划不能确认或重规划，历史结果仍可只读查看，继续查询必须新建任务；归档历史响应不再携带 Markdown 正文，当前 owner 只能通过 `GET /api/sessions/:sessionId/artifacts/:artifactId/download` 经角色门禁、归档回执校验和私有 Store 回读校验后下载。归档不会修改 `session.updatedAt`，因此不会延后现有 90 天会话物理清理；
 - Workflow State 能力映射由 `configs/capability-bindings/legal-workflow-state-capabilities.json` 作为项目侧 companion manifest 统一版本化，不修改 Hypha：它逐一覆盖当前 DomainPack 的 13 个状态，并把专业查询的 12 个实际阶段编译为独立、不可变的项目侧 FSM；`EXECUTE_SCRIPT` 显式绑定 Workspace、Execution 和 Artifact，Schema/计划/SQL 状态绑定活动 DataSource，产物与终态绑定 Artifact 和 OutputContract。Domain workflow、依赖清单、状态覆盖、转移或任一引用发生缺失/错配/漂移时，应用会在读取会话密钥、打开数据 Provider 和写入运行数据前关闭失败；编译回执仅保留版本引用、计数与 SHA-256，不包含路径、连接值或用户内容；
 - Session/Agent 能力快照同样在项目侧实现，不修改 Hypha：应用启动时从已经验证的 Workflow State 绑定生成不可变、版本化的 capability reference snapshot，并把同一份快照写入每个加密 Session、绑定到 Agent patch 与 Session/Agent 组合边界。快照固定当前 runtime、Workspace、Execution、DataSource、Artifact、OutputContract 和 FSM SHA-256；会话恢复时缺失快照、内容或哈希漂移、切换 runtime 后继续使用旧会话、后续 patch 替换能力以及 Session/Agent 快照不一致均关闭失败。应用和 Agent 对外只暴露快照/补丁的版本引用与 SHA-256，不暴露路径、凭据、环境变量名或用户内容；升级前创建且没有快照的旧会话不会被静默继承，需要新建会话；
 - Artifact 输出绑定由 `configs/capability-bindings/legal-v1-artifact-outputs.json` 在项目侧独立版本化：清单以 canonical SHA-256 固定当前 Workflow State binding，并绑定 `artifact-profile.lexpilot.v1-output@1.0.0`、`output.legal-professional-query@1.0.0` 以及分析/Sandbox 两个私有 Hypha Store。应用会把实际 Repository 的 store ID、后端、可见性和大小上限与清单逐项比较；分析结果发布前验证成功执行状态、Markdown 类型、文件名、MIME、大小和内容 SHA-256，写入后再验证对象键、ETag、大小、后端与绑定引用。声明、运行实例、产物或回执任一漂移时停止发布结果；安全回执只含版本、哈希和非敏感 Store 标识，不含根路径、连接值、凭据或用户原文；
 - Schema 变化会在会话和网页中主动通知用户，并提供显式重新规划入口；重新规划只基于当前白名单 Schema 生成新计划，仍须再次人工确认，绝不会因重新规划而自动执行；漂移检测与重新规划同样适用于 SQLite、PostgreSQL 和 MySQL；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
+- 本地网页使用 `access-control.local-demo@1.0.0` 服务器绑定角色：默认 `user` 只能使用 owner 隔离的会话及下载其分析产物；`administrator` 才能管理数据源、查看执行日志以及批准数据库写入或 Sandbox Human Review。角色只从服务器启动配置读取，浏览器请求头和请求体均不能切换角色；该本地策略显式声明不具备生产认证和职责分离，不能替代组织账号、SSO、租户 RBAC、审批人独立性与远程 Store 下载授权验收；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
 - 当前网页专业数据分析流程默认使用匿名合成的固定演示数据结构与本地受控求值器；显式启用 `sqlite` 模式后，使用 Hypha 已构建的公开 `loadSqlite()` 驱动入口连接真实 SQLite 文件，支持连接测试、白名单表 Schema 快照、确认前 Schema 指纹复验、参数化 `SELECT`、15 秒硬超时、500 行与 1 MiB 输出上限。所有组合与治理均位于本项目，不会通过修改 Hypha 绕过治理门。
 - SQLite 写入专用配置通过 Hypha `GovernedToolRunner` 创建真实待审批 invocation；拒绝时 handler 不执行，批准后只执行一次。Worker 使用单个事务，失败、超时或影响超过 1 行时不提交，写操作不自动重试。审计日志仅记录 invocation ID、审批状态、事件数量、事务状态和影响行数，不记录参数、数据库路径或凭证。PostgreSQL/MySQL 在取得专用写账号和独立验收环境前继续保持只读。
@@ -80,6 +81,13 @@ npm run demo:web
 ```
 
 浏览器打开 `http://127.0.0.1:4173`。
+
+本地网页默认使用普通用户角色。需要执行数据源管理、查看审计日志或审批受治理写入/Sandbox 时，由本机操作者在启动前把 `.env` 中的 `LEGAL_LOCAL_ROLE` 固定为 `administrator` 并重启服务；前端不能通过参数、请求体或请求头提权。该开关只用于本地项目层门禁验证，不是生产身份认证：
+
+```bash
+LEGAL_LOCAL_ROLE=user
+# 或由本机操作者显式设置：LEGAL_LOCAL_ROLE=administrator
+```
 
 默认 `LEGAL_AGENT_PROVIDER=demo`，无需外部模型即可运行。接入 DeepSeek：在 `.env` 中设置 `LEGAL_AGENT_PROVIDER=deepseek` 与 `LEGAL_AGENT_API_KEY`；或使用 `npm run demo:web:deepseek`，脚本隐藏读取 API Key，不落盘、不进命令历史。本地演示开启诚实回退：仅在网络、超时、限流或服务端故障等可重试错误时使用演示推理并如实标注；鉴权或请求错误不会回退。接入其他 OpenAI-compatible 模型：
 
@@ -141,7 +149,7 @@ docker pull "python:3.12-alpine@sha256:6d43704baacd1bfbe7c295d7f13079d5d8104ed33
 
 PostgreSQL 与 MySQL 使用相同的计划、确认、Schema 防漂移和结果上限合同。公开清单位于 `configs/data-sources/`，只保存环境变量引用；连接值与密码只允许通过 `.env` 或进程环境传入。网络数据库默认要求 TLS，并强制只读事务；只有隔离的本地验收库可显式设置 `*_TLS_MODE=disable`。
 
-本地网页的“数据源管理”入口会列出 SQLite、PostgreSQL、MySQL 三个只读清单、授权表/字段、执行上限以及各环境变量是否已配置。页面没有凭据输入框，接口也只接受固定 `profileId`；主机、数据库路径、账号、密码和 Provider 原始错误不会进入响应。点击“验证连接与 Schema”后，服务端才使用启动前设置的私有环境变量进行连接和白名单 Schema 核验，并展示深冻结的初始 Schema 快照；快照只复制白名单表名以及列名、类型、可空性和主键序号，不透传 Provider 的其他元数据。该入口仅绑定本机回环地址，生产部署仍须补充独立管理员身份认证与权限控制。
+本地网页的“数据源管理”入口只对服务器绑定的 `administrator` 角色开放，会列出 SQLite、PostgreSQL、MySQL 三个只读清单、授权表/字段、执行上限以及各环境变量是否已配置。页面没有凭据输入框，接口也只接受固定 `profileId`；主机、数据库路径、账号、密码和 Provider 原始错误不会进入响应。点击“验证连接与 Schema”后，服务端才使用启动前设置的私有环境变量进行连接和白名单 Schema 核验，并展示深冻结的初始 Schema 快照；快照只复制白名单表名以及列名、类型、可空性和主键序号，不透传 Provider 的其他元数据。回环地址和本地角色开关都不构成生产登录，生产部署仍须补充独立管理员认证、租户/对象级授权和审计。
 
 ```bash
 # 二选一，并在 .env 中填写对应 LEGAL_V1_PG_* 或 LEGAL_V1_MYSQL_* 变量
@@ -155,7 +163,7 @@ npm run audit:sql:mysql
 
 真实验收账号必须仅拥有目标 `labor_cases` 表四个白名单字段所需的 `SELECT` 权限。驱动错误会转换为不含主机、用户名、密码和查询参数值的安全错误。
 
-分析产物默认存入 Git 忽略的 `data/web-demo/v1-artifacts`，也可通过 `LEGAL_V1_ARTIFACT_DIR` 指向其他私有目录。存储对象键由会话、运行和产物标识的 SHA-256 派生，不包含原始标识；网页返回和哈希链日志均不暴露磁盘根路径。
+分析产物默认存入 Git 忽略的 `data/web-demo/v1-artifacts`，也可通过 `LEGAL_V1_ARTIFACT_DIR` 指向其他私有目录。存储对象键由会话、运行和产物标识的 SHA-256 派生，不包含原始标识；网页返回和哈希链日志均不暴露磁盘根路径。归档 Workspace 的历史接口只返回产物元数据与授权下载路径，不返回正文；下载接口再次通过 owner 隔离、归档回执及 Store 内容 SHA-256 校验，且不返回 Store 对象键或根路径。
 
 ## 验证
 
@@ -200,8 +208,8 @@ hypha.lock.json        Hypha 可复现基线
 
 - 网页 Demo 仅绑定 `127.0.0.1`，校验 Host 头防 DNS 重绑定，API 写入强制 `application/json`；
 - API Key 只经环境变量传入，不写日志、不进错误消息、不下发前端；
-- 本项目是本地单用户演示形态，不含生产级账号体系、权限系统与 HTTPS 部署。
+- 本项目仍是本地单 owner 演示形态：已实现服务器绑定的 `user` / `administrator` 项目层门禁，但不含生产级账号登录、组织/租户 RBAC、审批人职责分离、远程 Store 授权或 HTTPS 部署。
 
 ## 尚未实现
 
-生产级账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、更广泛的多业务模板受约束 Text2SQL、归档 Workspace 的原任务恢复、生产级权限系统及生产级网页部署尚未完成。SQLite 已完成两个具有独立 Schema 和输出契约的自然语言只读模板，以及固定模板单行写入的项目层 Human Review、事务回滚和自动化验收；逻辑查询 Workspace 已完成 30 天不活跃归档与只读历史查看，但为避免在旧 Schema/权限下静默执行，当前恢复策略是显式新建任务；脚本沙箱已完成网页入口、Hypha Docker Provider 接线、固定隔离策略、Artifact 持久化和当前 Docker Desktop 环境的真实验收。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+生产级账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、更广泛的多业务模板受约束 Text2SQL、归档 Workspace 的原任务恢复、生产级身份认证/租户 RBAC/审批职责分离、远程 Store 授权及生产级网页部署尚未完成。SQLite 已完成两个具有独立 Schema 和输出契约的自然语言只读模板，以及固定模板单行写入的项目层 Human Review、事务回滚和自动化验收；逻辑查询 Workspace 已完成 30 天不活跃归档、只读历史和本地 owner 授权下载，但为避免在旧 Schema/权限下静默执行，当前恢复策略是显式新建任务；脚本沙箱已完成网页入口、Hypha Docker Provider 接线、固定隔离策略、Artifact 持久化和当前 Docker Desktop 环境的真实验收。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

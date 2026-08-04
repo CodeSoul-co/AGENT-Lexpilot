@@ -238,8 +238,21 @@ class AgentBackedConversationService {
     const history = this.service.getHistory(sessionId);
     const cached = this.resultCache.get(sessionId);
     if (!history || !cached) return history;
-    const { pendingQuestions, ...publicCache } = cached;
-    return { ...history, ...publicCache };
+    const { pendingQuestions, v1: cachedV1, ...publicCache } = cached;
+    return {
+      ...history,
+      ...publicCache,
+      ...(history.v1 ? { v1: history.v1 } : cachedV1 ? { v1: cachedV1 } : {})
+    };
+  }
+
+  readV1Artifact(sessionId, artifactId) {
+    if (typeof this.service.readV1Artifact !== 'function') {
+      const error = new Error('Analysis Artifact download is unavailable.');
+      error.code = 'ARTIFACT_DOWNLOAD_UNAVAILABLE';
+      throw error;
+    }
+    return this.service.readV1Artifact(sessionId, artifactId);
   }
 
   deleteSession(sessionId, confirmation) {

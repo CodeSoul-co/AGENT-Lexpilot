@@ -28,6 +28,7 @@ const { createV1SQLQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
 const { loadWorkflowStateCapabilityMap } = require('../v1/workflow-state-capability-map.cjs');
 const { loadWorkspaceExecutionProfile } = require('../v1/workspace-execution-profile.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
+const { createLocalAccessControl } = require('../web/local-access-control.cjs');
 const {
   EncryptedFileLegalSessionStore,
   parseBase64EncryptionKey
@@ -36,6 +37,7 @@ const {
 const ENVIRONMENT_KEYS = Object.freeze({
   encryptionKey: 'LEGAL_SESSION_KEY_BASE64',
   ownerId: 'LEGAL_SESSION_OWNER_ID',
+  localRole: 'LEGAL_LOCAL_ROLE',
   dataDirectory: 'LEGAL_SESSION_DATA_DIR',
   v1Runtime: 'LEGAL_V1_RUNTIME',
   sandboxEnabled: 'LEGAL_V1_SANDBOX_ENABLED',
@@ -203,6 +205,12 @@ async function createLocalLegalAgentApplication(options = {}) {
   );
   const capabilityPatch = createAgentCapabilityPatch(capabilitySnapshot);
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
+  const accessControl =
+    options.accessControl ??
+    createLocalAccessControl({
+      subjectId: ownerId,
+      role: environment[ENVIRONMENT_KEYS.localRole]?.trim() || 'user'
+    });
   const auditActorKey = parseBase64EncryptionKey(
     requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey)
   );
@@ -347,6 +355,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     sandboxCoordinator: sandboxCoordinator ?? null,
     sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
     dataSourceAdmin,
+    accessControl,
     dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
     workflowStateCapabilityBinding,
     artifactOutputBinding: artifactOutputBinding.receipt,

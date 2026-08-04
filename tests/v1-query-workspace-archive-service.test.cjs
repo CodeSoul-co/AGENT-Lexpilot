@@ -21,7 +21,7 @@ function request() {
   };
 }
 
-function createService() {
+function createService(options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'v1-workspace-archive-service-'));
   let now = START;
   const baseRuntime = createV1DemoQueryRuntime();
@@ -42,13 +42,38 @@ function createService() {
     filePath: path.join(directory, 'execution-log.jsonl'),
     clock
   });
+  let persistedArtifact = null;
+  const artifactRepository = options.withArtifactRepository
+    ? {
+        storeAnalysisArtifact({ artifact }) {
+          persistedArtifact = { ...artifact };
+          return {
+            storeId: 'lexpilot.execution-artifacts.local',
+            objectKey: `analysis/${'a'.repeat(64)}.md`,
+            contentSha256: artifact.contentSha256,
+            sizeBytes: Buffer.byteLength(artifact.content, 'utf8'),
+            backend: 'test-store'
+          };
+        },
+        readAnalysisArtifact(receipt) {
+          assert.equal(receipt.contentSha256, persistedArtifact.contentSha256);
+          return {
+            content: persistedArtifact.content,
+            contentSha256: persistedArtifact.contentSha256,
+            sizeBytes: Buffer.byteLength(persistedArtifact.content, 'utf8'),
+            mimeType: persistedArtifact.mimeType
+          };
+        }
+      }
+    : undefined;
   const service = new LegalSelfCheckConversationService({
     store: new InMemoryLegalSessionStore(),
     ownerId: 'workspace-archive-owner',
     idFactory: () => 'workspace-archive-session',
     clock,
     v1Runtime: runtime,
-    executionLog
+    executionLog,
+    artifactRepository
   });
   return {
     service,
@@ -110,6 +135,36 @@ test('auto-archives a completed logical Workspace after 30 inactive days without
     assert.equal(archiveLog.artifactReferenceCount, 1);
     assert.equal(archiveLog.executionAttempted, false);
     assert.equal(context.service.getV1ExecutionLogIntegrity().status, 'verified');
+  } finally {
+    context.cleanup();
+  }
+});
+
+test('reads an archived Artifact only through the verified private Store receipt', async () => {
+  const context = createService({ withArtifactRepository: true });
+  try {
+    const planned = context.service.start(request());
+    const completed = await context.service.confirmV1Execution(planned.sessionId, {
+      confirmed: true
+    });
+    context.setElapsedDays(31);
+    context.service.listHistory();
+
+    const downloaded = await context.service.readV1Artifact(
+      planned.sessionId,
+      completed.v1.artifact.artifactId
+    );
+    assert.equal(downloaded.status, 'verified');
+    assert.equal(downloaded.workspaceStatus, 'archived');
+    assert.equal(downloaded.readOnly, true);
+    assert.equal(downloaded.artifact.content, completed.v1.artifact.content);
+    assert.equal(downloaded.artifact.contentSha256, completed.v1.artifact.contentSha256);
+    assert.equal('storage' in downloaded.artifact, false);
+
+    await assert.rejects(
+      context.service.readV1Artifact(planned.sessionId, 'artifact-not-owned'),
+      (error) => error?.code === 'ARTIFACT_NOT_FOUND'
+    );
   } finally {
     context.cleanup();
   }
