@@ -15,6 +15,7 @@ const { createDockerSandboxProviderFactory } = require('../v1/docker-sandbox-pro
 const { createSandboxExecutionRuntime } = require('../v1/sandbox-execution-runtime.cjs');
 const { createSandboxWebCoordinator } = require('../v1/sandbox-web-coordinator.cjs');
 const { createV1SQLQueryRuntime } = require('../v1/sqlite-query-runtime.cjs');
+const { loadWorkflowStateCapabilityMap } = require('../v1/workflow-state-capability-map.cjs');
 const { loadWorkspaceExecutionProfile } = require('../v1/workspace-execution-profile.cjs');
 const { LegalSelfCheckConversationService } = require('./conversation-service.cjs');
 const {
@@ -120,11 +121,27 @@ async function createLocalLegalAgentApplication(options = {}) {
     bindingPath: options.dataSourceSchemaBindingPath,
     domainPackPath: options.domainPackPath
   });
+  const workflowStateCapabilityMap = loadWorkflowStateCapabilityMap({
+    projectRoot,
+    manifestPath: options.workflowStateCapabilityManifestPath,
+    domainPackPath: options.domainPackPath,
+    workspaceExecutionPath: options.workspaceExecutionManifestPath,
+    dataSourceSchemaPath: options.dataSourceSchemaBindingPath
+  });
   const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
   const dataSourceSchemaBinding = dataSourceSchemaProfile.resolveRuntime({
     runtime: v1Mode,
     configuredManifest:
       v1Mode === 'sqlite' ? environment.LEGAL_V1_SQLITE_MANIFEST : undefined
+  });
+  const sandboxEnabled =
+    options.sandboxCoordinator !== undefined ||
+    options.sandboxRuntime !== undefined ||
+    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
+  const workflowStateCapabilityBinding = workflowStateCapabilityMap.bindApplication({
+    workspaceExecutionBinding: workspaceExecutionProfile.receipt,
+    dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
+    sandboxEnabled
   });
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
   const auditActorKey = parseBase64EncryptionKey(
@@ -138,10 +155,6 @@ async function createLocalLegalAgentApplication(options = {}) {
   } finally {
     auditActorKey.fill(0);
   }
-  const sandboxEnabled =
-    options.sandboxCoordinator !== undefined ||
-    options.sandboxRuntime !== undefined ||
-    environment[ENVIRONMENT_KEYS.sandboxEnabled]?.trim().toLowerCase() === 'true';
   const resolvedWorkspaceExecution =
     sandboxEnabled && options.sandboxCoordinator === undefined && options.sandboxRuntime === undefined
       ? workspaceExecutionProfile.resolve(environment)
@@ -266,6 +279,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
     dataSourceAdmin,
     dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
+    workflowStateCapabilityBinding,
     workspaceExecutionBinding: workspaceExecutionProfile.receipt,
     executionLogFilePath,
     artifactDirectory,

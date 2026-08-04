@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { loadHyphaDomain } = require('./hypha-paths.cjs');
 const { loadDataSourceSchemaProfile } = require('../src/v1/data-source-schema-profile.cjs');
+const { loadWorkflowStateCapabilityMap } = require('../src/v1/workflow-state-capability-map.cjs');
 const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 
 async function main() {
@@ -18,7 +19,14 @@ async function main() {
     taskSchemaId: 'task.legal-self-check'
   });
   const workspaceExecution = loadWorkspaceExecutionProfile({ projectRoot }).receipt;
-  const dataSourceSchema = loadDataSourceSchemaProfile({ projectRoot }).receipt;
+  const dataSourceSchemaProfile = loadDataSourceSchemaProfile({ projectRoot });
+  const dataSourceSchema = dataSourceSchemaProfile.receipt;
+  const workflowStateMap = loadWorkflowStateCapabilityMap({ projectRoot });
+  const workflowStateBinding = workflowStateMap.bindApplication({
+    workspaceExecutionBinding: workspaceExecution,
+    dataSourceSchemaBinding: dataSourceSchemaProfile.resolveRuntime({ runtime: 'demo' }).receipt,
+    sandboxEnabled: false
+  });
 
   console.log(
     JSON.stringify(
@@ -33,7 +41,13 @@ async function main() {
         executionProfileValidated: workspaceExecution.hyphaExecutionEnvironmentValidated,
         dataSourceSchemaBinding: `${dataSourceSchema.bindingId}@${dataSourceSchema.bindingVersion}`,
         dataSourceProfileCount: dataSourceSchema.profiles.length,
-        schemaSnapshotContract: `${dataSourceSchema.schemaSnapshotContractRef.id}@${dataSourceSchema.schemaSnapshotContractRef.version}`
+        schemaSnapshotContract: `${dataSourceSchema.schemaSnapshotContractRef.id}@${dataSourceSchema.schemaSnapshotContractRef.version}`,
+        workflowStateCapabilityBinding: `${workflowStateBinding.bindingId}@${workflowStateBinding.bindingVersion}`,
+        professionalWorkflow: `${workflowStateBinding.runtimeWorkflowRef.id}@${workflowStateBinding.runtimeWorkflowRef.version}`,
+        domainStateBindingCount: workflowStateBinding.domainStateBindingCount,
+        runtimeStateBindingCount: workflowStateBinding.runtimeStateBindingCount,
+        compiledStateFsmSha256: workflowStateBinding.compiledFsmSha256,
+        stateCapabilityReferencesRetained: workflowStateBinding.referencesRetained
       },
       null,
       2

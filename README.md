@@ -34,6 +34,7 @@
 - 查询计划（参数化 SQL + 注释）先展示；SQLite/网络只读模式先用真实白名单 Schema 将受支持的脱敏自然语言映射为固定形状的参数化 `SELECT`，再由策略门校验单条语句、数据表、字段和绑定参数，用户确认后才执行。原始 SQL、未知模板和写入意图均关闭失败。SQLite 写入专用配置仅允许固定单行 `INSERT` / `UPDATE` / `DELETE` 模板，并强制进入 Hypha Human Review；多语句和 DDL 一律在数据库前拒绝；
 - 计划同时保存白名单范围内的 Schema 快照、Schema 指纹与计划哈希；确认时重新读取真实 Schema，发生漂移即在到达数据库前停止旧计划，并返回新增、移除或属性变化的表/字段清单；
 - DataSource/Schema Profile 由 `configs/capability-bindings/legal-v1-data-sources.json` 统一版本化：清单显式引用当前 DomainPack、SQLite 只读/受治理写入、PostgreSQL 只读和 MySQL 只读四份 manifest，并以规范化 JSON SHA-256 固定各自的引擎、权限、白名单和限制；初始 Schema 快照也携带 `schema-snapshot.allowlisted.v1@1.0.0` 契约引用。应用在读取数据库环境值或连接 Provider 前验证全部引用，并按当前 V1 runtime 只选择已登记的 manifest；缺失、未登记或任一内容漂移均关闭失败；
+- Workflow State 能力映射由 `configs/capability-bindings/legal-workflow-state-capabilities.json` 作为项目侧 companion manifest 统一版本化，不修改 Hypha：它逐一覆盖当前 DomainPack 的 13 个状态，并把专业查询的 12 个实际阶段编译为独立、不可变的项目侧 FSM；`EXECUTE_SCRIPT` 显式绑定 Workspace、Execution 和 Artifact，Schema/计划/SQL 状态绑定活动 DataSource，产物与终态绑定 Artifact 和 OutputContract。Domain workflow、依赖清单、状态覆盖、转移或任一引用发生缺失/错配/漂移时，应用会在读取会话密钥、打开数据 Provider 和写入运行数据前关闭失败；编译回执仅保留版本引用、计数与 SHA-256，不包含路径、连接值或用户内容；
 - Schema 变化会在会话和网页中主动通知用户，并提供显式重新规划入口；重新规划只基于当前白名单 Schema 生成新计划，仍须再次人工确认，绝不会因重新规划而自动执行；漂移检测与重新规划同样适用于 SQLite、PostgreSQL 和 MySQL；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
@@ -155,7 +156,7 @@ npm run verify   # verify:baseline + verify:domain + verify:replay + Package Tes
 npm test         # 仅 Package Test
 ```
 
-完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution 与 DataSource/Schema 项目侧能力绑定能否通过引用、指纹和安全契约校验；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
+完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution、DataSource/Schema 与 Workflow State 项目侧能力绑定能否通过引用、指纹、完整状态覆盖和安全契约校验；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
 
 `verify` 还会加载 `configs/replay-fixtures/` 中两份版本化、SHA-256 固定的 V0/V1 脱敏合成 Fixture，通过 Hypha `ReplayEngine` / `RegressionRunner` 将当前业务路径与黄金事件、状态路径、策略决策、工具调用和最终输出逐项比较，并在临时目录执行一次清单约束的恢复复验。Fixture 不保存用户原文、会话标识、客户数据或凭证；缺失、篡改、PII/Secret 检测或业务输出漂移均会使验证失败。
 

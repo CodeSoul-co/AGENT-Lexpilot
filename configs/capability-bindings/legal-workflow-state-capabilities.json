@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "id": "binding.legal-workflow-state-capabilities",
+  "version": "1.0.0",
+  "domainPackRef": {
+    "id": "domain.legal-compliance.v0-v1",
+    "version": "0.16.0"
+  },
+  "domainWorkflowRef": {
+    "id": "workflow.legal-self-check",
+    "version": "0.16.0",
+    "canonicalSha256": "sha256:4c09ea200afaa1338f22ee5858b768dff1ce1ac24f9dd8549e14f6a8175bf49c"
+  },
+  "dependencyBindings": {
+    "workspaceExecution": {
+      "id": "binding.legal-v1-sandbox",
+      "version": "1.0.0",
+      "canonicalSha256": "sha256:d20b80340bafaa77b758fbe06b196856d51a8ab170860203f5ff0dd2d31849e3"
+    },
+    "dataSourceSchema": {
+      "id": "binding.legal-v1-data-sources",
+      "version": "1.0.0",
+      "canonicalSha256": "sha256:eaf3960707fab7a7956c29ec7eaa769935d0c603e47cc4d4accc8ef08c56f228"
+    }
+  },
+  "dataSourceSelectors": [
+    {
+      "id": "data-source-selector.active-v1-runtime",
+      "version": "1.0.0",
+      "bindingRef": {
+        "id": "binding.legal-v1-data-sources",
+        "version": "1.0.0"
+      },
+      "selection": "active-runtime"
+    }
+  ],
+  "artifactProfiles": [
+    {
+      "id": "artifact-profile.lexpilot.v1-output",
+      "version": "1.0.0",
+      "stores": [
+        {
+          "role": "analysis",
+          "storeId": "lexpilot.execution-artifacts.local",
+          "backend": "hypha.LocalFilesystemExecutionArtifactStore",
+          "visibility": "private-local"
+        },
+        {
+          "role": "sandbox",
+          "storeId": "lexpilot.sandbox-artifacts.local",
+          "backend": "hypha.LocalFilesystemExecutionArtifactStore",
+          "visibility": "private-local"
+        }
+      ],
+      "pathValuesExposed": false,
+      "contentStoredInBinding": false
+    }
+  ],
+  "outputContracts": {
+    "domainRef": {
+      "id": "output.legal-self-check",
+      "version": "0.16.0",
+      "canonicalSha256": "sha256:3c7fee5b694c4654c4fc596ddaab18e35d024d9fd50c9e81e4b70d299e8ab642"
+    },
+    "professionalQuery": {
+      "id": "output.legal-professional-query",
+      "version": "1.0.0",
+      "statuses": ["awaiting_confirmation", "completed", "rejected", "failed"],
+      "requiredReceiptFields": ["status", "executionAttempted"],
+      "rawConnectionValuesAllowed": false,
+      "rawUserTextAllowed": false
+    }
+  },
+  "domainStateBindings": [
+    { "id": "Intake", "capabilityRefs": {} },
+    { "id": "PrivacyConsent", "capabilityRefs": {} },
+    { "id": "RedactInput", "capabilityRefs": {} },
+    { "id": "SaveSession", "capabilityRefs": {} },
+    { "id": "ClassifyTask", "capabilityRefs": {} },
+    { "id": "ClassifyDomain", "capabilityRefs": {} },
+    { "id": "CheckInformation", "capabilityRefs": {} },
+    { "id": "Clarify", "capabilityRefs": {} },
+    { "id": "RetrieveLaw", "capabilityRefs": {} },
+    { "id": "AnalyzeLaw", "capabilityRefs": {} },
+    { "id": "BuildResult", "capabilityRefs": { "outputContractRef": { "id": "output.legal-self-check", "version": "0.16.0" } } },
+    { "id": "Completed", "capabilityRefs": { "outputContractRef": { "id": "output.legal-self-check", "version": "0.16.0" } } },
+    { "id": "Failed", "capabilityRefs": { "outputContractRef": { "id": "output.legal-self-check", "version": "0.16.0" } } }
+  ],
+  "runtimeWorkflow": {
+    "id": "workflow.legal-professional-query",
+    "version": "1.0.0",
+    "initialState": "INITIAL",
+    "terminalStates": ["COMPLETED", "FAILED"],
+    "states": [
+      { "id": "INITIAL", "capabilityRefs": {} },
+      { "id": "LOAD_SCHEMA", "capabilityRefs": { "dataSourceProfileRef": { "id": "data-source-selector.active-v1-runtime", "version": "1.0.0" } } },
+      { "id": "GENERATE_PLAN", "capabilityRefs": { "dataSourceProfileRef": { "id": "data-source-selector.active-v1-runtime", "version": "1.0.0" } } },
+      { "id": "POLICY_CHECK", "capabilityRefs": { "dataSourceProfileRef": { "id": "data-source-selector.active-v1-runtime", "version": "1.0.0" } } },
+      { "id": "HUMAN_REVIEW", "capabilityRefs": {} },
+      { "id": "EXECUTE_SELECT", "capabilityRefs": { "dataSourceProfileRef": { "id": "data-source-selector.active-v1-runtime", "version": "1.0.0" } } },
+      { "id": "EXECUTE_WRITE", "capabilityRefs": { "dataSourceProfileRef": { "id": "data-source-selector.active-v1-runtime", "version": "1.0.0" } } },
+      { "id": "EXECUTE_SCRIPT", "capabilityRefs": { "workspaceProfileRef": { "id": "workspace.legal-v1-sandbox", "version": "1.0.0" }, "executionProfileRef": { "id": "execution-environment.lexpilot.scripts", "version": "1.0.0" }, "artifactProfileRef": { "id": "artifact-profile.lexpilot.v1-output", "version": "1.0.0" } } },
+      { "id": "BUILD_ARTIFACT", "capabilityRefs": { "artifactProfileRef": { "id": "artifact-profile.lexpilot.v1-output", "version": "1.0.0" }, "outputContractRef": { "id": "output.legal-professional-query", "version": "1.0.0" } } },
+      { "id": "APPEND_LOG", "capabilityRefs": {} },
+      { "id": "COMPLETED", "capabilityRefs": { "artifactProfileRef": { "id": "artifact-profile.lexpilot.v1-output", "version": "1.0.0" }, "outputContractRef": { "id": "output.legal-professional-query", "version": "1.0.0" } } },
+      { "id": "FAILED", "capabilityRefs": { "outputContractRef": { "id": "output.legal-professional-query", "version": "1.0.0" } } }
+    ],
+    "transitions": [
+      { "from": "INITIAL", "to": "LOAD_SCHEMA", "route": "start" },
+      { "from": "LOAD_SCHEMA", "to": "GENERATE_PLAN", "route": "schema-loaded" },
+      { "from": "GENERATE_PLAN", "to": "POLICY_CHECK", "route": "plan-generated" },
+      { "from": "POLICY_CHECK", "to": "EXECUTE_SELECT", "route": "read-only" },
+      { "from": "POLICY_CHECK", "to": "HUMAN_REVIEW", "route": "write-or-script" },
+      { "from": "POLICY_CHECK", "to": "APPEND_LOG", "route": "blocked" },
+      { "from": "HUMAN_REVIEW", "to": "EXECUTE_WRITE", "route": "write-approved" },
+      { "from": "HUMAN_REVIEW", "to": "EXECUTE_SCRIPT", "route": "script-approved" },
+      { "from": "HUMAN_REVIEW", "to": "APPEND_LOG", "route": "rejected-or-timeout" },
+      { "from": "EXECUTE_SELECT", "to": "BUILD_ARTIFACT", "route": "completed" },
+      { "from": "EXECUTE_WRITE", "to": "BUILD_ARTIFACT", "route": "completed" },
+      { "from": "EXECUTE_SCRIPT", "to": "BUILD_ARTIFACT", "route": "completed" },
+      { "from": "BUILD_ARTIFACT", "to": "APPEND_LOG", "route": "artifact-stored" },
+      { "from": "APPEND_LOG", "to": "COMPLETED", "route": "success-recorded" },
+      { "from": "APPEND_LOG", "to": "FAILED", "route": "failure-recorded" }
+    ]
+  }
+}

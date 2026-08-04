@@ -263,6 +263,29 @@ test('application fails before composition when the DataSource/Schema binding is
   }
 });
 
+test('application fails before composition when the workflow-state capability map is missing', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-missing-state-capability-map-'));
+  try {
+    await assert.rejects(
+      createLocalLegalAgentApplication({
+        projectRoot,
+        workflowStateCapabilityManifestPath: path.join(directory, 'missing.json'),
+        environment: {
+          LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+          LEGAL_SESSION_OWNER_ID: 'missing-state-map-owner',
+          LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+          LEGAL_V1_RUNTIME: 'demo',
+          LEGAL_AGENT_PROVIDER: 'demo'
+        }
+      }),
+      (error) => error.code === 'WORKFLOW_STATE_CAPABILITY_MAP_MISSING'
+    );
+    assert.equal(fs.existsSync(path.join(directory, 'sessions')), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('application rejects an unbound SQLite manifest before opening a data source', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-unbound-sqlite-manifest-'));
   try {
@@ -397,6 +420,21 @@ test('application composes an injected Sandbox runtime without requiring Docker 
       id: 'schema-snapshot.allowlisted.v1',
       version: '1.0.0'
     });
+    assert.equal(
+      application.workflowStateCapabilityBinding.bindingId,
+      'binding.legal-workflow-state-capabilities'
+    );
+    assert.deepEqual(application.workflowStateCapabilityBinding.runtimeWorkflowRef, {
+      id: 'workflow.legal-professional-query',
+      version: '1.0.0'
+    });
+    assert.equal(application.workflowStateCapabilityBinding.domainStateBindingCount, 13);
+    assert.equal(application.workflowStateCapabilityBinding.runtimeStateBindingCount, 12);
+    assert.equal(application.workflowStateCapabilityBinding.referencesRetained, true);
+    assert.equal(
+      JSON.stringify(application.workflowStateCapabilityBinding).includes(directory),
+      false
+    );
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });

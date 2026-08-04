@@ -457,6 +457,19 @@ test('boots the local application in explicit SQLite mode while demo remains the
     assert.equal(application.dataSourceSchemaBinding.runtime, 'sqlite');
     assert.equal(application.dataSourceSchemaBinding.selectedProfile.id, 'local.legal_cases');
     assert.equal(application.dataSourceSchemaBinding.selectedProfile.accessMode, 'read-only');
+    assert.equal(application.workflowStateCapabilityBinding.activeRuntime, 'sqlite');
+    assert.deepEqual(
+      application.workflowStateCapabilityBinding.activeDataSourceProfileRef,
+      {
+        bindingId: 'binding.legal-v1-data-sources',
+        bindingVersion: '1.0.0',
+        profileKey: 'sqlite-read-only',
+        id: 'local.legal_cases',
+        schemaVersion: 1,
+        canonicalSha256:
+          'sha256:f47dd6f99d28ee7c3d545375ae13e17bfc6dad34cbd4e715dceb68180d2c610f'
+      }
+    );
 
     const started = await application.service.start({
       userText: PROFESSIONAL_QUERY_TEXT,
