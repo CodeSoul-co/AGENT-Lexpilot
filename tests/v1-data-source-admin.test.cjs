@@ -110,6 +110,7 @@ test('returns a browsable allowlisted snapshot from the configured SQLite provid
     const result = await admin.validateProfile('local.legal_cases');
     assert.equal(result.status, 'verified');
     assert.deepEqual(result.initialSchemaSnapshot, {
+      contractRef: { id: 'schema-snapshot.allowlisted.v1', version: '1.0.0' },
       tables: [
         {
           name: 'labor_cases',
@@ -177,6 +178,7 @@ test('validates connection and whitelisted Schema while returning only safe rece
     schemaStatus: 'verified',
     schemaFingerprint: 'a'.repeat(64),
     initialSchemaSnapshot: {
+      contractRef: { id: 'schema-snapshot.allowlisted.v1', version: '1.0.0' },
       tables: [
         {
           name: 'labor_cases',
@@ -193,6 +195,7 @@ test('validates connection and whitelisted Schema while returning only safe rece
     credentialValuesExposed: false
   });
   assert.equal(Object.isFrozen(result.initialSchemaSnapshot), true);
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot.contractRef), true);
   assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables), true);
   assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables[0]), true);
   assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables[0].columns), true);

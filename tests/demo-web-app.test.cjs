@@ -118,6 +118,7 @@ async function withDataSourceAdminServer(run) {
         schemaStatus: 'verified',
         schemaFingerprint: 'a'.repeat(64),
         initialSchemaSnapshot: {
+          contractRef: { id: 'schema-snapshot.allowlisted.v1', version: '1.0.0' },
           tables: [
             {
               name: 'labor_cases',
@@ -222,6 +223,7 @@ test('exposes a credential-free data-source admin list and fixed validation acti
     assert.equal(validated.response.status, 200);
     assert.equal(validated.body.status, 'verified');
     assert.deepEqual(validated.body.initialSchemaSnapshot, {
+      contractRef: { id: 'schema-snapshot.allowlisted.v1', version: '1.0.0' },
       tables: [
         {
           name: 'labor_cases',

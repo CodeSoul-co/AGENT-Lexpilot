@@ -454,6 +454,9 @@ test('boots the local application in explicit SQLite mode while demo remains the
     });
     assert.equal(application.v1Descriptor.runtime, 'sqlite-readonly');
     assert.equal(application.v1Descriptor.hyphaSourceModified, false);
+    assert.equal(application.dataSourceSchemaBinding.runtime, 'sqlite');
+    assert.equal(application.dataSourceSchemaBinding.selectedProfile.id, 'local.legal_cases');
+    assert.equal(application.dataSourceSchemaBinding.selectedProfile.accessMode, 'read-only');
 
     const started = await application.service.start({
       userText: PROFESSIONAL_QUERY_TEXT,

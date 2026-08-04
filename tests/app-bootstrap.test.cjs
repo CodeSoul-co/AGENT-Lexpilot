@@ -240,6 +240,79 @@ test('application fails before composition when the Workspace/Execution manifest
   }
 });
 
+test('application fails before composition when the DataSource/Schema binding is missing', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-missing-data-source-binding-'));
+  try {
+    await assert.rejects(
+      createLocalLegalAgentApplication({
+        projectRoot,
+        dataSourceSchemaBindingPath: path.join(directory, 'missing.json'),
+        environment: {
+          LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+          LEGAL_SESSION_OWNER_ID: 'missing-binding-owner',
+          LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+          LEGAL_V1_RUNTIME: 'demo',
+          LEGAL_AGENT_PROVIDER: 'demo'
+        }
+      }),
+      (error) => error.code === 'DATA_SOURCE_SCHEMA_PROFILE_MISSING'
+    );
+    assert.equal(fs.existsSync(path.join(directory, 'sessions')), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('application rejects an unbound SQLite manifest before opening a data source', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-unbound-sqlite-manifest-'));
+  try {
+    await assert.rejects(
+      createLocalLegalAgentApplication({
+        projectRoot,
+        environment: {
+          LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+          LEGAL_SESSION_OWNER_ID: 'unbound-manifest-owner',
+          LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+          LEGAL_V1_RUNTIME: 'sqlite',
+          LEGAL_V1_SQLITE_MANIFEST: path.join(directory, 'private-unbound.json'),
+          LEGAL_AGENT_PROVIDER: 'demo'
+        }
+      }),
+      (error) => error.code === 'DATA_SOURCE_MANIFEST_NOT_BOUND'
+    );
+    assert.equal(fs.existsSync(path.join(directory, 'sessions')), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('application rejects an injected V1 runtime that does not match the selected binding', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-runtime-binding-drift-'));
+  try {
+    await assert.rejects(
+      createLocalLegalAgentApplication({
+        projectRoot,
+        v1Runtime: {
+          describe() {
+            return { runtime: 'sqlite-readonly', dataSource: 'private.unbound.source' };
+          }
+        },
+        environment: {
+          LEGAL_SESSION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+          LEGAL_SESSION_OWNER_ID: 'runtime-drift-owner',
+          LEGAL_SESSION_DATA_DIR: path.join(directory, 'sessions'),
+          LEGAL_V1_RUNTIME: 'demo',
+          LEGAL_AGENT_PROVIDER: 'demo'
+        }
+      }),
+      /runtime has drifted/
+    );
+    assert.equal(fs.existsSync(path.join(directory, 'sessions')), false);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('application composes an injected Sandbox runtime without requiring Docker configuration', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-sandbox-bootstrap-'));
   const sandboxRuntime = {
@@ -318,6 +391,12 @@ test('application composes an injected Sandbox runtime without requiring Docker 
     });
     assert.equal(application.workspaceExecutionBinding.hyphaExecutionEnvironmentValidated, true);
     assert.equal(JSON.stringify(application.workspaceExecutionBinding).includes(directory), false);
+    assert.equal(application.dataSourceSchemaBinding.runtime, 'demo');
+    assert.equal(application.dataSourceSchemaBinding.selectedProfile, null);
+    assert.deepEqual(application.dataSourceSchemaBinding.schemaSnapshotContractRef, {
+      id: 'schema-snapshot.allowlisted.v1',
+      version: '1.0.0'
+    });
   } finally {
     await application?.close?.();
     fs.rmSync(directory, { recursive: true, force: true });

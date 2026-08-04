@@ -33,6 +33,7 @@
 
 - 查询计划（参数化 SQL + 注释）先展示；SQLite/网络只读模式先用真实白名单 Schema 将受支持的脱敏自然语言映射为固定形状的参数化 `SELECT`，再由策略门校验单条语句、数据表、字段和绑定参数，用户确认后才执行。原始 SQL、未知模板和写入意图均关闭失败。SQLite 写入专用配置仅允许固定单行 `INSERT` / `UPDATE` / `DELETE` 模板，并强制进入 Hypha Human Review；多语句和 DDL 一律在数据库前拒绝；
 - 计划同时保存白名单范围内的 Schema 快照、Schema 指纹与计划哈希；确认时重新读取真实 Schema，发生漂移即在到达数据库前停止旧计划，并返回新增、移除或属性变化的表/字段清单；
+- DataSource/Schema Profile 由 `configs/capability-bindings/legal-v1-data-sources.json` 统一版本化：清单显式引用当前 DomainPack、SQLite 只读/受治理写入、PostgreSQL 只读和 MySQL 只读四份 manifest，并以规范化 JSON SHA-256 固定各自的引擎、权限、白名单和限制；初始 Schema 快照也携带 `schema-snapshot.allowlisted.v1@1.0.0` 契约引用。应用在读取数据库环境值或连接 Provider 前验证全部引用，并按当前 V1 runtime 只选择已登记的 manifest；缺失、未登记或任一内容漂移均关闭失败；
 - Schema 变化会在会话和网页中主动通知用户，并提供显式重新规划入口；重新规划只基于当前白名单 Schema 生成新计划，仍须再次人工确认，绝不会因重新规划而自动执行；漂移检测与重新规划同样适用于 SQLite、PostgreSQL 和 MySQL；
 - 计划、取消和执行操作写入只增不改的 SHA-256 哈希链日志；日志损坏或篡改时停止读取与追加，日志写入失败时不发布执行结果；旧版 Demo 日志可读，并由首条新版记录建立兼容锚点；
 - 产物（表格/图表/Markdown 分析文档）包含内容 SHA-256，可下载并可一键导出 PDF；Markdown 分析文档在发布前写入 Hypha 本地 Artifact Store 并回读校验，持久化失败时停止发布结果；执行日志关联计划、Schema、执行 Provider 与产物存储回执；
@@ -86,7 +87,7 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 密钥不要写入仓库。真实 Provider 只替换法律自检中的结构化事实推理，隐私门、输出校验、法规检索和禁止生成法律结论等边界仍然生效。
 
-可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。当前真实数据模式开放两个受审计的受约束 Text2SQL 模板：一是按年度统计未签劳动合同案例的案件数、胜诉率和赔偿中位数，二是仅统计案件数和胜诉率。两者均接受一个年份、最多十年的年份范围，或确定性配置的“近三年”；第二个模板只读取 `year`、`issue_type`、`outcome`，不会读取赔偿字段。网页结果表和导出 PDF 也只按照查询计划中的输出契约展示白名单统计列，未知字段不会直接渲染。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少相应模板所需字段的 Schema 会关闭失败。
+DataSource/Schema 能力绑定位于 `configs/capability-bindings/legal-v1-data-sources.json`，可选的 SQLite 只读配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。`LEGAL_V1_SQLITE_MANIFEST` 只能选择能力绑定中已登记的只读或受治理写入清单，任意私有路径或临时清单都会在数据库打开前拒绝。当前真实数据模式开放两个受审计的受约束 Text2SQL 模板：一是按年度统计未签劳动合同案例的案件数、胜诉率和赔偿中位数，二是仅统计案件数和胜诉率。两者均接受一个年份、最多十年的年份范围，或确定性配置的“近三年”；第二个模板只读取 `year`、`issue_type`、`outcome`，不会读取赔偿字段。网页结果表和导出 PDF 也只按照查询计划中的输出契约展示白名单统计列，未知字段不会直接渲染。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少相应模板所需字段的 Schema 会关闭失败。
 
 只读 SQL 使用 `constrained-readonly-v2` 策略重新计算计划哈希。策略在 Provider 执行前隔离字符串字面量并拒绝 SQL 注释、带引号标识符、控制字符、未闭合字符串、CTE、子查询、JOIN、集合操作、`SELECT INTO` 及 SQLite/PostgreSQL/MySQL 的扩展命令；参数仅允许合法名称和有限数值、字符串、布尔值或 `null`。策略版本变化会使旧确认计划失效并要求重新规划。
 
@@ -154,7 +155,7 @@ npm run verify   # verify:baseline + verify:domain + verify:replay + Package Tes
 npm test         # 仅 Package Test
 ```
 
-完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
+完整 `verify` 依次检查：本地 Hypha 仓库是否等于锁定 commit（或仅在业务锁定依赖范围外继续前进）；所需 Hypha 构建产物是否存在；Legal DomainPack 能否通过 Hypha 校验并编译为 FSM；Workspace/Execution 与 DataSource/Schema 项目侧能力绑定能否通过引用、指纹和安全契约校验；Package Test 是否通过。若 Domain、Inference、Kernel 等依赖范围发生变化，验证会主动停止，必须先重新只读审计兼容性，不能放宽门禁。
 
 `verify` 还会加载 `configs/replay-fixtures/` 中两份版本化、SHA-256 固定的 V0/V1 脱敏合成 Fixture，通过 Hypha `ReplayEngine` / `RegressionRunner` 将当前业务路径与黄金事件、状态路径、策略决策、工具调用和最终输出逐项比较，并在临时目录执行一次清单约束的恢复复验。Fixture 不保存用户原文、会话标识、客户数据或凭证；缺失、篡改、PII/Secret 检测或业务输出漂移均会使验证失败。
 

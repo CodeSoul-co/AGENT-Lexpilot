@@ -3,6 +3,7 @@ const { AgentBackedConversationService } = require('../agent/agent-backed-conver
 const { createAgentInferenceProvider } = require('../agent/inference-provider.cjs');
 const { createLegalComplianceAgent } = require('../agent/legal-compliance-agent.cjs');
 const { createDataSourceAdmin } = require('../v1/data-source-admin.cjs');
+const { loadDataSourceSchemaProfile } = require('../v1/data-source-schema-profile.cjs');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
@@ -56,6 +57,21 @@ function resolveExecutionLogFilePath(projectRoot, configuredDirectory, configure
   return path.join(projectRoot, 'data', 'web-demo', 'v1-execution-log.jsonl');
 }
 
+function assertV1RuntimeBinding(v1Runtime, bindingReceipt) {
+  if (!v1Runtime || typeof v1Runtime.describe !== 'function') {
+    throw new Error('V1 runtime must expose a descriptor for DataSource binding validation.');
+  }
+  const descriptor = v1Runtime.describe();
+  if (
+    !descriptor ||
+    descriptor.runtime !== bindingReceipt.expectedRuntime ||
+    (bindingReceipt.selectedProfile !== null &&
+      descriptor.dataSource !== bindingReceipt.selectedProfile.id)
+  ) {
+    throw new Error('V1 runtime has drifted from the selected DataSource/Schema Profile.');
+  }
+}
+
 function createLocalLegalAgent(options = {}) {
   const environment = options.environment ?? process.env;
   const projectRoot = path.resolve(options.projectRoot ?? path.join(__dirname, '..', '..'));
@@ -99,6 +115,17 @@ async function createLocalLegalAgentApplication(options = {}) {
     manifestPath: options.workspaceExecutionManifestPath,
     domainPackPath: options.domainPackPath
   });
+  const dataSourceSchemaProfile = loadDataSourceSchemaProfile({
+    projectRoot,
+    bindingPath: options.dataSourceSchemaBindingPath,
+    domainPackPath: options.domainPackPath
+  });
+  const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
+  const dataSourceSchemaBinding = dataSourceSchemaProfile.resolveRuntime({
+    runtime: v1Mode,
+    configuredManifest:
+      v1Mode === 'sqlite' ? environment.LEGAL_V1_SQLITE_MANIFEST : undefined
+  });
   const ownerId = requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.ownerId);
   const auditActorKey = parseBase64EncryptionKey(
     requiredEnvironmentValue(environment, ENVIRONMENT_KEYS.encryptionKey)
@@ -111,7 +138,6 @@ async function createLocalLegalAgentApplication(options = {}) {
   } finally {
     auditActorKey.fill(0);
   }
-  const v1Mode = environment[ENVIRONMENT_KEYS.v1Runtime]?.trim() || 'demo';
   const sandboxEnabled =
     options.sandboxCoordinator !== undefined ||
     options.sandboxRuntime !== undefined ||
@@ -125,29 +151,27 @@ async function createLocalLegalAgentApplication(options = {}) {
     if (v1Mode === 'demo') {
       v1Runtime = createV1DemoQueryRuntime();
     } else if (v1Mode === 'sqlite') {
-      const configuredManifest = environment.LEGAL_V1_SQLITE_MANIFEST?.trim();
-      const manifestPath = configuredManifest
-        ? path.resolve(projectRoot, configuredManifest)
-        : undefined;
       const dataSource =
         options.v1DataSource ??
-        createConfiguredSQLiteDataSource({ env: environment, projectRoot, manifestPath });
+        createConfiguredSQLiteDataSource({
+          env: environment,
+          projectRoot,
+          manifestPath: dataSourceSchemaBinding.manifestPath
+        });
       v1Runtime = await createV1SQLQueryRuntime({ dataSource });
     } else if (v1Mode === 'postgresql' || v1Mode === 'mysql') {
-      const manifestPath = path.join(
-        projectRoot,
-        'configs',
-        'data-sources',
-        `legal-cases.${v1Mode}.json`
-      );
       const dataSource =
         options.v1DataSource ??
-        createConfiguredNetworkDataSource({ env: environment, manifestPath });
+        createConfiguredNetworkDataSource({
+          env: environment,
+          manifestPath: dataSourceSchemaBinding.manifestPath
+        });
       v1Runtime = await createV1SQLQueryRuntime({ dataSource });
     } else {
       throw new Error('LEGAL_V1_RUNTIME must be demo, sqlite, postgresql, or mysql.');
     }
   }
+  assertV1RuntimeBinding(v1Runtime, dataSourceSchemaBinding.receipt);
   const executionLogFilePath = resolveExecutionLogFilePath(
     projectRoot,
     options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],
@@ -241,6 +265,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     sandboxCoordinator: sandboxCoordinator ?? null,
     sandboxDescriptor: sandboxCoordinator?.describe() ?? { available: false },
     dataSourceAdmin,
+    dataSourceSchemaBinding: dataSourceSchemaBinding.receipt,
     workspaceExecutionBinding: workspaceExecutionProfile.receipt,
     executionLogFilePath,
     artifactDirectory,

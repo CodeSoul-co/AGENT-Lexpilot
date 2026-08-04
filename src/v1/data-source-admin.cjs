@@ -14,6 +14,13 @@ const PROFILE_FILES = Object.freeze([
   Object.freeze({ engine: 'mysql', fileName: 'legal-cases.mysql.json' })
 ]);
 const SAFE_SCHEMA_TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9_ (),.\[\]-]{0,127}$/;
+const INITIAL_SCHEMA_SNAPSHOT_CONTRACT = Object.freeze({
+  id: 'schema-snapshot.allowlisted.v1',
+  version: '1.0.0',
+  tableAttributes: Object.freeze(['name']),
+  columnAttributes: Object.freeze(['name', 'type', 'nullable', 'primaryKeyPosition']),
+  providerMetadataExposed: false
+});
 
 class DataSourceAdminError extends Error {
   constructor(code, message) {
@@ -77,6 +84,10 @@ function createSafeSchemaSnapshot(snapshot, profile) {
   }
 
   return Object.freeze({
+    contractRef: Object.freeze({
+      id: INITIAL_SCHEMA_SNAPSHOT_CONTRACT.id,
+      version: INITIAL_SCHEMA_SNAPSHOT_CONTRACT.version
+    }),
     tables: Object.freeze([
       Object.freeze({
         name: schema.tableName,
@@ -258,6 +269,7 @@ function createDataSourceAdmin(options = {}) {
 
 module.exports = {
   DataSourceAdminError,
+  INITIAL_SCHEMA_SNAPSHOT_CONTRACT,
   PROFILE_FILES,
   createDataSourceAdmin
 };

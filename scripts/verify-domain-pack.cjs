@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { loadHyphaDomain } = require('./hypha-paths.cjs');
+const { loadDataSourceSchemaProfile } = require('../src/v1/data-source-schema-profile.cjs');
 const { loadWorkspaceExecutionProfile } = require('../src/v1/workspace-execution-profile.cjs');
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
     taskSchemaId: 'task.legal-self-check'
   });
   const workspaceExecution = loadWorkspaceExecutionProfile({ projectRoot }).receipt;
+  const dataSourceSchema = loadDataSourceSchemaProfile({ projectRoot }).receipt;
 
   console.log(
     JSON.stringify(
@@ -28,7 +30,10 @@ async function main() {
         harnessedSystem: `${compiled.harnessedSystem.id}@${compiled.harnessedSystem.version}`,
         workspaceProfile: `${workspaceExecution.workspaceProfileRef.id}@${workspaceExecution.workspaceProfileRef.version}`,
         executionProfile: `${workspaceExecution.executionProfileRef.id}@${workspaceExecution.executionProfileRef.version}`,
-        executionProfileValidated: workspaceExecution.hyphaExecutionEnvironmentValidated
+        executionProfileValidated: workspaceExecution.hyphaExecutionEnvironmentValidated,
+        dataSourceSchemaBinding: `${dataSourceSchema.bindingId}@${dataSourceSchema.bindingVersion}`,
+        dataSourceProfileCount: dataSourceSchema.profiles.length,
+        schemaSnapshotContract: `${dataSourceSchema.schemaSnapshotContractRef.id}@${dataSourceSchema.schemaSnapshotContractRef.version}`
       },
       null,
       2

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "id": "binding.legal-v1-data-sources",
+  "version": "1.0.0",
+  "domainPackRef": {
+    "id": "domain.legal-compliance.v0-v1",
+    "version": "0.16.0"
+  },
+  "schemaSnapshotContract": {
+    "id": "schema-snapshot.allowlisted.v1",
+    "version": "1.0.0",
+    "tableAttributes": ["name"],
+    "columnAttributes": ["name", "type", "nullable", "primaryKeyPosition"],
+    "providerMetadataExposed": false
+  },
+  "profiles": [
+    {
+      "profileKey": "sqlite-read-only",
+      "runtime": "sqlite",
+      "defaultForRuntime": true,
+      "manifest": "configs/data-sources/legal-cases.sqlite.json",
+      "manifestRef": {
+        "id": "local.legal_cases",
+        "schemaVersion": 1,
+        "engine": "sqlite",
+        "accessMode": "read-only",
+        "canonicalSha256": "sha256:f47dd6f99d28ee7c3d545375ae13e17bfc6dad34cbd4e715dceb68180d2c610f"
+      }
+    },
+    {
+      "profileKey": "sqlite-governed-write",
+      "runtime": "sqlite",
+      "defaultForRuntime": false,
+      "manifest": "configs/data-sources/legal-cases-write.sqlite.json",
+      "manifestRef": {
+        "id": "local.legal_cases.write",
+        "schemaVersion": 1,
+        "engine": "sqlite",
+        "accessMode": "read-write",
+        "canonicalSha256": "sha256:9874d54cdf40076749ef76d6c3ffaeefe2012a0374334a1acdca582d40ef1047"
+      }
+    },
+    {
+      "profileKey": "postgresql-read-only",
+      "runtime": "postgresql",
+      "defaultForRuntime": true,
+      "manifest": "configs/data-sources/legal-cases.postgresql.json",
+      "manifestRef": {
+        "id": "network.legal_cases.postgresql",
+        "schemaVersion": 1,
+        "engine": "postgresql",
+        "accessMode": "read-only",
+        "canonicalSha256": "sha256:83b6a4fd8469a1e815e6ce8a01cb4f10180e8f3a2df896acf1e414dc3e41bfc0"
+      }
+    },
+    {
+      "profileKey": "mysql-read-only",
+      "runtime": "mysql",
+      "defaultForRuntime": true,
+      "manifest": "configs/data-sources/legal-cases.mysql.json",
+      "manifestRef": {
+        "id": "network.legal_cases.mysql",
+        "schemaVersion": 1,
+        "engine": "mysql",
+        "accessMode": "read-only",
+        "canonicalSha256": "sha256:0f5aefe73feaf2987b9d8913a6f7df8bd7c097ff1bed5f6b33a90cc4d4074a4e"
+      }
+    }
+  ]
+}
