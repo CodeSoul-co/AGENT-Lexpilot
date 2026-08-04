@@ -1,4 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
+const v1Presentation = globalThis.LexPilotV1Presentation;
+if (!v1Presentation) throw new Error('V1 presentation module failed to load.');
 const elements = {
   characterCount: $('#character-count'), composer: $('#composer'), consent: $('#privacy-consent'),
   conversation: $('#conversation'), deleteSession: $('#delete-session'), domainLabel: $('#domain-label'),
@@ -161,14 +163,20 @@ function renderFacts(result) {
   elements.factsList.replaceChildren();
   if (result.taskType === 'professional_data_query' && result.v1) {
     const writePlan = result.v1.plan?.readOnly === false;
-    elements.domainLabel.textContent = writePlan ? '业务案例库' : '演示案例库';
-    const counts = result.v1.result
-      ? [String(result.v1.result.sourceCaseCount), String(result.v1.result.matchedCaseCount)]
-      : result.status === 'awaiting_confirmation'
-        ? ['待执行', '待执行']
-        : result.status === 'cancelled'
-          ? ['已取消', '已取消']
-          : [String(result.v1.result?.sourceCaseCount ?? 0), String(result.v1.result?.matchedCaseCount ?? 0)];
+    const presentation = writePlan ? null : v1Presentation.buildPresentation(result.v1);
+    elements.domainLabel.textContent = writePlan || !presentation?.isDemo
+      ? '业务案例库'
+      : '演示案例库';
+    const pendingValue = result.status === 'cancelled' ? '已取消' : '待执行';
+    const sourceCount = Number.isSafeInteger(presentation?.counts.sourceCount)
+      ? String(presentation.counts.sourceCount)
+      : pendingValue;
+    const matchedCount = Number.isSafeInteger(presentation?.counts.matchedCount)
+      ? String(presentation.counts.matchedCount)
+      : pendingValue;
+    const groupCount = Number.isSafeInteger(presentation?.counts.groupCount)
+      ? String(presentation.counts.groupCount)
+      : pendingValue;
     const entries = writePlan
       ? [
           ['数据源', result.v1.schema?.dataSource ?? '已配置'],
@@ -178,12 +186,13 @@ function renderFacts(result) {
           ['影响行数', String(result.v1.result?.affectedRows ?? '待执行')]
         ]
       : [
-      ['数据源', result.v1.schema?.displayName ?? '未加载'],
-      ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
-      ['权限', result.v1.safety?.readOnly ? '只读' : '已拒绝'],
-      ['案例总量', counts[0]],
-      ['本次匹配', counts[1]]
-    ];
+          ['数据源', presentation.dataSourceName],
+          ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
+          ['权限', result.v1.safety?.readOnly ? '只读' : '已拒绝'],
+          ...(presentation.isDemo
+            ? [['案例总量', sourceCount], ['本次匹配', matchedCount]]
+            : [['本次匹配', matchedCount], ['汇总年度', groupCount]])
+        ];
     for (const [key, value] of entries) {
       const row = node('div'); row.append(node('dt', '', key), node('dd', '', value)); elements.factsList.append(row);
     }
@@ -303,18 +312,19 @@ function addV1Result(result) {
     elements.conversation.append(board);
     return;
   }
+  const presentation = v1Presentation.buildPresentation(data);
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
-  const titleWrap = node('div'); titleWrap.append(node('span', 'message-label', '查询计划'), node('h3', '', '近三年案例统计分析'));
+  const titleWrap = node('div'); titleWrap.append(node('span', 'message-label', '查询计划'), node('h3', '', presentation.title));
   heading.append(titleWrap, node('span', 'verified-badge', '✓ Schema 已校验'));
   const plan = node('div', 'sql-panel'); plan.append(node('div', 'sql-toolbar', '只读 SQL 计划 · 已确认执行'), node('pre', '', data.plan.sql));
   const tableWrap = node('div', 'table-wrap');
   const table = node('table', 'data-table');
-  const thead = node('thead'); const header = node('tr'); ['年份', '案例数', '劳动者胜诉率', '赔偿中位数'].forEach((label) => header.append(node('th', '', label))); thead.append(header);
+  const thead = node('thead'); const header = node('tr'); presentation.table.columns.forEach((column) => header.append(node('th', '', column.label))); thead.append(header);
   const tbody = node('tbody');
-  for (const row of data.result.rows) {
+  for (const values of presentation.table.rows) {
     const tr = node('tr');
-    [row.year, row.case_count, `${row.employee_win_rate}%`, `¥${row.median_compensation.toLocaleString('zh-CN')}`].forEach((value) => tr.append(node('td', '', String(value))));
+    values.forEach((value) => tr.append(node('td', '', value)));
     tbody.append(tr);
   }
   table.append(thead, tbody); tableWrap.append(table);
@@ -336,7 +346,7 @@ function addV1Result(result) {
   pdf.addEventListener('click', () => exportV1Pdf(data));
   actions.append(download, pdf);
   footer.append(note, actions);
-  const boundary = node('div', 'demo-boundary', `匿名合成演示案例共 ${data.result.sourceCaseCount} 条，本次匹配 ${data.result.matchedCaseCount} 条，并按 ${data.result.resultGroupCount} 个年度汇总。`);
+  const boundary = node('div', 'demo-boundary', presentation.summary);
   board.append(heading, plan, tableWrap, chart, footer, boundary); elements.conversation.append(board);
   registerArtifact(data.artifact);
 }
@@ -347,10 +357,13 @@ function addV1PlanCard(result) {
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
   const writePlan = data.plan.readOnly === false;
+  const planTitle = writePlan
+    ? '单案例数据库变更'
+    : v1Presentation.buildPresentation(data).title;
   const titleWrap = node('div');
   titleWrap.append(
     node('span', 'message-label', writePlan ? '写入计划' : '查询计划'),
-    node('h3', '', writePlan ? '单案例数据库变更' : '近三年案例统计分析')
+    node('h3', '', planTitle)
   );
   heading.append(titleWrap, node('span', 'verified-badge', '✓ Schema 已校验'));
   const toolbarText = writePlan
@@ -533,6 +546,7 @@ function buildPdfFromJpeg(jpegBytes, imgWidth, imgHeight) {
 }
 
 function renderV1ReportCanvas(data, executionMs) {
+  const presentation = v1Presentation.buildPresentation(data);
   const width = 1240;
   const pad = 64;
   const contentWidth = width - pad * 2;
@@ -555,10 +569,10 @@ function renderV1ReportCanvas(data, executionMs) {
   measure.font = font(15, 'normal', 'Consolas, monospace');
   const sqlLines = (data.plan?.sql ?? '').split('\n');
   const rowHeight = 44;
-  const tableRows = (data.result?.rows ?? []).length + 1;
+  const tableRows = presentation.table.rows.length + 1;
   const chartHeight = 300;
   measure.font = font(15);
-  const disclaimerLines = wrapLines(measure, '本结果基于匿名合成演示数据生成，仅用于产品功能演示，不代表真实案例库统计或法律意见。', contentWidth);
+  const disclaimerLines = wrapLines(measure, presentation.disclaimer, contentWidth);
   const height =
     pad + 44 + 30 + 26 * 3 + 24 + // 标题与元信息
     40 + sqlLines.length * 24 + 48 + // SQL 区块
@@ -572,14 +586,14 @@ function renderV1ReportCanvas(data, executionMs) {
   let y = pad;
   // 标题
   ctx.fillStyle = '#123f31'; ctx.font = font(30, 'bold');
-  ctx.fillText('近三年未签劳动合同案例演示分析', pad, y + 8);
+  ctx.fillText(presentation.title, pad, y + 8);
   y += 52;
   // 元信息
   ctx.fillStyle = '#4a5d55'; ctx.font = font(15);
   const meta = [
-    `数据源：${data.schema?.displayName ?? '匿名劳动争议案例库'}（${data.result?.sourceCaseCount ?? 0} 条匿名合成演示案例）`,
+    `数据源：${presentation.sourceDescription}`,
     `生成时间：${new Date().toLocaleString('zh-CN')} · 执行耗时：${Number.isFinite(executionMs) ? `${executionMs} ms` : '演示执行'}`,
-    `本次查询匹配：${data.result?.matchedCaseCount ?? 0} 条，按 ${data.result?.resultGroupCount ?? 0} 个年度汇总 · 只读计划已经人工确认`
+    `${presentation.summary} · 只读计划已经人工确认`
   ];
   for (const line of meta) { ctx.fillText(line, pad, y); y += 26; }
   y += 24;
@@ -596,7 +610,7 @@ function renderV1ReportCanvas(data, executionMs) {
   // 表格
   ctx.fillStyle = '#123f31'; ctx.font = font(18, 'bold');
   ctx.fillText('查询结果', pad, y); y += 12;
-  const columns = ['年份', '案例数', '劳动者胜诉率', '赔偿中位数'];
+  const columns = presentation.table.columns.map((column) => column.label);
   const colWidth = contentWidth / columns.length;
   const drawRow = (values, header) => {
     ctx.fillStyle = header ? '#e4f0ea' : '#ffffff';
@@ -607,8 +621,8 @@ function renderV1ReportCanvas(data, executionMs) {
     y += rowHeight;
   };
   drawRow(columns, true);
-  for (const row of data.result?.rows ?? []) {
-    drawRow([row.year, row.case_count, `${row.employee_win_rate}%`, `¥${row.median_compensation.toLocaleString('zh-CN')}`], false);
+  for (const values of presentation.table.rows) {
+    drawRow(values, false);
   }
   y += 32;
   // 图表

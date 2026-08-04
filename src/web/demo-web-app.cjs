@@ -8,6 +8,7 @@ const MAX_SANDBOX_JSON_BODY_BYTES = 24 * 1024 * 1024;
 const STATIC_FILES = Object.freeze({
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/v1-presentation.js': ['v1-presentation.js', 'text/javascript; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8']
 });

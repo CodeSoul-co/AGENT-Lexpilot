@@ -224,6 +224,7 @@ test('Sandbox request body has a dedicated bounded upload limit', async () => {
 test('serves the local web shell and its fixed static assets', async () => {
   await withServer(async (baseUrl) => {
     const page = await fetch(`${baseUrl}/`);
+    const presentationScript = await fetch(`${baseUrl}/v1-presentation.js`);
     const script = await fetch(`${baseUrl}/app.js`);
     const styles = await fetch(`${baseUrl}/styles.css`);
 
@@ -237,12 +238,18 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, /data-mode="sandbox"/);
     assert.match(pageText, /id="sandbox-language"/);
     assert.match(pageText, /id="sandbox-files"/);
+    assert.match(pageText, /src="\/v1-presentation\.js"/);
+    assert.equal(presentationScript.status, 200);
+    assert.match(presentationScript.headers.get('content-type'), /text\/javascript/);
+    const presentationText = await presentationScript.text();
+    assert.match(presentationText, /LexPilotV1Presentation/);
+    assert.match(presentationText, /expectedOutput/);
+    assert.match(presentationText, /sourceRowCount/);
     assert.equal(script.status, 200);
     assert.match(script.headers.get('content-type'), /text\/javascript/);
     const scriptText = await script.text();
     assert.match(scriptText, /privacyPolicyVersion/);
-    assert.match(scriptText, /sourceCaseCount/);
-    assert.match(scriptText, /matchedCaseCount/);
+    assert.match(scriptText, /v1Presentation\.buildPresentation/);
     assert.match(scriptText, /mode === 'demo'/);
     assert.match(scriptText, /submitSandboxScript/);
     assert.match(scriptText, /confirmSandboxExecution/);
