@@ -11,6 +11,9 @@ const { LegalSelfCheckConversationService } = require('../src/v0/conversation-se
 const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
 const { createDemoExecutionLog } = require('../src/v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../src/v1/execution-artifact-repository.cjs');
+const {
+  CASE_COUNT_WIN_RATE_TEMPLATE_ID
+} = require('../src/v1/constrained-text2sql-planner.cjs');
 const { createSQLiteDataSource } = require('../src/v1/sqlite-data-source.cjs');
 const { createV1SQLiteQueryRuntime } = require('../src/v1/sqlite-query-runtime.cjs');
 
@@ -112,6 +115,52 @@ test('plans and executes the supported template against the configured SQLite da
   }
 });
 
+test('plans and executes the independent case-count and win-rate template', async () => {
+  const fixture = createFixture();
+  const queryText = '查询案例库近三年未签劳动合同案件数量和胜诉率。';
+  try {
+    const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
+    const planned = runtime.plan(runtimeInput(queryText));
+
+    assert.equal(planned.status, 'awaiting_confirmation');
+    assert.equal(planned.plan.templateId, CASE_COUNT_WIN_RATE_TEMPLATE_ID);
+    assert.equal(planned.plan.sql.includes('compensation_amount'), false);
+    assert.deepEqual(planned.plan.semanticQuery.selectedColumns, ['year', 'outcome']);
+    assert.deepEqual(planned.plan.expectedOutput.columns, [
+      'year',
+      'case_count',
+      'employee_win_rate'
+    ]);
+    assert.equal(planned.plan.executionSteps.length, 3);
+
+    const executed = await runtime.execute({
+      ...runtimeInput(queryText),
+      expectedPlanHash: planned.plan.planHash,
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
+    });
+
+    assert.equal(executed.status, 'completed');
+    assert.deepEqual(executed.result.columns, [
+      'year',
+      'case_count',
+      'employee_win_rate'
+    ]);
+    assert.deepEqual(executed.result.rows, [
+      { year: 2023, case_count: 2, employee_win_rate: 50 },
+      { year: 2024, case_count: 2, employee_win_rate: 100 },
+      { year: 2025, case_count: 1, employee_win_rate: 100 }
+    ]);
+    assert.equal(executed.result.sourceRowCount, 5);
+    assert.equal(executed.artifact.fileName, '案件数量与胜诉率分析.md');
+    assert.match(executed.artifact.content, /案件数量与胜诉率分析/);
+    assert.equal(executed.artifact.content.includes('赔偿'), false);
+    assert.equal(executed.artifact.content.includes('¥'), false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('binds an explicit year range into parameters and limits the executed rows', async () => {
   const fixture = createFixture();
   const queryText = '统计2024年至2025年案例库中未签劳动合同案件的胜诉率和赔偿中位数。';
@@ -151,6 +200,27 @@ test('stops execution when the natural-language range changes after confirmation
     const planned = runtime.plan(runtimeInput());
     const changed = await runtime.execute({
       ...runtimeInput('统计2024年至2025年未签劳动合同案件的胜诉率和赔偿中位数。'),
+      expectedPlanHash: planned.plan.planHash,
+      expectedSchemaFingerprint: planned.plan.schemaFingerprint,
+      expectedSchemaSnapshot: planned.plan.schemaSnapshot
+    });
+
+    assert.equal(changed.status, 'rejected');
+    assert.equal(changed.errorCode, 'PLAN_DRIFT');
+    assert.equal(changed.executionAttempted, false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('stops execution when the selected template changes after confirmation', async () => {
+  const fixture = createFixture();
+  const countQuery = '统计近三年未签劳动合同案件数量和胜诉率。';
+  try {
+    const runtime = await createV1SQLiteQueryRuntime({ dataSource: fixture.dataSource });
+    const planned = runtime.plan(runtimeInput(countQuery));
+    const changed = await runtime.execute({
+      ...runtimeInput(PROFESSIONAL_QUERY_TEXT),
       expectedPlanHash: planned.plan.planHash,
       expectedSchemaFingerprint: planned.plan.schemaFingerprint,
       expectedSchemaSnapshot: planned.plan.schemaSnapshot

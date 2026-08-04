@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  CASE_COUNT_WIN_RATE_TEMPLATE_ID,
   DEFAULT_QUERY_TEXT,
   TEMPLATE_ID,
   planConstrainedText2Sql
@@ -36,6 +37,39 @@ test('generates a parameterized read-only template from the allowlisted Schema',
     issue_type: '未签劳动合同'
   });
   assert.deepEqual(result.semanticQuery.yearRange, [2024, 2025]);
+  assert.deepEqual(result.semanticQuery.aggregations, ['count', 'ratio', 'median']);
+  assert.deepEqual(result.expectedOutput.columns, [
+    'year',
+    'case_count',
+    'employee_win_rate',
+    'median_compensation'
+  ]);
+  assert.equal(result.executionSteps.length, 3);
+});
+
+test('generates an independent case-count and win-rate template without compensation access', () => {
+  const result = plan('查询案例库近三年未签劳动合同案件数量和胜诉率。');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.templateId, CASE_COUNT_WIN_RATE_TEMPLATE_ID);
+  assert.match(result.sql, /^SELECT year, outcome$/m);
+  assert.equal(result.sql.includes('compensation_amount'), false);
+  assert.deepEqual(result.semanticQuery.selectedColumns, ['year', 'outcome']);
+  assert.deepEqual(result.semanticQuery.metrics, ['case_count', 'employee_win_rate']);
+  assert.deepEqual(result.semanticQuery.aggregations, ['count', 'ratio']);
+  assert.deepEqual(result.expectedOutput.columns, [
+    'year',
+    'case_count',
+    'employee_win_rate'
+  ]);
+  assert.equal(result.expectedOutput.artifactFileName, '案件数量与胜诉率分析.md');
+});
+
+test('does not reinterpret an unspecified compensation amount metric as a median', () => {
+  const result = plan('统计2025年未签劳动合同案件的胜诉率和赔偿金额。');
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'QUERY_TEMPLATE_NOT_SUPPORTED');
 });
 
 test('maps the bounded near-three-years phrase to deterministic configured years', () => {
@@ -72,12 +106,20 @@ test('rejects writes, raw SQL, unknown templates, and ambiguous ranges', () => {
 });
 
 test('fails closed when required Schema columns or a year range are missing', () => {
-  const missingColumn = plan(DEFAULT_QUERY_TEXT, {
+  const schemaWithoutCompensation = {
     ...SCHEMA,
     columns: SCHEMA.columns.filter((column) => column.name !== 'compensation_amount')
-  });
+  };
+  const missingColumn = plan(DEFAULT_QUERY_TEXT, schemaWithoutCompensation);
   assert.equal(missingColumn.code, 'TEXT2SQL_SCHEMA_UNSUPPORTED');
   assert.deepEqual(missingColumn.missingColumns, ['compensation_amount']);
+
+  const independentTemplate = plan(
+    '统计2025年未签劳动合同案件数量和胜诉率。',
+    schemaWithoutCompensation
+  );
+  assert.equal(independentTemplate.ok, true);
+  assert.equal(independentTemplate.templateId, CASE_COUNT_WIN_RATE_TEMPLATE_ID);
 
   const missingRange = plan('统计未签劳动合同案件的胜诉率和赔偿中位数。');
   assert.equal(missingRange.code, 'TEXT2SQL_YEAR_RANGE_REQUIRED');

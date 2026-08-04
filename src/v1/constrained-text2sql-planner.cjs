@@ -1,4 +1,9 @@
-const TEMPLATE_ID = 'labor-case-yearly-outcome-statistics.v1';
+const TEMPLATE_IDS = Object.freeze({
+  OUTCOME_AND_COMPENSATION: 'labor-case-yearly-outcome-statistics.v1',
+  CASE_COUNT_AND_WIN_RATE: 'labor-case-yearly-count-win-rate.v1'
+});
+const TEMPLATE_ID = TEMPLATE_IDS.OUTCOME_AND_COMPENSATION;
+const CASE_COUNT_WIN_RATE_TEMPLATE_ID = TEMPLATE_IDS.CASE_COUNT_AND_WIN_RATE;
 const DEFAULT_START_YEAR = 2023;
 const DEFAULT_END_YEAR = 2025;
 const DEFAULT_QUERY_TEXT = '统计近三年案例库中未签劳动合同案件的胜诉率和赔偿中位数。';
@@ -7,22 +12,54 @@ const DEFAULT_QUERY_PARAMETERS = Object.freeze({
   end_year: DEFAULT_END_YEAR,
   issue_type: '未签劳动合同'
 });
-const REQUIRED_COLUMNS = Object.freeze([
-  'year',
-  'issue_type',
-  'outcome',
-  'compensation_amount'
-]);
+const COMMON_REQUIRED_COLUMNS = Object.freeze(['year', 'issue_type', 'outcome']);
+const REQUIRED_COLUMNS = Object.freeze([...COMMON_REQUIRED_COLUMNS, 'compensation_amount']);
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const WRITE_PATTERN =
   /\b(?:insert|update|delete|drop|alter|truncate|create|replace|grant|revoke)\b|新增|写入|修改|删除|清空|建表/i;
 const RAW_SQL_PATTERN = /\b(?:select|from|where|join|union|pragma|attach|detach)\b|;/i;
+const ISSUE_PATTERN = /未签.{0,4}劳动合同/;
+const WIN_RATE_PATTERN = /胜诉率/;
+const COMPENSATION_PATTERN = /赔偿(?:金额)?.{0,4}中位数/;
+const CASE_COUNT_PATTERN = /(?:案件|案例)(?:总数|数量|数)/;
+
+const TEMPLATES = Object.freeze({
+  [TEMPLATE_IDS.OUTCOME_AND_COMPENSATION]: Object.freeze({
+    templateId: TEMPLATE_IDS.OUTCOME_AND_COMPENSATION,
+    requiredColumns: REQUIRED_COLUMNS,
+    selectedColumns: Object.freeze(['year', 'outcome', 'compensation_amount']),
+    metrics: Object.freeze(['case_count', 'employee_win_rate', 'median_compensation']),
+    resultColumns: Object.freeze([
+      'year',
+      'case_count',
+      'employee_win_rate',
+      'median_compensation'
+    ]),
+    aggregations: Object.freeze(['count', 'ratio', 'median']),
+    artifactFileName: '案例统计分析.md',
+    explanation(yearRange) {
+      return `按 ${yearRange.startYear}-${yearRange.endYear} 年读取未签劳动合同案例，再计算案例数、劳动者胜诉率和胜诉赔偿中位数。`;
+    }
+  }),
+  [TEMPLATE_IDS.CASE_COUNT_AND_WIN_RATE]: Object.freeze({
+    templateId: TEMPLATE_IDS.CASE_COUNT_AND_WIN_RATE,
+    requiredColumns: COMMON_REQUIRED_COLUMNS,
+    selectedColumns: Object.freeze(['year', 'outcome']),
+    metrics: Object.freeze(['case_count', 'employee_win_rate']),
+    resultColumns: Object.freeze(['year', 'case_count', 'employee_win_rate']),
+    aggregations: Object.freeze(['count', 'ratio']),
+    artifactFileName: '案件数量与胜诉率分析.md',
+    explanation(yearRange) {
+      return `按 ${yearRange.startYear}-${yearRange.endYear} 年读取未签劳动合同案例，再计算各年度案件数和劳动者胜诉率。`;
+    }
+  })
+});
 
 function reject(code, message) {
   return Object.freeze({ ok: false, code, message });
 }
 
-function validateSchema(schema) {
+function validateSchema(schema, requiredColumns = REQUIRED_COLUMNS) {
   if (
     !schema ||
     typeof schema !== 'object' ||
@@ -37,7 +74,7 @@ function validateSchema(schema) {
       .map((column) => column?.name)
       .filter((name) => typeof name === 'string' && IDENTIFIER_PATTERN.test(name))
   );
-  const missingColumns = REQUIRED_COLUMNS.filter((column) => !columnNames.has(column));
+  const missingColumns = requiredColumns.filter((column) => !columnNames.has(column));
   if (missingColumns.length > 0) {
     return Object.freeze({
       ...reject('TEXT2SQL_SCHEMA_UNSUPPORTED', '当前 Schema 缺少查询模板所需字段。'),
@@ -78,13 +115,39 @@ function extractYearRange(redactedText, options) {
   return Object.freeze({ ok: true, startYear, endYear });
 }
 
-function buildSql(tableName) {
+function resolveTemplate(redactedText) {
+  if (!ISSUE_PATTERN.test(redactedText) || !WIN_RATE_PATTERN.test(redactedText)) {
+    return undefined;
+  }
+  if (COMPENSATION_PATTERN.test(redactedText)) {
+    return TEMPLATES[TEMPLATE_IDS.OUTCOME_AND_COMPENSATION];
+  }
+  if (CASE_COUNT_PATTERN.test(redactedText)) {
+    return TEMPLATES[TEMPLATE_IDS.CASE_COUNT_AND_WIN_RATE];
+  }
+  return undefined;
+}
+
+function buildSql(tableName, selectedColumns = TEMPLATES[TEMPLATE_ID].selectedColumns) {
   return [
-    'SELECT year, outcome, compensation_amount',
+    `SELECT ${selectedColumns.join(', ')}`,
     `FROM ${tableName}`,
     'WHERE year BETWEEN :start_year AND :end_year AND issue_type = :issue_type',
     'ORDER BY year;'
   ].join('\n');
+}
+
+function buildExpectedOutput(template) {
+  return Object.freeze({
+    columns: template.resultColumns,
+    chart: Object.freeze({
+      type: 'bar',
+      metric: 'employee_win_rate',
+      seriesName: '胜诉率 %'
+    }),
+    artifacts: Object.freeze(['table', 'chart', 'analysis-document']),
+    artifactFileName: template.artifactFileName
+  });
 }
 
 function planConstrainedText2Sql(input, options = {}) {
@@ -104,17 +167,14 @@ function planConstrainedText2Sql(input, options = {}) {
   if (RAW_SQL_PATTERN.test(redactedText)) {
     return reject('RAW_SQL_INPUT_BLOCKED', '不接受用户提供的原始 SQL。');
   }
-  if (
-    !/未签.{0,4}劳动合同/.test(redactedText) ||
-    !/胜诉率/.test(redactedText) ||
-    !/赔偿.{0,4}(?:中位数|金额)/.test(redactedText)
-  ) {
+  const template = resolveTemplate(redactedText);
+  if (!template) {
     return reject(
       'QUERY_TEMPLATE_NOT_SUPPORTED',
-      '当前仅支持未签劳动合同案例的年度胜诉率与赔偿中位数模板。'
+      '当前仅支持未签劳动合同案例的年度案件数、胜诉率与可选赔偿中位数模板。'
     );
   }
-  const schemaResult = validateSchema(input.schema);
+  const schemaResult = validateSchema(input.schema, template.requiredColumns);
   if (!schemaResult.ok) return schemaResult;
   const yearRange = extractYearRange(redactedText, options);
   if (!yearRange.ok) return yearRange;
@@ -125,15 +185,23 @@ function planConstrainedText2Sql(input, options = {}) {
   });
   return Object.freeze({
     ok: true,
-    templateId: TEMPLATE_ID,
-    sql: buildSql(schemaResult.tableName),
+    templateId: template.templateId,
+    sql: buildSql(schemaResult.tableName, template.selectedColumns),
     parameters,
-    explanation: `按 ${yearRange.startYear}-${yearRange.endYear} 年读取未签劳动合同案例，再计算案例数、劳动者胜诉率和胜诉赔偿中位数。`,
+    explanation: template.explanation(yearRange),
+    executionSteps: Object.freeze([
+      '核对真实白名单 Schema 与模板所需字段。',
+      '使用命名参数执行固定形状的只读 SELECT。',
+      '按年份计算允许的聚合指标并生成表格、图表和分析文档。'
+    ]),
+    expectedOutput: buildExpectedOutput(template),
     semanticQuery: Object.freeze({
       table: schemaResult.tableName,
+      selectedColumns: template.selectedColumns,
       yearRange: Object.freeze([yearRange.startYear, yearRange.endYear]),
       issueType: '未签劳动合同',
-      metrics: Object.freeze(['case_count', 'employee_win_rate', 'median_compensation'])
+      metrics: template.metrics,
+      aggregations: template.aggregations
     })
   });
 }
@@ -141,11 +209,14 @@ function planConstrainedText2Sql(input, options = {}) {
 const DEFAULT_QUERY_SQL = buildSql('labor_cases');
 
 module.exports = {
+  CASE_COUNT_WIN_RATE_TEMPLATE_ID,
+  COMMON_REQUIRED_COLUMNS,
   DEFAULT_QUERY_PARAMETERS,
   DEFAULT_QUERY_SQL,
   DEFAULT_QUERY_TEXT,
   REQUIRED_COLUMNS,
   TEMPLATE_ID,
+  TEMPLATE_IDS,
   planConstrainedText2Sql,
   validateSchema
 };

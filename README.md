@@ -69,7 +69,7 @@ LEGAL_AGENT_API_KEY=optional-for-local-provider
 
 密钥不要写入仓库。真实 Provider 只替换法律自检中的结构化事实推理，隐私门、输出校验、法规检索和禁止生成法律结论等边界仍然生效。
 
-可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。当前真实数据模式只开放一个受审计的受约束 Text2SQL 模板：指定一个年份、最多十年的年份范围，或确定性配置的“近三年”，统计未签劳动合同案例的胜诉率与赔偿中位数。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少所需字段的 Schema 会关闭失败。
+可选的 SQLite 数据源配置位于 `configs/data-sources/legal-cases.sqlite.json`。配置只保存环境变量引用和允许访问的表名，不保存数据库路径或凭证；数据库文件、Schema 快照和查询输出均不得提交到仓库。当前真实数据模式开放两个受审计的受约束 Text2SQL 模板：一是按年度统计未签劳动合同案例的案件数、胜诉率和赔偿中位数，二是仅统计案件数和胜诉率。两者均接受一个年份、最多十年的年份范围，或确定性配置的“近三年”；第二个模板只读取 `year`、`issue_type`、`outcome`，不会读取赔偿字段。年份和事项均作为绑定参数，不拼接到 SQL；其他自然语言查询、用户提供的原始 SQL 和缺少相应模板所需字段的 Schema 会关闭失败。
 
 ```bash
 LEGAL_V1_RUNTIME=sqlite
@@ -172,4 +172,4 @@ hypha.lock.json        Hypha 可复现基线
 
 ## 尚未实现
 
-生产级账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、多业务模板受约束 Text2SQL、生产级权限系统及生产级网页部署尚未完成。SQLite 已完成首个真实 Schema 约束的自然语言只读模板，以及固定模板单行写入的项目层 Human Review、事务回滚和自动化验收；脚本沙箱已完成网页入口、Hypha Docker Provider 接线、固定隔离策略、Artifact 持久化和当前 Docker Desktop 环境的真实验收。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。
+生产级账号删除、每日法规同步、PostgreSQL/MySQL 真实凭证环境验收及受治理写入、更广泛的多业务模板受约束 Text2SQL、生产级权限系统及生产级网页部署尚未完成。SQLite 已完成两个具有独立 Schema 和输出契约的自然语言只读模板，以及固定模板单行写入的项目层 Human Review、事务回滚和自动化验收；脚本沙箱已完成网页入口、Hypha Docker Provider 接线、固定隔离策略、Artifact 持久化和当前 Docker Desktop 环境的真实验收。本业务仓库只消费 Hypha 公开接口，不修改 Hypha 源码或绕过治理门禁。

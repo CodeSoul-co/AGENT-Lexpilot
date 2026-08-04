@@ -22,7 +22,8 @@ function median(values) {
     : ordered[middle];
 }
 
-function buildYearlyRows(sourceRows) {
+function buildYearlyRows(sourceRows, metrics) {
+  const includeMedianCompensation = metrics.includes('median_compensation');
   const grouped = new Map();
   for (const row of sourceRows) {
     const year = Number(row.year);
@@ -34,29 +35,50 @@ function buildYearlyRows(sourceRows) {
     .sort(([left], [right]) => left - right)
     .map(([year, rows]) => {
       const wins = rows.filter((row) => row.outcome === 'employee_win');
-      const compensations = wins
-        .map((row) => Number(row.compensation_amount))
-        .filter(Number.isFinite);
-      return {
+      const compensations = includeMedianCompensation
+        ? wins
+            .map((row) => Number(row.compensation_amount))
+            .filter(Number.isFinite)
+        : [];
+      const yearlyRow = {
         year,
         case_count: rows.length,
-        employee_win_rate: Number(((wins.length / rows.length) * 100).toFixed(1)),
-        median_compensation: median(compensations)
+        employee_win_rate: Number(((wins.length / rows.length) * 100).toFixed(1))
       };
+      if (includeMedianCompensation) {
+        yearlyRow.median_compensation = median(compensations);
+      }
+      return yearlyRow;
     });
 }
 
-function buildArtifact(runId, dataSource, sourceRowCount, rows, parameters) {
+function buildArtifact(runId, dataSource, sourceRowCount, rows, generated) {
+  const includeMedianCompensation = generated.semanticQuery.metrics.includes(
+    'median_compensation'
+  );
+  const title = includeMedianCompensation
+    ? `${generated.parameters.start_year}-${generated.parameters.end_year} 年未签劳动合同案例分析`
+    : `${generated.parameters.start_year}-${generated.parameters.end_year} 年未签劳动合同案件数量与胜诉率分析`;
+  const tableHeader = includeMedianCompensation
+    ? '| 年份 | 案例数 | 劳动者胜诉率 | 胜诉赔偿中位数 |'
+    : '| 年份 | 案例数 | 劳动者胜诉率 |';
+  const tableAlignment = includeMedianCompensation
+    ? '| --- | ---: | ---: | ---: |'
+    : '| --- | ---: | ---: |';
   const content = [
-    `# ${parameters.start_year}-${parameters.end_year} 年未签劳动合同案例分析`,
+    `# ${title}`,
     '',
     `数据源：${dataSource}（本次只读查询匹配 ${sourceRowCount} 条记录）`,
     '',
-    '| 年份 | 案例数 | 劳动者胜诉率 | 胜诉赔偿中位数 |',
-    '| --- | ---: | ---: | ---: |',
+    tableHeader,
+    tableAlignment,
     ...rows.map(
-      (row) =>
-        `| ${row.year} | ${row.case_count} | ${row.employee_win_rate}% | ¥${row.median_compensation.toLocaleString('zh-CN')} |`
+      (row) => {
+        const base = `| ${row.year} | ${row.case_count} | ${row.employee_win_rate}%`;
+        return includeMedianCompensation
+          ? `${base} | ¥${row.median_compensation.toLocaleString('zh-CN')} |`
+          : `${base} |`;
+      }
     ),
     '',
     '> 本结果是对已配置数据源的统计输出，不构成法律意见。'
@@ -64,7 +86,7 @@ function buildArtifact(runId, dataSource, sourceRowCount, rows, parameters) {
   return Object.freeze({
     artifactId: `artifact-${createHash('sha256').update(runId).digest('hex').slice(0, 12)}`,
     type: 'analysis-document',
-    fileName: '案例统计分析.md',
+    fileName: generated.expectedOutput.artifactFileName,
     mimeType: 'text/markdown; charset=utf-8',
     content,
     contentSha256: createHash('sha256').update(content, 'utf8').digest('hex')
@@ -164,6 +186,8 @@ async function createV1SQLiteQueryRuntime(options = {}) {
       sql: generated.sql,
       parameters: generated.parameters,
       explanation: generated.explanation,
+      executionSteps: generated.executionSteps,
+      expectedOutput: generated.expectedOutput,
       semanticQuery: generated.semanticQuery,
       operationType: currentPolicy.operationType,
       readOnly: true,
@@ -380,13 +404,13 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         );
       }
 
-      const rows = buildYearlyRows(queryResult.rows);
+      const rows = buildYearlyRows(queryResult.rows, generated.semanticQuery.metrics);
       const artifact = buildArtifact(
         input.runId,
         descriptor.id,
         queryResult.rowCount,
         rows,
-        generated.parameters
+        generated
       );
       return {
         status: 'completed',
@@ -398,7 +422,7 @@ async function createV1SQLiteQueryRuntime(options = {}) {
         schema: currentSnapshot.schema,
         plan: buildPlan(currentSnapshot, generated, currentPolicy),
         result: {
-          columns: ['year', 'case_count', 'employee_win_rate', 'median_compensation'],
+          columns: generated.expectedOutput.columns,
           rows,
           rowCount: rows.length,
           sourceRowCount: queryResult.rowCount,
