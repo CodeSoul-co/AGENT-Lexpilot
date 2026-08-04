@@ -10,7 +10,7 @@ test('loads forty-six integrity-pinned official articles across every supported 
   const domains = new Set(corpus.entries.map((entry) => entry.legalDomain));
 
   assert.equal(corpus.corpusId, 'law-corpus.cn.v0-minimal');
-  assert.equal(corpus.version, '0.10.0');
+  assert.equal(corpus.version, '0.10.1');
   assert.equal(corpus.verifiedAt, '2026-08-03');
   assert.equal(corpus.entries.length, 46);
   assert.deepEqual(domains, new Set(Object.values(LEGAL_DOMAINS)));
@@ -163,7 +163,6 @@ test('keeps staged corpus batches out of retrieval until dedicated regressions e
     'cn.labor-contract-law.article-46',
     'cn.civil-code.article-1079',
     'cn.civil-code.article-1062',
-    'cn.civil-code.article-676',
     'cn.civil-code.article-680',
     'cn.tax-collection-administration-law.article-32',
     'cn.tax-collection-administration-law.article-62',
@@ -229,15 +228,27 @@ test('retrieves the activated Article 40 entry alongside the unsigned-contract a
   );
 });
 
-test('retrieves only entries from the requested legal domain', () => {
+test('retrieves activated repayment-term and overdue-interest entries from private lending only', () => {
   const retriever = new LocalVerifiedLawRetriever();
   const result = retriever.search({ legalDomain: LEGAL_DOMAINS.PRIVATE_LENDING });
+  const overdueInterest = retriever.search({
+    legalDomain: LEGAL_DOMAINS.PRIVATE_LENDING,
+    topics: ['overdue_interest']
+  });
 
   assert.equal(result.status, 'matched');
   assert.equal(result.retrievalMode, 'local_verified_corpus');
-  assert.equal(result.results.length, 1);
-  assert.equal(result.results[0].id, 'cn.civil-code.article-675');
-  assert.equal(result.results[0].legalDomain, LEGAL_DOMAINS.PRIVATE_LENDING);
+  assert.deepEqual(
+    result.results.map((entry) => entry.id),
+    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+  );
+  assert.equal(
+    result.results.every((entry) => entry.legalDomain === LEGAL_DOMAINS.PRIVATE_LENDING),
+    true
+  );
+  assert.deepEqual(overdueInterest.results.map((entry) => entry.id), [
+    'cn.civil-code.article-676'
+  ]);
   assert.equal(JSON.stringify(result.trace).includes(result.results[0].articleText), false);
 });
 

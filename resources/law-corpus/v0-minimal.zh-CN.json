@@ -1,6 +1,6 @@
 {
   "corpusId": "law-corpus.cn.v0-minimal",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "jurisdiction": "CN",
   "language": "zh-CN",
   "verifiedAt": "2026-08-03",
@@ -170,7 +170,7 @@
       "effectiveDate": "2021-01-01",
       "status": "effective",
       "topics": ["overdue_interest"],
-      "retrievalEnabled": false,
+      "retrievalEnabled": true,
       "source": {
         "authority": "全国人大常委会办公厅国家法律法规数据库",
         "metadataUrl": "https://flk.npc.gov.cn/detail?fileId=&id=ff808081729d1efe01729d50b5c500bf&title=%E4%B8%AD%E5%8D%8E%E4%BA%BA%E6%B0%91%E5%85%B1%E5%92%8C%E5%9B%BD%E6%B0%91%E6%B3%95%E5%85%B8&type=",

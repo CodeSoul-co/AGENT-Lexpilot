@@ -168,6 +168,24 @@ test('preserves known facts across more than one clarification answer', () => {
   assert.equal(secondAnswer.knownFacts.repaymentStatus, 'unpaid');
 });
 
+test('does not retrieve overdue-interest Article 676 without an agreed repayment term', () => {
+  const service = createService();
+  const result = service.start({
+    userText: '朋友借钱没还，我有转账记录，但双方没有约定还款日期。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.lawReferences.map((reference) => reference.id), [
+    'cn.civil-code.article-675'
+  ]);
+  assert.deepEqual(result.resultCards.map((card) => card.lawReferenceId), [
+    'cn.civil-code.article-675'
+  ]);
+  assert.equal(result.legalConclusionGenerated, false);
+});
+
 test('stops an incomplete conversation after five clarification answers', () => {
   const service = createService();
   const started = service.start({
@@ -518,14 +536,27 @@ test('persists candidate references in history while keeping summaries compact',
   const summary = service.listHistory()[0];
   const detail = service.getHistory(result.sessionId);
 
-  assert.equal(result.lawReferences[0].id, 'cn.civil-code.article-675');
-  assert.equal(summary.lawReferenceCount, 1);
-  assert.equal(summary.lawComparisonCount, 1);
-  assert.equal(summary.resultCardCount, 1);
+  assert.deepEqual(
+    result.lawReferences.map((reference) => reference.id),
+    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+  );
+  assert.equal(summary.lawReferenceCount, 2);
+  assert.equal(summary.lawComparisonCount, 2);
+  assert.equal(summary.resultCardCount, 2);
   assert.equal(Object.hasOwn(summary, 'lawReferences'), false);
-  assert.equal(detail.lawReferences[0].id, 'cn.civil-code.article-675');
-  assert.equal(detail.lawComparisons[0].lawReferenceId, 'cn.civil-code.article-675');
-  assert.equal(detail.resultCards[0].lawReferenceId, 'cn.civil-code.article-675');
+  assert.deepEqual(
+    detail.lawReferences.map((reference) => reference.id),
+    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+  );
+  assert.deepEqual(
+    detail.lawComparisons.map((comparison) => comparison.lawReferenceId),
+    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+  );
+  assert.deepEqual(
+    detail.resultCards.map((card) => card.lawReferenceId),
+    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+  );
+  assert.equal(detail.resultCards.every((card) => card.legalConclusionGenerated === false), true);
   assert.equal(detail.legalConclusionGenerated, false);
 });
 

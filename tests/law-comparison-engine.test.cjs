@@ -25,6 +25,16 @@ test('compares structured facts with each verified reference without making a co
       lawReference: reference('cn.civil-code.article-675', 'private_lending')
     },
     {
+      legalDomain: 'private_lending',
+      knownFacts: {
+        evidenceStatus: 'available',
+        repaymentTermStatus: 'agreed',
+        repaymentStatus: 'unpaid'
+      },
+      redactedMessages: ['朋友借钱不还，有转账记录，说好去年还款。'],
+      lawReference: reference('cn.civil-code.article-676', 'private_lending')
+    },
+    {
       legalDomain: 'taxation',
       knownFacts: {
         taxpayerType: 'company',
@@ -81,6 +91,28 @@ test('marks conflicting fact values as not supported instead of a potential matc
 
   assert.equal(result.comparisons[0].comparisonStatus, 'not_supported_by_facts');
   assert.ok(result.comparisons[0].unresolvedElements.includes('fact_not_supporting:repaymentStatus'));
+});
+
+test('does not support Article 676 when no repayment term was agreed', () => {
+  const result = compareFactsToLaw({
+    piiRedacted: true,
+    legalDomain: 'private_lending',
+    knownFacts: {
+      evidenceStatus: 'available',
+      repaymentTermStatus: 'not_agreed',
+      repaymentStatus: 'unpaid'
+    },
+    redactedMessages: ['朋友借钱没还，但双方没有约定还款日期。'],
+    lawReferences: [reference('cn.civil-code.article-676', 'private_lending')]
+  });
+
+  assert.equal(result.comparisons[0].comparisonStatus, 'not_supported_by_facts');
+  assert.ok(
+    result.comparisons[0].unresolvedElements.includes(
+      'fact_not_supporting:repaymentTermStatus'
+    )
+  );
+  assert.equal(result.comparisons[0].legalConclusionGenerated, false);
 });
 
 test('fails closed for raw envelopes and cross-domain references', () => {

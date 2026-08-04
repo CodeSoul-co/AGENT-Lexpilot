@@ -36,6 +36,20 @@ const COMPARISON_RULES = Object.freeze({
     excerptSignals: ['借', '还', '到期', '说好'],
     unresolvedElements: ['loan_relationship_validity', 'exact_repayment_terms']
   },
+  'cn.civil-code.article-676': {
+    legalDomain: LEGAL_DOMAINS.PRIVATE_LENDING,
+    factRequirements: {
+      evidenceStatus: ['available', 'none_stated'],
+      repaymentTermStatus: ['agreed'],
+      repaymentStatus: ['unpaid', 'partial']
+    },
+    excerptSignals: ['借', '还', '到期', '说好'],
+    unresolvedElements: [
+      'loan_relationship_validity',
+      'exact_repayment_due_date',
+      'applicable_overdue_interest_basis'
+    ]
+  },
   'cn.tax-collection-administration-law.article-25': {
     legalDomain: LEGAL_DOMAINS.TAXATION,
     factRequirements: {

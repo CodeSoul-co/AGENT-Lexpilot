@@ -31,6 +31,7 @@ function planLawRetrieval({ legalDomain, knownFacts }) {
     ['unpaid', 'partial'].includes(facts.repaymentStatus)
   ) {
     topics.push('repayment_term');
+    if (facts.repaymentTermStatus === 'agreed') topics.push('overdue_interest');
   }
 
   if (legalDomain === LEGAL_DOMAINS.MARRIAGE_FAMILY) {

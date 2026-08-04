@@ -23,6 +23,11 @@ test('maps only supported structured facts to law corpus topics', () => {
     [
       'private_lending',
       { repaymentTermStatus: 'agreed', repaymentStatus: 'unpaid' },
+      ['repayment_term', 'overdue_interest']
+    ],
+    [
+      'private_lending',
+      { repaymentTermStatus: 'not_agreed', repaymentStatus: 'partial' },
       ['repayment_term']
     ],
     [

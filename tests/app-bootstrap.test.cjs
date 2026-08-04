@@ -112,7 +112,14 @@ test('runs start, answer, history, show, and delete across separate processes', 
     const answered = JSON.parse(answeredProcess.stdout);
     assert.equal(answered.status, 'completed');
     assert.equal(answered.resultCardStatus, 'completed');
-    assert.equal(answered.resultCards.length, 1);
+    assert.deepEqual(
+      answered.resultCards.map((card) => card.lawReferenceId),
+      ['cn.civil-code.article-675', 'cn.civil-code.article-676']
+    );
+    assert.equal(
+      answered.resultCards.every((card) => card.legalConclusionGenerated === false),
+      true
+    );
 
     const historyProcess = runDemo(environment, ['history']);
     assert.equal(historyProcess.status, 0, historyProcess.stderr);
