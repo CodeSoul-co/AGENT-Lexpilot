@@ -777,13 +777,47 @@ function dataSourceStatusLabel(status) {
   return status;
 }
 
+function renderInitialSchemaSnapshot(snapshot) {
+  const browser = node('div', 'initial-schema-browser');
+  browser.append(node('strong', 'initial-schema-title', '初始 Schema 快照'));
+  for (const table of snapshot?.tables ?? []) {
+    const section = node('section', 'initial-schema-table');
+    section.append(node('span', 'initial-schema-table-name', `表：${table.name}`));
+    const wrap = node('div', 'table-wrap initial-schema-table-wrap');
+    const tableElement = node('table', 'data-table');
+    const head = node('thead');
+    const heading = node('tr');
+    for (const label of ['字段', '类型', '可空', '主键序号']) {
+      heading.append(node('th', '', label));
+    }
+    head.append(heading);
+    const body = node('tbody');
+    for (const column of table.columns ?? []) {
+      const row = node('tr');
+      row.append(
+        node('td', '', column.name),
+        node('td', '', column.type),
+        node('td', '', column.nullable ? '是' : '否'),
+        node('td', '', column.primaryKeyPosition > 0 ? String(column.primaryKeyPosition) : '—')
+      );
+      body.append(row);
+    }
+    tableElement.append(head, body);
+    wrap.append(tableElement);
+    section.append(wrap);
+    browser.append(section);
+  }
+  return browser;
+}
+
 function renderDataSourceValidation(container, result) {
   container.replaceChildren();
   container.className = `data-source-validation ${result.status}`;
   if (result.status === 'verified') {
     container.append(
       node('strong', '', '连接与白名单 Schema 已验证'),
-      node('span', '', `字段 ${result.columnCount} 个 · 指纹 ${result.schemaFingerprint.slice(0, 12)}…`)
+      node('span', '', `字段 ${result.columnCount} 个 · 指纹 ${result.schemaFingerprint.slice(0, 12)}…`),
+      renderInitialSchemaSnapshot(result.initialSchemaSnapshot)
     );
     return;
   }

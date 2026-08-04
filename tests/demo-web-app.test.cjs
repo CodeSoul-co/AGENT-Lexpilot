@@ -117,6 +117,18 @@ async function withDataSourceAdminServer(run) {
         connectionStatus: 'connected',
         schemaStatus: 'verified',
         schemaFingerprint: 'a'.repeat(64),
+        initialSchemaSnapshot: {
+          tables: [
+            {
+              name: 'labor_cases',
+              columns: [
+                { name: 'year', type: 'INTEGER', nullable: false, primaryKeyPosition: 0 }
+              ]
+            }
+          ]
+        },
+        tableCount: 1,
+        columnCount: 1,
         credentialValuesExposed: false
       };
     }
@@ -209,6 +221,16 @@ test('exposes a credential-free data-source admin list and fixed validation acti
     );
     assert.equal(validated.response.status, 200);
     assert.equal(validated.body.status, 'verified');
+    assert.deepEqual(validated.body.initialSchemaSnapshot, {
+      tables: [
+        {
+          name: 'labor_cases',
+          columns: [
+            { name: 'year', type: 'INTEGER', nullable: false, primaryKeyPosition: 0 }
+          ]
+        }
+      ]
+    });
     assert.deepEqual(validationCalls, ['network.legal_cases.postgresql']);
 
     const credentialInjection = await jsonRequest(
@@ -354,6 +376,8 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /confirmSandboxExecution/);
     assert.match(scriptText, /openDataSourceAdmin/);
     assert.match(scriptText, /\/api\/v1\/admin\/data-sources\/validation/);
+    assert.match(scriptText, /renderInitialSchemaSnapshot/);
+    assert.match(scriptText, /初始 Schema 快照/);
     assert.match(scriptText, /Provider 未识别/);
     assert.equal(styles.status, 200);
     assert.match(styles.headers.get('content-type'), /text\/css/);
@@ -363,6 +387,7 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(stylesheet, /\.workspace\s*\{[^}]*min-height:\s*0/s);
     assert.match(stylesheet, /\.chat-scroll\s*\{[^}]*min-height:\s*0/s);
     assert.match(stylesheet, /\.v1-board\s*\{/);
+    assert.match(stylesheet, /\.initial-schema-browser\s*\{/);
     assert.match(stylesheet, /\.mode-switch\s*\{/);
   });
 });

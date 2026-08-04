@@ -1,6 +1,9 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { loadHyphaAdaptersLocal } = require('../scripts/hypha-paths.cjs');
 const {
   DataSourceAdminError,
   createDataSourceAdmin
@@ -35,6 +38,26 @@ function configuredEnvironment() {
     LEGAL_V1_MYSQL_USER: SECRET_VALUES[7],
     LEGAL_V1_MYSQL_PASSWORD: SECRET_VALUES[8],
     LEGAL_V1_MYSQL_TLS_MODE: 'require'
+  };
+}
+
+function createSQLiteFixture() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lexpilot-admin-schema-'));
+  const databasePath = path.join(directory, 'labor-cases.sqlite');
+  const sqlite = loadHyphaAdaptersLocal(projectRoot).loadSqlite(true);
+  const database = new sqlite.DatabaseSync(databasePath);
+  database.exec(`
+    CREATE TABLE labor_cases (
+      year INTEGER NOT NULL,
+      issue_type TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      compensation_amount INTEGER
+    );
+  `);
+  database.close?.();
+  return {
+    databasePath,
+    cleanup: () => fs.rmSync(directory, { recursive: true, force: true })
   };
 }
 
@@ -77,6 +100,39 @@ test('reports missing environment references without attempting a connection', a
   assert.equal(sourceFactoryCalls, 0);
 });
 
+test('returns a browsable allowlisted snapshot from the configured SQLite provider', async () => {
+  const fixture = createSQLiteFixture();
+  try {
+    const admin = createDataSourceAdmin({
+      projectRoot,
+      env: { LEGAL_V1_RUNTIME: 'sqlite', LEGAL_V1_SQLITE_PATH: fixture.databasePath }
+    });
+    const result = await admin.validateProfile('local.legal_cases');
+    assert.equal(result.status, 'verified');
+    assert.deepEqual(result.initialSchemaSnapshot, {
+      tables: [
+        {
+          name: 'labor_cases',
+          columns: [
+            { name: 'year', type: 'INTEGER', nullable: false, primaryKeyPosition: 0 },
+            { name: 'issue_type', type: 'TEXT', nullable: false, primaryKeyPosition: 0 },
+            { name: 'outcome', type: 'TEXT', nullable: false, primaryKeyPosition: 0 },
+            {
+              name: 'compensation_amount',
+              type: 'INTEGER',
+              nullable: true,
+              primaryKeyPosition: 0
+            }
+          ]
+        }
+      ]
+    });
+    assert.equal(JSON.stringify(result).includes(fixture.databasePath), false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('validates connection and whitelisted Schema while returning only safe receipts', async () => {
   let closed = 0;
   const admin = createDataSourceAdmin({
@@ -91,9 +147,17 @@ test('validates connection and whitelisted Schema while returning only safe rece
           schemaFingerprint: 'a'.repeat(64),
           schema: {
             tableName: 'labor_cases',
+            schemaName: 'private_schema_must_not_escape',
+            dataSource: 'private_source_must_not_escape',
             columns: [
-              { name: 'year', type: 'INTEGER' },
-              { name: 'outcome', type: 'TEXT' }
+              {
+                name: 'year',
+                type: 'INTEGER',
+                nullable: false,
+                primaryKeyPosition: 1,
+                providerComment: 'private_comment_must_not_escape'
+              },
+              { name: 'outcome', type: 'TEXT', nullable: true, primaryKeyPosition: 0 }
             ]
           }
         };
@@ -112,12 +176,69 @@ test('validates connection and whitelisted Schema while returning only safe rece
     connectionStatus: 'connected',
     schemaStatus: 'verified',
     schemaFingerprint: 'a'.repeat(64),
+    initialSchemaSnapshot: {
+      tables: [
+        {
+          name: 'labor_cases',
+          columns: [
+            { name: 'year', type: 'INTEGER', nullable: false, primaryKeyPosition: 1 },
+            { name: 'outcome', type: 'TEXT', nullable: true, primaryKeyPosition: 0 }
+          ]
+        }
+      ]
+    },
     tableCount: 1,
     columnCount: 2,
     readOnly: true,
     credentialValuesExposed: false
   });
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot), true);
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables), true);
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables[0]), true);
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables[0].columns), true);
+  assert.equal(Object.isFrozen(result.initialSchemaSnapshot.tables[0].columns[0]), true);
+  assert.equal(JSON.stringify(result).includes('private_'), false);
   assert.equal(closed, 1);
+});
+
+test('fails closed when a Schema receipt contains unsafe or incomplete structural fields', async () => {
+  const admin = createDataSourceAdmin({
+    projectRoot,
+    env: configuredEnvironment(),
+    sourceFactory: async () => ({
+      async testConnection() {
+        return { status: 'connected' };
+      },
+      async inspectSchema() {
+        return {
+          schemaFingerprint: 'b'.repeat(64),
+          schema: {
+            tableName: 'labor_cases',
+            columns: [
+              {
+                name: 'year',
+                type: 'INTEGER\nTEST_ONLY_PG_PASSWORD_VALUE',
+                nullable: false,
+                primaryKeyPosition: 0
+              }
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const result = await admin.validateProfile('network.legal_cases.postgresql');
+  assert.deepEqual(result, {
+    status: 'failed',
+    profileId: 'network.legal_cases.postgresql',
+    engine: 'postgresql',
+    connectionAttempted: true,
+    connectionStatus: 'failed',
+    errorCode: 'DATA_SOURCE_VALIDATION_FAILED',
+    credentialValuesExposed: false
+  });
+  assert.equal(JSON.stringify(result).includes('TEST_ONLY_PG_PASSWORD_VALUE'), false);
 });
 
 test('redacts provider errors and rejects unknown profiles', async () => {

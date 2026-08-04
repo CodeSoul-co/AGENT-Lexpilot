@@ -13,6 +13,7 @@ const PROFILE_FILES = Object.freeze([
   Object.freeze({ engine: 'postgresql', fileName: 'legal-cases.postgresql.json' }),
   Object.freeze({ engine: 'mysql', fileName: 'legal-cases.mysql.json' })
 ]);
+const SAFE_SCHEMA_TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9_ (),.\[\]-]{0,127}$/;
 
 class DataSourceAdminError extends Error {
   constructor(code, message) {
@@ -34,6 +35,54 @@ function freezeProfile(profile) {
     allowedTables: Object.freeze([...profile.allowedTables]),
     allowedColumns: Object.freeze([...profile.allowedColumns]),
     limits: Object.freeze({ ...profile.limits })
+  });
+}
+
+function createSafeSchemaSnapshot(snapshot, profile) {
+  const schema = snapshot?.schema;
+  if (
+    typeof snapshot?.schemaFingerprint !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(snapshot.schemaFingerprint) ||
+    typeof schema?.tableName !== 'string' ||
+    !profile.allowedTables.includes(schema.tableName) ||
+    !Array.isArray(schema.columns) ||
+    schema.columns.length === 0
+  ) {
+    throw new Error('Invalid allowlisted Schema receipt.');
+  }
+
+  const columns = schema.columns.map((column) => {
+    const type = typeof column?.type === 'string' ? column.type.trim() : '';
+    if (
+      typeof column?.name !== 'string' ||
+      !profile.allowedColumns.includes(column.name) ||
+      !SAFE_SCHEMA_TYPE_PATTERN.test(type) ||
+      typeof column.nullable !== 'boolean' ||
+      !Number.isSafeInteger(column.primaryKeyPosition) ||
+      column.primaryKeyPosition < 0 ||
+      column.primaryKeyPosition > 10_000
+    ) {
+      throw new Error('Invalid allowlisted Schema receipt.');
+    }
+    return Object.freeze({
+      name: column.name,
+      type,
+      nullable: column.nullable,
+      primaryKeyPosition: column.primaryKeyPosition
+    });
+  });
+
+  if (new Set(columns.map((column) => column.name)).size !== columns.length) {
+    throw new Error('Invalid allowlisted Schema receipt.');
+  }
+
+  return Object.freeze({
+    tables: Object.freeze([
+      Object.freeze({
+        name: schema.tableName,
+        columns: Object.freeze(columns)
+      })
+    ])
   });
 }
 
@@ -167,22 +216,11 @@ function createDataSourceAdmin(options = {}) {
           });
         }
         const snapshot = await source.inspectSchema();
-        const schema = snapshot?.schema;
-        const columnNames = Array.isArray(schema?.columns)
-          ? schema.columns.map((column) => column?.name)
-          : [];
-        if (
-          typeof snapshot?.schemaFingerprint !== 'string' ||
-          !/^[0-9a-f]{64}$/.test(snapshot.schemaFingerprint) ||
-          typeof schema?.tableName !== 'string' ||
-          !profile.public.allowedTables.includes(schema.tableName) ||
-          columnNames.length === 0 ||
-          columnNames.some(
-            (name) => typeof name !== 'string' || !profile.public.allowedColumns.includes(name)
-          )
-        ) {
-          throw new Error('Invalid allowlisted Schema receipt.');
-        }
+        const initialSchemaSnapshot = createSafeSchemaSnapshot(snapshot, profile.public);
+        const columnCount = initialSchemaSnapshot.tables.reduce(
+          (count, table) => count + table.columns.length,
+          0
+        );
         return Object.freeze({
           status: 'verified',
           profileId,
@@ -191,8 +229,9 @@ function createDataSourceAdmin(options = {}) {
           connectionStatus: 'connected',
           schemaStatus: 'verified',
           schemaFingerprint: snapshot.schemaFingerprint,
-          tableCount: 1,
-          columnCount: columnNames.length,
+          initialSchemaSnapshot,
+          tableCount: initialSchemaSnapshot.tables.length,
+          columnCount,
           readOnly: profile.public.accessMode === 'read-only',
           credentialValuesExposed: false
         });
