@@ -16,6 +16,7 @@
 - 用户输入先经确定性 PII 脱敏（手机号、身份证号、邮箱、地址、银行卡号及其常见分隔符变体）才允许进入推理；脱敏失败时流程直接关闭，原文不会交给后续处理；
 - 会话仅保存脱敏后的消息，本地 AES-256-GCM 加密持久化，磁盘不暴露用户 ID、会话 ID 或明文；
 - 单会话删除需显式确认；Web、Agent 与 CLI 均进入可等待的安全入口，若存在关联 Analysis Artifact，会先校验绑定回执、内容 SHA-256 与大小并物理删除产物，确认后才删除加密 Session 和对应 Agent 缓存；旧同步接口发现持久化产物时拒绝先删 Session。侧边栏“清除全部本地历史”还要求输入固定确认短语，并按当前服务器绑定 owner 删除全部关联 Hypha Artifact、加密 Session 与进程内 Agent 缓存。接口不接受 owner/session 列表，响应只返回汇总数量。单会话、90 天保留清理和账号全历史清除统一使用 `lexpilot.data-deletion-audit.v1`：每次有目标的操作先写请求、再写完成或部分失败条目，以独立随机 `deletionOperationId` 配对，只记录范围、阶段和聚合计数；条目进入既有 SHA-256 哈希链，响应仅返回深冻结的合同版本、操作 ID 与日志条目哈希引用，不含 owner、真实会话 ID、Artifact 对象键或内容。CLI 也使用同一私有日志，Session 删除后日志仍按合规策略保留；无目标的定时扫描不会制造空审计记录。严格超过 90 天未活跃的会话在真实网页应用启动及每日 API 首次入口自动清理；持久化 Artifact 会先回读校验和物理删除，再删除加密 Session，产物能力不可用或校验失败时保留 Session 供后续重试，不留下因先删 Session 造成的不可追踪孤儿对象。
+- 若删除结果已经确定但结果条目追加失败，运行时会把同一份安全聚合结果原子写入私有 `deletion-audit-recovery` 队列，并在响应回执中标记 `recorded=false`、`recoveryQueued=true`；下次本地应用或 CLI 组合服务时会在任何新的 Session/Artifact 清理前验证现有哈希链，以 `deletionOperationId + phase` 检查结果是否已存在，缺失则补写，已存在则只清除队列，避免重复条目。恢复文件仍不保存 owner、真实 Session ID、Artifact 键、用户正文或 Provider 错误，目录随 `data/` 保持 Git 忽略；队列损坏、日志漂移或补写失败会阻止服务继续组合。该机制只恢复“结果已知、日志追加失败”的本地审计结果，不宣称断电期间 Artifact Store、Session Store、恢复文件与审计日志之间存在分布式事务。
 
 ### 法规依据可核验
 

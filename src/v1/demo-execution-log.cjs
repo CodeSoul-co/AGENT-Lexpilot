@@ -2,7 +2,10 @@ const { createHash, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { requireAuditActorId } = require('./audit-identity.cjs');
-const { validateDataDeletionAuditRecord } = require('./data-deletion-audit-receipt.cjs');
+const {
+  DATA_DELETION_PHASES,
+  validateDataDeletionAuditRecord
+} = require('./data-deletion-audit-receipt.cjs');
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
@@ -365,6 +368,31 @@ function createDemoExecutionLog(options = {}) {
       const matched =
         status === undefined ? records : records.filter((record) => record.status === status);
       return matched.slice(0, limit);
+    },
+
+    findDeletionAuditRecord({ operationId, phase } = {}) {
+      if (
+        typeof operationId !== 'string' ||
+        !/^lexpilot-deletion\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+          operationId
+        )
+      ) {
+        throw new TypeError('operationId must be a safe LexPilot deletion identifier.');
+      }
+      if (!Object.values(DATA_DELETION_PHASES).includes(phase)) {
+        throw new TypeError('phase must be requested, completed, or failed.');
+      }
+      const matches = readState(filePath).records.filter(
+        (record) =>
+          record.deletionOperationId === operationId && record.deletionPhase === phase
+      );
+      if (matches.length > 1) {
+        throw new ExecutionLogIntegrityError(
+          'DUPLICATE_DELETION_AUDIT_OUTCOME',
+          matches[1].sequence
+        );
+      }
+      return matches.length === 0 ? null : { ...matches[0] };
     },
 
     verifyIntegrity() {

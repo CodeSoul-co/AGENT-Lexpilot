@@ -261,6 +261,7 @@ class LegalSelfCheckConversationService {
       throw new TypeError('v1Runtime must expose describe(), plan(input), and execute(input).');
     }
     this.executionLog = options.executionLog ?? null;
+    this.deletionAuditRecoveryStore = options.deletionAuditRecoveryStore ?? null;
     this.artifactRepository = options.artifactRepository ?? null;
     this.retentionCleanupPromise = null;
     this.artifactOutputBindingRef = this.artifactRepository?.describe?.().artifactOutputBindingRef ?? null;
@@ -278,11 +279,30 @@ class LegalSelfCheckConversationService {
       throw new TypeError('V1 runtime requires an append-only executionLog.');
     }
     if (
+      this.deletionAuditRecoveryStore !== null &&
+      (typeof this.deletionAuditRecoveryStore.enqueue !== 'function' ||
+        typeof this.deletionAuditRecoveryStore.list !== 'function' ||
+        typeof this.deletionAuditRecoveryStore.remove !== 'function')
+    ) {
+      throw new TypeError(
+        'deletionAuditRecoveryStore must expose enqueue(input), list(), and remove(operationId).'
+      );
+    }
+    if (
+      this.deletionAuditRecoveryStore !== null &&
+      (!this.executionLog || typeof this.executionLog.findDeletionAuditRecord !== 'function')
+    ) {
+      throw new TypeError(
+        'deletion audit recovery requires executionLog.findDeletionAuditRecord(input).'
+      );
+    }
+    if (
       this.artifactRepository !== null &&
       typeof this.artifactRepository.storeAnalysisArtifact !== 'function'
     ) {
       throw new TypeError('artifactRepository must expose storeAnalysisArtifact(input).');
     }
+    this.lastDeletionAuditReconciliation = this.reconcilePendingDataDeletionAudits();
     this.lastWorkspaceArchive = this.autoCleanup
       ? this.archiveInactiveQueryWorkspaces()
       : null;
@@ -296,10 +316,74 @@ class LegalSelfCheckConversationService {
 
   recordDataDeletionAudit(input) {
     const entry = createDataDeletionAuditEntry(input);
-    const record = this.executionLog
-      ? this.executionLog.append({ actorId: this.auditActorId, ...entry })
-      : null;
-    return createDataDeletionAuditReceipt(record, entry);
+    if (!this.executionLog) return createDataDeletionAuditReceipt(null, entry);
+    try {
+      const record = this.executionLog.append({ actorId: this.auditActorId, ...entry });
+      return createDataDeletionAuditReceipt(record, entry);
+    } catch (cause) {
+      if (
+        entry.deletionPhase === DATA_DELETION_PHASES.REQUESTED ||
+        !this.deletionAuditRecoveryStore
+      ) {
+        throw cause;
+      }
+      try {
+        this.deletionAuditRecoveryStore.enqueue({ actorId: this.auditActorId, entry });
+      } catch (recoveryCause) {
+        const error = new Error(
+          '删除结果既未写入不可变日志，也未能进入本地恢复队列。',
+          { cause: recoveryCause }
+        );
+        error.code = 'DATA_DELETION_AUDIT_RECOVERY_FAILED';
+        throw error;
+      }
+      return createDataDeletionAuditReceipt(null, entry, { recoveryQueued: true });
+    }
+  }
+
+  reconcilePendingDataDeletionAudits() {
+    if (!this.deletionAuditRecoveryStore) {
+      return Object.freeze({
+        status: 'disabled',
+        pendingCount: 0,
+        appendedCount: 0,
+        alreadyRecordedCount: 0,
+        remainingCount: 0
+      });
+    }
+    let pending;
+    try {
+      pending = this.deletionAuditRecoveryStore.list();
+      let appendedCount = 0;
+      let alreadyRecordedCount = 0;
+      for (const recovery of pending) {
+        const entry = recovery.entry;
+        const existing = this.executionLog.findDeletionAuditRecord({
+          operationId: entry.deletionOperationId,
+          phase: entry.deletionPhase
+        });
+        if (existing) {
+          createDataDeletionAuditReceipt(existing, entry);
+          alreadyRecordedCount += 1;
+        } else {
+          const record = this.executionLog.append({ actorId: recovery.actorId, ...entry });
+          createDataDeletionAuditReceipt(record, entry);
+          appendedCount += 1;
+        }
+        this.deletionAuditRecoveryStore.remove(entry.deletionOperationId);
+      }
+      return Object.freeze({
+        status: 'completed',
+        pendingCount: pending.length,
+        appendedCount,
+        alreadyRecordedCount,
+        remainingCount: 0
+      });
+    } catch (cause) {
+      const error = new Error('删除审计恢复队列对账失败，已停止继续处理。', { cause });
+      error.code = 'DATA_DELETION_AUDIT_RECONCILIATION_FAILED';
+      throw error;
+    }
   }
 
   maybeCleanupInactiveSessions() {
@@ -1711,7 +1795,7 @@ class LegalSelfCheckConversationService {
       ) {
         const error = new Error('当前运行时未配置关联分析产物的安全删除能力。');
         error.code = 'SESSION_DELETE_ARTIFACT_UNAVAILABLE';
-        recordFailure(error.code);
+        error.deletionAudit = recordFailure(error.code);
         throw error;
       }
       try {
@@ -1730,14 +1814,14 @@ class LegalSelfCheckConversationService {
       } catch (cause) {
         const error = new Error('关联分析产物未能安全删除，会话已保留以便重试。', { cause });
         error.code = 'SESSION_DELETE_ARTIFACT_FAILED';
-        recordFailure(error.code);
+        error.deletionAudit = recordFailure(error.code);
         throw error;
       }
     }
     if (!this.store.delete(sessionId, this.ownerId)) {
       const error = new Error('关联产物已处理，但会话物理删除未获确认。');
       error.code = 'SESSION_DELETE_FAILED';
-      recordFailure(error.code);
+      error.deletionAudit = recordFailure(error.code);
       throw error;
     }
     const deletionAudit = this.recordDataDeletionAudit({
@@ -1839,7 +1923,12 @@ class LegalSelfCheckConversationService {
     ) {
       const error = new Error('存在持久化分析产物，但当前运行时未配置受治理的删除能力。');
       error.code = 'OWNER_HISTORY_ERASURE_UNAVAILABLE';
-      recordErasureAudit(DATA_DELETION_PHASES.FAILED, 0, 0, error.code);
+      error.deletionAudit = recordErasureAudit(
+        DATA_DELETION_PHASES.FAILED,
+        0,
+        0,
+        error.code
+      );
       throw error;
     }
 
@@ -1866,7 +1955,7 @@ class LegalSelfCheckConversationService {
       const error = new Error('当前账号历史未能全部清除；请保留运行目录并重试。', { cause });
       error.code = 'OWNER_HISTORY_ERASURE_FAILED';
       try {
-        recordErasureAudit(
+        error.deletionAudit = recordErasureAudit(
           DATA_DELETION_PHASES.FAILED,
           erasedSessionCount,
           erasedArtifactCount,

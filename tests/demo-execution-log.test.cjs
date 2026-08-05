@@ -235,11 +235,16 @@ test('fails closed when a damaged line is found', () => {
   });
 });
 
-test('exposes append, list, and integrity verification with no mutation interface', () => {
+test('exposes append, read-only deletion lookup, list, and integrity verification with no mutation interface', () => {
   withTemporaryLog((filePath) => {
     const log = createDemoExecutionLog({ filePath });
     assert.equal(Object.isFrozen(log), true);
-    assert.deepEqual(Object.keys(log).sort(), ['append', 'list', 'verifyIntegrity']);
+    assert.deepEqual(Object.keys(log).sort(), [
+      'append',
+      'findDeletionAuditRecord',
+      'list',
+      'verifyIntegrity'
+    ]);
     assert.equal(log.delete, undefined);
     assert.equal(log.update, undefined);
     assert.equal(log.remove, undefined);

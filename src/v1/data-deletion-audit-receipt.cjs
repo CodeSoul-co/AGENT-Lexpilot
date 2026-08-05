@@ -153,7 +153,10 @@ function validateDataDeletionAuditRecord(record) {
   }
 }
 
-function createDataDeletionAuditReceipt(record, entry) {
+function createDataDeletionAuditReceipt(record, entry, options = {}) {
+  if (options.recoveryQueued !== undefined && typeof options.recoveryQueued !== 'boolean') {
+    throw new TypeError('recoveryQueued must be a boolean when present.');
+  }
   const base = {
     contractVersion: DATA_DELETION_AUDIT_CONTRACT_VERSION,
     operationId: entry.deletionOperationId,
@@ -162,7 +165,12 @@ function createDataDeletionAuditReceipt(record, entry) {
     status: entry.status
   };
   if (record === null) {
-    return Object.freeze({ ...base, recorded: false, logEntryRef: null });
+    return Object.freeze({
+      ...base,
+      recorded: false,
+      recoveryQueued: options.recoveryQueued === true,
+      logEntryRef: null
+    });
   }
   validateDataDeletionAuditRecord(record);
   for (const [key, value] of Object.entries(entry)) {
@@ -184,6 +192,7 @@ function createDataDeletionAuditReceipt(record, entry) {
   return Object.freeze({
     ...base,
     recorded: true,
+    recoveryQueued: false,
     logEntryRef: Object.freeze({
       schemaVersion: record.schemaVersion,
       entryId: record.entryId,

@@ -15,6 +15,9 @@ const {
   createCapabilityReferenceSnapshot
 } = require('../v1/capability-reference-snapshot.cjs');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
+const {
+  createDataDeletionAuditRecoveryStore
+} = require('../v1/data-deletion-audit-recovery-store.cjs');
 const { createDemoExecutionLog } = require('../v1/demo-execution-log.cjs');
 const { createExecutionArtifactRepository } = require('../v1/execution-artifact-repository.cjs');
 const { createV1DemoQueryRuntime } = require('../v1/demo-query-runtime.cjs');
@@ -144,13 +147,20 @@ function createLocalLegalAgent(options = {}) {
   } finally {
     encryptionKey.fill(0);
   }
+  const executionLogFilePath = resolveExecutionLogFilePath(
+    projectRoot,
+    options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],
+    options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
+  );
   const executionLog =
     options.executionLog ??
-    createDemoExecutionLog({
-      filePath: resolveExecutionLogFilePath(
-        projectRoot,
-        options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],
-        options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
+    createDemoExecutionLog({ filePath: executionLogFilePath });
+  const deletionAuditRecoveryStore =
+    options.deletionAuditRecoveryStore ??
+    createDataDeletionAuditRecoveryStore({
+      directory: path.resolve(
+        options.deletionAuditRecoveryDirectory ??
+          path.join(path.dirname(executionLogFilePath), 'deletion-audit-recovery')
       )
     });
   const service = new LegalSelfCheckConversationService({
@@ -163,6 +173,7 @@ function createLocalLegalAgent(options = {}) {
     retentionDays: options.retentionDays,
     v1Runtime: options.v1Runtime,
     executionLog,
+    deletionAuditRecoveryStore,
     artifactRepository: options.artifactRepository,
     capabilitySnapshot
   });

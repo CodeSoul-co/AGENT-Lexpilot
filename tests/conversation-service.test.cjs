@@ -389,6 +389,7 @@ test('erases only the current owner sessions after verifying and deleting associ
       phase: 'completed',
       status: 'completed',
       recorded: true,
+      recoveryQueued: false,
       logEntryRef: {
         schemaVersion: 1,
         entryId: 'log-2',
