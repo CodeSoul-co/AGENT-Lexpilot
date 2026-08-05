@@ -10,6 +10,7 @@ const {
   EncryptedFileLegalSessionStore,
   parseBase64EncryptionKey
 } = require('../src/v0/encrypted-file-session-store.cjs');
+const { createExecutionArtifactRepository } = require('../src/v1/execution-artifact-repository.cjs');
 
 function withTemporaryDirectory(run) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-session-test-'));
@@ -161,6 +162,70 @@ test('owner history erasure physically removes every encrypted session file', as
     assert.equal(result.erasedSessionCount, 2);
     assert.equal(fs.readdirSync(directory).length, 0);
   } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('single-session deletion removes its verified Artifact before the encrypted file', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-session-artifact-delete-'));
+  const sessionDirectory = path.join(directory, 'sessions');
+  const artifactDirectory = path.join(directory, 'artifacts');
+  const repository = createExecutionArtifactRepository({
+    rootPath: artifactDirectory,
+    projectRoot: path.resolve(__dirname, '..')
+  });
+  try {
+    const service = new LegalSelfCheckConversationService({
+      store: new EncryptedFileLegalSessionStore({
+        directory: sessionDirectory,
+        encryptionKey: crypto.randomBytes(32)
+      }),
+      ownerId: 'owner-a',
+      idFactory: () => 'session-with-artifact',
+      autoCleanup: false,
+      artifactRepository: repository
+    });
+    service.start({
+      userText: '老板辞退我。',
+      privacyConsent: true,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION
+    });
+    const content = '# Session analysis\n';
+    const storage = await repository.storeAnalysisArtifact({
+      sessionId: 'session-with-artifact',
+      runId: 'run-delete',
+      artifact: {
+        artifactId: 'artifact-session-delete',
+        type: 'analysis-document',
+        mimeType: 'text/markdown; charset=utf-8',
+        content,
+        contentSha256: crypto.createHash('sha256').update(content, 'utf8').digest('hex')
+      }
+    });
+    const session = service.getSession('session-with-artifact');
+    session.v1 = {
+      artifact: {
+        artifactId: 'artifact-session-delete',
+        contentSha256: storage.contentSha256,
+        storage
+      }
+    };
+    service.store.save(session, 'owner-a');
+
+    const unsafeSyncDelete = service.deleteSession('session-with-artifact', { confirmed: true });
+    assert.equal(unsafeSyncDelete.status, 'artifact_cleanup_required');
+    assert.equal(fs.readdirSync(sessionDirectory).length, 1);
+    assert.equal((await repository.stats()).objects, 1);
+
+    const result = await service.deleteSessionWithArtifacts('session-with-artifact', {
+      confirmed: true
+    });
+    assert.equal(result.status, 'deleted');
+    assert.equal(result.artifactDeleted, true);
+    assert.equal((await repository.stats()).objects, 0);
+    assert.equal(fs.readdirSync(sessionDirectory).length, 0);
+  } finally {
+    await repository.close();
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });

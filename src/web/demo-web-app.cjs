@@ -469,7 +469,7 @@ function createDemoWebHandler(options = {}) {
           sendError(response, 400, 'CONFIRMATION_REQUIRED', '删除前必须明确确认。');
           return;
         }
-        const result = service.deleteSession(route.sessionId, { confirmed: true });
+        const result = await service.deleteSession(route.sessionId, { confirmed: true });
         sendJson(response, result.deleted ? 200 : 404, result);
         return;
       }
@@ -529,6 +529,17 @@ function createDemoWebHandler(options = {}) {
         return;
       }
       if (error?.code === 'OWNER_HISTORY_ERASURE_FAILED') {
+        sendError(response, 409, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'SESSION_DELETE_ARTIFACT_UNAVAILABLE') {
+        sendError(response, 501, error.code, error.message);
+        return;
+      }
+      if (
+        error?.code === 'SESSION_DELETE_ARTIFACT_FAILED' ||
+        error?.code === 'SESSION_DELETE_FAILED'
+      ) {
         sendError(response, 409, error.code, error.message);
         return;
       }

@@ -105,6 +105,28 @@ test('forwards the awaited retention cleanup hook to the owner-bound service', a
   assert.equal(calls, 1);
 });
 
+test('clears only the deleted Session cache after awaited Artifact-first deletion', async () => {
+  const service = new AgentBackedConversationService({
+    service: {
+      start() {},
+      describeCapabilityBinding() { return null; },
+      async deleteSessionWithArtifacts(sessionId) {
+        return { status: 'deleted', deleted: true, sessionId };
+      }
+    },
+    agent: {
+      describe() { return { capabilitySnapshotRef: null }; },
+      async run() {}
+    }
+  });
+  service.resultCache.set('deleted-session', { assistantMessage: 'delete' });
+  service.resultCache.set('remaining-session', { assistantMessage: 'keep' });
+  const result = await service.deleteSession('deleted-session', { confirmed: true });
+  assert.equal(result.deleted, true);
+  assert.equal(service.resultCache.has('deleted-session'), false);
+  assert.equal(service.resultCache.has('remaining-session'), true);
+});
+
 test('keeps persisted archived Workspace state authoritative over the Agent result cache', () => {
   const businessService = {
     start() {},

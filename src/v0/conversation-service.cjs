@@ -1528,6 +1528,19 @@ class LegalSelfCheckConversationService {
         }
       };
     }
+    const session = this.store.get(sessionId, this.ownerId);
+    if (session?.v1?.artifact?.storage) {
+      return {
+        status: 'artifact_cleanup_required',
+        sessionId,
+        success: false,
+        deleted: false,
+        error: {
+          code: 'SESSION_DELETE_REQUIRES_ARTIFACT_CLEANUP',
+          message: '该会话包含持久化分析产物，必须使用可等待的安全删除入口。'
+        }
+      };
+    }
     const deleted = this.store.delete(sessionId, this.ownerId);
     return {
       status: deleted ? 'deleted' : 'not_found',
@@ -1535,6 +1548,56 @@ class LegalSelfCheckConversationService {
       success: deleted,
       deleted
     };
+  }
+
+  async deleteSessionWithArtifacts(sessionId, confirmation = {}) {
+    if (confirmation?.confirmed !== true) return this.deleteSession(sessionId, confirmation);
+    const session = this.store.get(sessionId, this.ownerId);
+    if (!session) return this.deleteSession(sessionId, confirmation);
+    const artifact = session?.v1?.artifact;
+    const storage = artifact?.storage;
+    let artifactDeleted = false;
+    if (storage) {
+      if (
+        !this.artifactRepository ||
+        typeof this.artifactRepository.readAnalysisArtifact !== 'function' ||
+        typeof this.artifactRepository.deleteAnalysisArtifact !== 'function'
+      ) {
+        const error = new Error('当前运行时未配置关联分析产物的安全删除能力。');
+        error.code = 'SESSION_DELETE_ARTIFACT_UNAVAILABLE';
+        throw error;
+      }
+      try {
+        const verified = await this.artifactRepository.readAnalysisArtifact(storage);
+        if (
+          verified?.contentSha256 !== artifact.contentSha256 ||
+          verified?.sizeBytes !== storage.sizeBytes
+        ) {
+          throw new Error('Artifact read-back receipt does not match the Session.');
+        }
+        const deletion = await this.artifactRepository.deleteAnalysisArtifact(storage);
+        if (!['deleted', 'already_absent'].includes(deletion?.status)) {
+          throw new Error('Artifact deletion receipt is invalid.');
+        }
+        artifactDeleted = true;
+      } catch (cause) {
+        const error = new Error('关联分析产物未能安全删除，会话已保留以便重试。', { cause });
+        error.code = 'SESSION_DELETE_ARTIFACT_FAILED';
+        throw error;
+      }
+    }
+    if (!this.store.delete(sessionId, this.ownerId)) {
+      const error = new Error('关联产物已处理，但会话物理删除未获确认。');
+      error.code = 'SESSION_DELETE_FAILED';
+      throw error;
+    }
+    return Object.freeze({
+      status: 'deleted',
+      sessionId,
+      success: true,
+      deleted: true,
+      artifactDeleted
+    });
   }
 
   listHistory() {

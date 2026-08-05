@@ -255,8 +255,11 @@ class AgentBackedConversationService {
     return this.service.readV1Artifact(sessionId, artifactId);
   }
 
-  deleteSession(sessionId, confirmation) {
-    const result = this.service.deleteSession(sessionId, confirmation);
+  async deleteSession(sessionId, confirmation) {
+    const result =
+      typeof this.service.deleteSessionWithArtifacts === 'function'
+        ? await this.service.deleteSessionWithArtifacts(sessionId, confirmation)
+        : await this.service.deleteSession(sessionId, confirmation);
     if (result.deleted) this.resultCache.delete(sessionId);
     return result;
   }

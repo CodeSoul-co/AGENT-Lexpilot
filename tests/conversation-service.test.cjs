@@ -412,6 +412,41 @@ test('keeps sessions when Artifact preflight verification fails', async () => {
   assert.equal(store.count('preflight-owner'), 1);
 });
 
+test('single-session Artifact failure preserves the Session for retry', async () => {
+  const store = new InMemoryLegalSessionStore();
+  let deleteCalls = 0;
+  const service = new LegalSelfCheckConversationService({
+    store,
+    ownerId: 'single-delete-owner',
+    idFactory: () => 'single-delete-session',
+    autoCleanup: false,
+    artifactRepository: {
+      async storeAnalysisArtifact() {},
+      async readAnalysisArtifact() { throw new Error('read failed'); },
+      async deleteAnalysisArtifact() { deleteCalls += 1; }
+    }
+  });
+  service.start({
+    userText: '老板辞退我。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  const session = store.get('single-delete-session', 'single-delete-owner');
+  session.v1 = {
+    artifact: {
+      contentSha256: 'a'.repeat(64),
+      storage: { storeId: 'store', objectKey: 'analysis/object.md', sizeBytes: 1 }
+    }
+  };
+  store.save(session, 'single-delete-owner');
+  await assert.rejects(
+    service.deleteSessionWithArtifacts('single-delete-session', { confirmed: true }),
+    (error) => error?.code === 'SESSION_DELETE_ARTIFACT_FAILED'
+  );
+  assert.equal(deleteCalls, 0);
+  assert.notEqual(store.get('single-delete-session', 'single-delete-owner'), null);
+});
+
 test('returns history summaries without message text and sanitized history details', () => {
   const service = createService();
   const started = service.start({

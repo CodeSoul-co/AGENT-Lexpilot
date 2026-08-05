@@ -118,7 +118,7 @@ async function run(command, args) {
       return;
     }
     case 'delete': {
-      printJson(service.deleteSession(args[0], { confirmed: true }));
+      printJson(await service.deleteSessionWithArtifacts(args[0], { confirmed: true }));
       return;
     }
     case 'cleanup':
