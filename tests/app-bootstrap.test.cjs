@@ -164,8 +164,17 @@ test('runs start, answer, history, show, and delete across separate processes', 
 
     const deleteProcess = runDemo(environment, ['delete', started.sessionId, '--confirm']);
     assert.equal(deleteProcess.status, 0, deleteProcess.stderr);
-    assert.equal(JSON.parse(deleteProcess.stdout).status, 'deleted');
-    assert.equal(fs.readdirSync(directory).length, 0);
+    const deleted = JSON.parse(deleteProcess.stdout);
+    assert.equal(deleted.status, 'deleted');
+    assert.equal(deleted.deletionAudit.recorded, true);
+    assert.match(deleted.deletionAudit.logEntryRef.entryHash, /^sha256:[0-9a-f]{64}$/);
+    assert.deepEqual(fs.readdirSync(directory), ['v1-execution-log.jsonl']);
+    const retainedAudit = fs.readFileSync(
+      path.join(directory, 'v1-execution-log.jsonl'),
+      'utf8'
+    );
+    assert.equal(retainedAudit.includes(started.sessionId), false);
+    assert.equal(retainedAudit.includes('integration-owner'), false);
   });
 });
 

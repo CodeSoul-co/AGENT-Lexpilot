@@ -144,6 +144,15 @@ function createLocalLegalAgent(options = {}) {
   } finally {
     encryptionKey.fill(0);
   }
+  const executionLog =
+    options.executionLog ??
+    createDemoExecutionLog({
+      filePath: resolveExecutionLogFilePath(
+        projectRoot,
+        options.dataDirectory ?? environment[ENVIRONMENT_KEYS.dataDirectory],
+        options.executionLogFilePath ?? environment.LEGAL_V1_EXECUTION_LOG_FILE
+      )
+    });
   const service = new LegalSelfCheckConversationService({
     store,
     ownerId,
@@ -153,7 +162,7 @@ function createLocalLegalAgent(options = {}) {
     autoCleanup: options.autoCleanup,
     retentionDays: options.retentionDays,
     v1Runtime: options.v1Runtime,
-    executionLog: options.executionLog,
+    executionLog,
     artifactRepository: options.artifactRepository,
     capabilitySnapshot
   });

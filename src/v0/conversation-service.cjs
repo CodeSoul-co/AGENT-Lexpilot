@@ -1,6 +1,12 @@
 const { randomUUID } = require('node:crypto');
 const { createAuditActorId, requireAuditActorId } = require('../v1/audit-identity.cjs');
 const {
+  DATA_DELETION_PHASES,
+  DATA_DELETION_SCOPES,
+  createDataDeletionAuditEntry,
+  createDataDeletionAuditReceipt
+} = require('../v1/data-deletion-audit-receipt.cjs');
+const {
   createProfessionalQueryTaskInput,
   createProfessionalQueryTaskReceipt,
   restoreProfessionalQueryTaskInput
@@ -47,7 +53,6 @@ const { InMemoryLegalSessionStore } = require('./session-store.cjs');
 // on session entry points (startup sweep still runs in the constructor).
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const OWNER_HISTORY_ERASURE_PHRASE = 'DELETE MY HISTORY';
-const OWNER_ERASURE_AUDIT_SESSION_ID = 'owner-erasure';
 const {
   TASK_TYPES,
   TASK_TYPE_LABELS,
@@ -232,6 +237,11 @@ class LegalSelfCheckConversationService {
       options.auditActorId ?? createAuditActorId(this.ownerId)
     );
     this.idFactory = options.idFactory ?? randomUUID;
+    this.deletionAuditIdFactory =
+      options.deletionAuditIdFactory ?? (() => `lexpilot-deletion.${randomUUID()}`);
+    if (typeof this.deletionAuditIdFactory !== 'function') {
+      throw new TypeError('deletionAuditIdFactory must be a function.');
+    }
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.retentionDays = options.retentionDays ?? SESSION_RETENTION_DAYS;
     if (!Number.isInteger(this.retentionDays) || this.retentionDays < 1) {
@@ -282,6 +292,14 @@ class LegalSelfCheckConversationService {
 
   describeCapabilityBinding() {
     return this.capabilitySnapshot ? capabilitySnapshotRef(this.capabilitySnapshot) : null;
+  }
+
+  recordDataDeletionAudit(input) {
+    const entry = createDataDeletionAuditEntry(input);
+    const record = this.executionLog
+      ? this.executionLog.append({ actorId: this.auditActorId, ...entry })
+      : null;
+    return createDataDeletionAuditReceipt(record, entry);
   }
 
   maybeCleanupInactiveSessions() {
@@ -380,6 +398,35 @@ class LegalSelfCheckConversationService {
     if (typeof this.store.scanInactive !== 'function') {
       const legacy = this.store.purgeInactive(inactiveBefore);
       const status = legacy.failedCount === 0 ? 'completed' : 'partial_failure';
+      const targetSessionCount = legacy.deletedCount + legacy.failedCount;
+      let deletionAudit = null;
+      if (targetSessionCount > 0) {
+        const deletionOperationId = this.deletionAuditIdFactory();
+        this.recordDataDeletionAudit({
+          operationId: deletionOperationId,
+          scope: DATA_DELETION_SCOPES.RETENTION,
+          phase: DATA_DELETION_PHASES.REQUESTED,
+          targetSessionCount,
+          targetArtifactCount: 0,
+          deletedSessionCount: 0,
+          deletedArtifactCount: 0,
+          deletionFailureCount: 0
+        });
+        deletionAudit = this.recordDataDeletionAudit({
+          operationId: deletionOperationId,
+          scope: DATA_DELETION_SCOPES.RETENTION,
+          phase:
+            status === 'completed'
+              ? DATA_DELETION_PHASES.COMPLETED
+              : DATA_DELETION_PHASES.FAILED,
+          targetSessionCount,
+          targetArtifactCount: 0,
+          deletedSessionCount: legacy.deletedCount,
+          deletedArtifactCount: 0,
+          deletionFailureCount: legacy.failedCount,
+          ...(status === 'completed' ? {} : { errorCode: 'SESSION_RETENTION_CLEANUP_FAILED' })
+        });
+      }
       return {
         status,
         retentionDays: this.retentionDays,
@@ -388,6 +435,7 @@ class LegalSelfCheckConversationService {
         artifactDeletedCount: 0,
         artifactPendingCount: 0,
         failedCount: legacy.failedCount,
+        deletionAudit,
         trace: [
           safeEvent('v0.session.retention.cleaned', {
             status,
@@ -401,6 +449,26 @@ class LegalSelfCheckConversationService {
       };
     }
     const scanned = this.store.scanInactive(inactiveBefore);
+    const targetArtifactCount = new Set(
+      scanned.sessions
+        .map((session) => session?.v1?.artifact?.storage)
+        .filter(Boolean)
+        .map((receipt) => `${receipt.storeId}\0${receipt.objectKey}`)
+    ).size;
+    const shouldAudit = scanned.sessions.length > 0 || scanned.failedCount > 0;
+    const deletionOperationId = shouldAudit ? this.deletionAuditIdFactory() : null;
+    if (shouldAudit) {
+      this.recordDataDeletionAudit({
+        operationId: deletionOperationId,
+        scope: DATA_DELETION_SCOPES.RETENTION,
+        phase: DATA_DELETION_PHASES.REQUESTED,
+        targetSessionCount: scanned.sessions.length,
+        targetArtifactCount,
+        deletedSessionCount: 0,
+        deletedArtifactCount: 0,
+        deletionFailureCount: 0
+      });
+    }
     let deletedCount = 0;
     let artifactPendingCount = 0;
     let failedCount = scanned.failedCount;
@@ -418,6 +486,24 @@ class LegalSelfCheckConversationService {
       }
     }
     const status = failedCount === 0 ? 'completed' : 'partial_failure';
+    const deletionAudit = shouldAudit
+      ? this.recordDataDeletionAudit({
+          operationId: deletionOperationId,
+          scope: DATA_DELETION_SCOPES.RETENTION,
+          phase:
+            status === 'completed'
+              ? DATA_DELETION_PHASES.COMPLETED
+              : DATA_DELETION_PHASES.FAILED,
+          targetSessionCount: scanned.sessions.length,
+          targetArtifactCount,
+          deletedSessionCount: deletedCount,
+          deletedArtifactCount: 0,
+          deletionFailureCount: failedCount,
+          ...(status === 'completed'
+            ? {}
+            : { errorCode: 'SESSION_RETENTION_CLEANUP_FAILED' })
+        })
+      : null;
     return {
       status,
       retentionDays: this.retentionDays,
@@ -426,6 +512,7 @@ class LegalSelfCheckConversationService {
       artifactDeletedCount: 0,
       artifactPendingCount,
       failedCount,
+      deletionAudit,
       trace: [
         safeEvent('v0.session.retention.cleaned', {
           status,
@@ -458,6 +545,21 @@ class LegalSelfCheckConversationService {
         const key = `${receipt.storeId}\0${receipt.objectKey}`;
         artifacts.set(key, receipt);
         artifactKeyBySessionId.set(session.id, key);
+      }
+
+      const shouldAudit = scanned.sessions.length > 0 || scanned.failedCount > 0;
+      const deletionOperationId = shouldAudit ? this.deletionAuditIdFactory() : null;
+      if (shouldAudit) {
+        this.recordDataDeletionAudit({
+          operationId: deletionOperationId,
+          scope: DATA_DELETION_SCOPES.RETENTION,
+          phase: DATA_DELETION_PHASES.REQUESTED,
+          targetSessionCount: scanned.sessions.length,
+          targetArtifactCount: artifacts.size,
+          deletedSessionCount: 0,
+          deletedArtifactCount: 0,
+          deletionFailureCount: 0
+        });
       }
 
       const deletedArtifactKeys = new Set();
@@ -498,6 +600,25 @@ class LegalSelfCheckConversationService {
         }
       }
       const status = failedCount === 0 && artifactFailedCount === 0 ? 'completed' : 'partial_failure';
+      const deletionFailureCount = failedCount + artifactFailedCount;
+      const deletionAudit = shouldAudit
+        ? this.recordDataDeletionAudit({
+            operationId: deletionOperationId,
+            scope: DATA_DELETION_SCOPES.RETENTION,
+            phase:
+              status === 'completed'
+                ? DATA_DELETION_PHASES.COMPLETED
+                : DATA_DELETION_PHASES.FAILED,
+            targetSessionCount: scanned.sessions.length,
+            targetArtifactCount: artifacts.size,
+            deletedSessionCount: deletedCount,
+            deletedArtifactCount: artifactDeletedCount,
+            deletionFailureCount,
+            ...(status === 'completed'
+              ? {}
+              : { errorCode: 'SESSION_RETENTION_CLEANUP_FAILED' })
+          })
+        : null;
       const result = {
         status,
         retentionDays: this.retentionDays,
@@ -506,6 +627,7 @@ class LegalSelfCheckConversationService {
         artifactDeletedCount,
         artifactPendingCount: artifactFailedCount,
         failedCount,
+        deletionAudit,
         trace: [
           safeEvent('v0.session.retention.cleaned', {
             status,
@@ -1557,6 +1679,30 @@ class LegalSelfCheckConversationService {
     const artifact = session?.v1?.artifact;
     const storage = artifact?.storage;
     let artifactDeleted = false;
+    const targetArtifactCount = storage ? 1 : 0;
+    const deletionOperationId = this.deletionAuditIdFactory();
+    this.recordDataDeletionAudit({
+      operationId: deletionOperationId,
+      scope: DATA_DELETION_SCOPES.SINGLE_SESSION,
+      phase: DATA_DELETION_PHASES.REQUESTED,
+      targetSessionCount: 1,
+      targetArtifactCount,
+      deletedSessionCount: 0,
+      deletedArtifactCount: 0,
+      deletionFailureCount: 0
+    });
+    const recordFailure = (errorCode) =>
+      this.recordDataDeletionAudit({
+        operationId: deletionOperationId,
+        scope: DATA_DELETION_SCOPES.SINGLE_SESSION,
+        phase: DATA_DELETION_PHASES.FAILED,
+        targetSessionCount: 1,
+        targetArtifactCount,
+        deletedSessionCount: 0,
+        deletedArtifactCount: artifactDeleted ? 1 : 0,
+        deletionFailureCount: 1,
+        errorCode
+      });
     if (storage) {
       if (
         !this.artifactRepository ||
@@ -1565,6 +1711,7 @@ class LegalSelfCheckConversationService {
       ) {
         const error = new Error('当前运行时未配置关联分析产物的安全删除能力。');
         error.code = 'SESSION_DELETE_ARTIFACT_UNAVAILABLE';
+        recordFailure(error.code);
         throw error;
       }
       try {
@@ -1583,20 +1730,33 @@ class LegalSelfCheckConversationService {
       } catch (cause) {
         const error = new Error('关联分析产物未能安全删除，会话已保留以便重试。', { cause });
         error.code = 'SESSION_DELETE_ARTIFACT_FAILED';
+        recordFailure(error.code);
         throw error;
       }
     }
     if (!this.store.delete(sessionId, this.ownerId)) {
       const error = new Error('关联产物已处理，但会话物理删除未获确认。');
       error.code = 'SESSION_DELETE_FAILED';
+      recordFailure(error.code);
       throw error;
     }
+    const deletionAudit = this.recordDataDeletionAudit({
+      operationId: deletionOperationId,
+      scope: DATA_DELETION_SCOPES.SINGLE_SESSION,
+      phase: DATA_DELETION_PHASES.COMPLETED,
+      targetSessionCount: 1,
+      targetArtifactCount,
+      deletedSessionCount: 1,
+      deletedArtifactCount: artifactDeleted ? 1 : 0,
+      deletionFailureCount: 0
+    });
     return Object.freeze({
       status: 'deleted',
       sessionId,
       success: true,
       deleted: true,
-      artifactDeleted
+      artifactDeleted,
+      deletionAudit
     });
   }
 
@@ -1650,6 +1810,27 @@ class LegalSelfCheckConversationService {
       const storage = session?.v1?.artifact?.storage;
       if (storage) artifacts.set(`${storage.storeId}\0${storage.objectKey}`, storage);
     }
+    const deletionOperationId = this.deletionAuditIdFactory();
+    const recordErasureAudit = (phase, deletedSessionCount, deletedArtifactCount, errorCode) =>
+      this.recordDataDeletionAudit({
+        operationId: deletionOperationId,
+        scope: DATA_DELETION_SCOPES.OWNER_HISTORY,
+        phase,
+        targetSessionCount: sessions.length,
+        targetArtifactCount: artifacts.size,
+        deletedSessionCount,
+        deletedArtifactCount,
+        deletionFailureCount:
+          phase === DATA_DELETION_PHASES.FAILED
+            ? Math.max(
+                1,
+                sessions.length - deletedSessionCount + artifacts.size - deletedArtifactCount
+              )
+            : 0,
+        ...(errorCode ? { errorCode } : {})
+      });
+
+    recordErasureAudit(DATA_DELETION_PHASES.REQUESTED, 0, 0);
     if (
       artifacts.size > 0 &&
       (!this.artifactRepository ||
@@ -1658,31 +1839,9 @@ class LegalSelfCheckConversationService {
     ) {
       const error = new Error('存在持久化分析产物，但当前运行时未配置受治理的删除能力。');
       error.code = 'OWNER_HISTORY_ERASURE_UNAVAILABLE';
+      recordErasureAudit(DATA_DELETION_PHASES.FAILED, 0, 0, error.code);
       throw error;
     }
-
-    const appendErasureAudit = (entry) => {
-      if (!this.executionLog) return null;
-      return this.executionLog.append({
-        actorId: this.auditActorId,
-        sessionId: OWNER_ERASURE_AUDIT_SESSION_ID,
-        operationType: entry.operationType,
-        status: entry.status,
-        targetSessionCount: sessions.length,
-        targetArtifactCount: artifacts.size,
-        erasedSessionCount: entry.erasedSessionCount,
-        erasedArtifactCount: entry.erasedArtifactCount,
-        auditRecordsRetained: true,
-        ...(entry.errorCode ? { errorCode: entry.errorCode } : {})
-      });
-    };
-
-    appendErasureAudit({
-      operationType: 'owner_history_erasure_requested',
-      status: 'pending',
-      erasedSessionCount: 0,
-      erasedArtifactCount: 0
-    });
 
     let erasedArtifactCount = 0;
     let erasedSessionCount = 0;
@@ -1707,32 +1866,31 @@ class LegalSelfCheckConversationService {
       const error = new Error('当前账号历史未能全部清除；请保留运行目录并重试。', { cause });
       error.code = 'OWNER_HISTORY_ERASURE_FAILED';
       try {
-        appendErasureAudit({
-          operationType: 'owner_history_erasure_failed',
-          status: 'partial_failure',
+        recordErasureAudit(
+          DATA_DELETION_PHASES.FAILED,
           erasedSessionCount,
           erasedArtifactCount,
-          errorCode: error.code
-        });
+          error.code
+        );
       } catch {
         // Preserve the erasure failure as the primary error; integrity checks still expose log failure.
       }
       throw error;
     }
 
-    const completion = appendErasureAudit({
-      operationType: 'owner_history_erasure_completed',
-      status: 'completed',
+    const deletionAudit = recordErasureAudit(
+      DATA_DELETION_PHASES.COMPLETED,
       erasedSessionCount,
       erasedArtifactCount
-    });
+    );
     return Object.freeze({
       status: 'completed',
       success: true,
       erasedSessionCount,
       erasedArtifactCount,
       auditRecordsRetained: true,
-      erasureReceiptRecorded: completion !== null
+      erasureReceiptRecorded: deletionAudit.recorded,
+      deletionAudit
     });
   }
 

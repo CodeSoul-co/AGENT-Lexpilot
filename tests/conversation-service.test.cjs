@@ -337,8 +337,18 @@ test('erases only the current owner sessions after verifying and deleting associ
   const common = {
     store,
     autoCleanup: false,
+    deletionAuditIdFactory: () => 'lexpilot-deletion.00000000-0000-4000-8000-000000000001',
     executionLog: {
-      append(entry) { auditEntries.push(structuredClone(entry)); return { entryId: `log-${auditEntries.length}` }; },
+      append(entry) {
+        auditEntries.push(structuredClone(entry));
+        return {
+          ...entry,
+          schemaVersion: 1,
+          sequence: auditEntries.length,
+          entryId: `log-${auditEntries.length}`,
+          entryHash: 'd'.repeat(64)
+        };
+      },
       list() { return [...auditEntries]; },
       verifyIntegrity() { return { status: 'verified' }; }
     },
@@ -371,7 +381,21 @@ test('erases only the current owner sessions after verifying and deleting associ
     erasedSessionCount: 1,
     erasedArtifactCount: 1,
     auditRecordsRetained: true,
-    erasureReceiptRecorded: true
+    erasureReceiptRecorded: true,
+    deletionAudit: {
+      contractVersion: 'lexpilot.data-deletion-audit.v1',
+      operationId: 'lexpilot-deletion.00000000-0000-4000-8000-000000000001',
+      scope: 'owner_history',
+      phase: 'completed',
+      status: 'completed',
+      recorded: true,
+      logEntryRef: {
+        schemaVersion: 1,
+        entryId: 'log-2',
+        sequence: 2,
+        entryHash: `sha256:${'d'.repeat(64)}`
+      }
+    }
   });
   assert.deepEqual(artifactCalls.map(([operation]) => operation), ['read', 'delete']);
   assert.equal(store.count('owner-a'), 0);

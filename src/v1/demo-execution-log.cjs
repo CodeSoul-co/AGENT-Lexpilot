@@ -2,6 +2,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { requireAuditActorId } = require('./audit-identity.cjs');
+const { validateDataDeletionAuditRecord } = require('./data-deletion-audit-receipt.cjs');
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
@@ -59,6 +60,13 @@ const ENTRY_KEYS = Object.freeze([
   'targetArtifactCount',
   'erasedSessionCount',
   'erasedArtifactCount',
+  'deletionReceiptVersion',
+  'deletionOperationId',
+  'deletionScope',
+  'deletionPhase',
+  'deletedSessionCount',
+  'deletedArtifactCount',
+  'deletionFailureCount',
   'auditRecordsRetained'
 ]);
 
@@ -148,7 +156,10 @@ function validateReceiptFields(record) {
     'targetSessionCount',
     'targetArtifactCount',
     'erasedSessionCount',
-    'erasedArtifactCount'
+    'erasedArtifactCount',
+    'deletedSessionCount',
+    'deletedArtifactCount',
+    'deletionFailureCount'
   ]) {
     if (
       record[key] !== undefined &&
@@ -229,6 +240,7 @@ function validateReceiptFields(record) {
       throw new TypeError(`entry.${key} must be a SHA-256 fingerprint.`);
     }
   }
+  validateDataDeletionAuditRecord(record);
 }
 
 function readState(filePath) {
