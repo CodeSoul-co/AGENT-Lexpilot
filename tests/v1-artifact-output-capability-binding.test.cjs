@@ -40,6 +40,7 @@ function analysisArtifact(content = '# Bound analysis\n') {
 
 function fakeAnalysisRepository(overrides = {}) {
   let calls = 0;
+  let deleteCalls = 0;
   const descriptor = {
     storeId: 'lexpilot.execution-artifacts.local',
     backend: 'hypha.LocalFilesystemExecutionArtifactStore',
@@ -64,10 +65,15 @@ function fakeAnalysisRepository(overrides = {}) {
       };
     },
     async readAnalysisArtifact() {},
+    async deleteAnalysisArtifact() {
+      deleteCalls += 1;
+      return { status: 'deleted' };
+    },
     async health() {},
     async stats() {},
     async close() {},
-    calls: () => calls
+    calls: () => calls,
+    deleteCalls: () => deleteCalls
   };
 }
 
@@ -109,6 +115,9 @@ test('binds the versioned Artifact profile to the real Hypha repository and veri
     assert.equal(JSON.stringify(receipt).includes(directory), false);
     const stored = await bound.analysisRepository.readAnalysisArtifact(receipt);
     assert.equal(stored.content, artifact.content);
+    const deletion = await bound.analysisRepository.deleteAnalysisArtifact(receipt);
+    assert.equal(deletion.status, 'deleted');
+    assert.equal((await rawRepository.stats()).objects, 0);
   } finally {
     await rawRepository.close();
     fs.rmSync(directory, { recursive: true, force: true });
@@ -220,4 +229,22 @@ test('blocks unsafe publication before Store access and rejects a drifted Store 
     (error) => error?.code === 'ARTIFACT_OUTPUT_RECEIPT_DRIFT'
   );
   assert.equal(driftedRepository.calls(), 1);
+
+  const receipt = await bound.analysisRepository.storeAnalysisArtifact({
+    sessionId: 'session',
+    runId: 'run-2',
+    artifact: analysisArtifact(),
+    publication: { status: 'completed', executionAttempted: true }
+  });
+  await assert.rejects(
+    bound.analysisRepository.deleteAnalysisArtifact({
+      ...receipt,
+      artifactOutputBindingRef: {
+        ...receipt.artifactOutputBindingRef,
+        manifestCanonicalSha256: `sha256:${'0'.repeat(64)}`
+      }
+    }),
+    (error) => error?.code === 'ARTIFACT_OUTPUT_RECEIPT_DRIFT'
+  );
+  assert.equal(repository.deleteCalls(), 0);
 });

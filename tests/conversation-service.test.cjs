@@ -1,7 +1,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { PRIVACY_POLICY_VERSION, V0_ERROR_CODES } = require('../src/v0/contracts.cjs');
-const { LegalSelfCheckConversationService } = require('../src/v0/conversation-service.cjs');
+const {
+  OWNER_HISTORY_ERASURE_PHRASE,
+  LegalSelfCheckConversationService
+} = require('../src/v0/conversation-service.cjs');
 const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
 
 function createService() {
@@ -317,6 +320,96 @@ test('isolates sessions and history by owner', () => {
     'not_found'
   );
   assert.equal(ownerA.getSession('private-session').messages.length, 1);
+});
+
+test('erases only the current owner sessions after verifying and deleting associated Artifacts', async () => {
+  const store = new InMemoryLegalSessionStore();
+  const auditEntries = [];
+  const artifactCalls = [];
+  const artifactReceipt = {
+    storeId: 'lexpilot.execution-artifacts.local',
+    objectKey: `analysis/${'a'.repeat(64)}.md`,
+    etag: 'etag-1',
+    contentSha256: 'b'.repeat(64),
+    sizeBytes: 12,
+    backend: 'hypha.LocalFilesystemExecutionArtifactStore'
+  };
+  const common = {
+    store,
+    autoCleanup: false,
+    executionLog: {
+      append(entry) { auditEntries.push(structuredClone(entry)); return { entryId: `log-${auditEntries.length}` }; },
+      list() { return [...auditEntries]; },
+      verifyIntegrity() { return { status: 'verified' }; }
+    },
+    artifactRepository: {
+      describe() { return {}; },
+      async storeAnalysisArtifact() {},
+      async readAnalysisArtifact(receipt) { artifactCalls.push(['read', receipt.objectKey]); return { content: 'verified' }; },
+      async deleteAnalysisArtifact(receipt) { artifactCalls.push(['delete', receipt.objectKey]); return { status: 'deleted' }; }
+    }
+  };
+  const ownerA = new LegalSelfCheckConversationService({ ...common, ownerId: 'owner-a', idFactory: () => 'owner-a-session' });
+  const ownerB = new LegalSelfCheckConversationService({ ...common, ownerId: 'owner-b', idFactory: () => 'owner-b-session' });
+  ownerA.start({ userText: '老板辞退我。', privacyConsent: true, privacyPolicyVersion: PRIVACY_POLICY_VERSION });
+  ownerB.start({ userText: '公司欠薪。', privacyConsent: true, privacyPolicyVersion: PRIVACY_POLICY_VERSION });
+  const owned = store.get('owner-a-session', 'owner-a');
+  owned.v1 = { artifact: { storage: artifactReceipt } };
+  store.save(owned, 'owner-a');
+
+  const unconfirmed = await ownerA.eraseOwnerHistory({ confirmed: true, confirmationPhrase: 'wrong' });
+  assert.equal(unconfirmed.status, 'confirmation_required');
+  assert.equal(store.count('owner-a'), 1);
+
+  const result = await ownerA.eraseOwnerHistory({
+    confirmed: true,
+    confirmationPhrase: OWNER_HISTORY_ERASURE_PHRASE
+  });
+  assert.deepEqual(result, {
+    status: 'completed',
+    success: true,
+    erasedSessionCount: 1,
+    erasedArtifactCount: 1,
+    auditRecordsRetained: true,
+    erasureReceiptRecorded: true
+  });
+  assert.deepEqual(artifactCalls.map(([operation]) => operation), ['read', 'delete']);
+  assert.equal(store.count('owner-a'), 0);
+  assert.equal(store.count('owner-b'), 1);
+  assert.deepEqual(auditEntries.map((entry) => entry.operationType), [
+    'owner_history_erasure_requested',
+    'owner_history_erasure_completed'
+  ]);
+  assert.equal(JSON.stringify(auditEntries).includes('owner-a-session'), false);
+  assert.equal(JSON.stringify(auditEntries).includes('owner-a'), false);
+  assert.equal(auditEntries[1].auditRecordsRetained, true);
+});
+
+test('keeps sessions when Artifact preflight verification fails', async () => {
+  const store = new InMemoryLegalSessionStore();
+  const service = new LegalSelfCheckConversationService({
+    store,
+    ownerId: 'preflight-owner',
+    idFactory: () => 'preflight-session',
+    autoCleanup: false,
+    artifactRepository: {
+      describe() { return {}; },
+      async storeAnalysisArtifact() {},
+      async readAnalysisArtifact() { throw new Error('verification failed'); },
+      async deleteAnalysisArtifact() { throw new Error('must not delete'); }
+    }
+  });
+  service.start({ userText: '老板辞退我。', privacyConsent: true, privacyPolicyVersion: PRIVACY_POLICY_VERSION });
+  const session = store.get('preflight-session', 'preflight-owner');
+  session.v1 = { artifact: { storage: {
+    storeId: 'store', objectKey: 'analysis/object.md', contentSha256: 'hash'
+  } } };
+  store.save(session, 'preflight-owner');
+  await assert.rejects(
+    service.eraseOwnerHistory({ confirmed: true, confirmationPhrase: OWNER_HISTORY_ERASURE_PHRASE }),
+    (error) => error?.code === 'OWNER_HISTORY_ERASURE_FAILED'
+  );
+  assert.equal(store.count('preflight-owner'), 1);
 });
 
 test('returns history summaries without message text and sanitized history details', () => {

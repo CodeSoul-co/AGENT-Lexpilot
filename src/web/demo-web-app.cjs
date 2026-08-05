@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { PRIVACY_POLICY_VERSION, V0_DOMAIN_PACK_VERSION } = require('../v0/contracts.cjs');
+const { OWNER_HISTORY_ERASURE_PHRASE } = require('../v0/conversation-service.cjs');
 const {
   DEFAULT_OUTPUT_FORMATS,
   PROFESSIONAL_QUERY_TASK_SCHEMA,
@@ -424,6 +425,25 @@ function createDemoWebHandler(options = {}) {
         return;
       }
 
+      if (request.method === 'DELETE' && url.pathname === '/api/account/history') {
+        if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
+        if (typeof service.eraseOwnerHistory !== 'function') {
+          sendError(response, 501, 'OWNER_HISTORY_ERASURE_UNAVAILABLE', '当前运行时未配置账号历史清除能力。');
+          return;
+        }
+        const body = await readJsonBody(request);
+        if (
+          !requireExactKeys(body, ['confirmed', 'confirmationPhrase']) ||
+          body.confirmed !== true ||
+          body.confirmationPhrase !== OWNER_HISTORY_ERASURE_PHRASE
+        ) {
+          sendError(response, 400, 'OWNER_HISTORY_ERASURE_CONFIRMATION_REQUIRED', '清除全部历史的确认短语无效。');
+          return;
+        }
+        sendJson(response, 200, await service.eraseOwnerHistory(body));
+        return;
+      }
+
       if (route?.type === 'detail' && request.method === 'GET') {
         if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const history = service.getHistory(route.sessionId);
@@ -495,6 +515,14 @@ function createDemoWebHandler(options = {}) {
       }
       if (error?.code === 'ARTIFACT_DOWNLOAD_UNAVAILABLE') {
         sendError(response, 501, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'OWNER_HISTORY_ERASURE_UNAVAILABLE') {
+        sendError(response, 501, error.code, error.message);
+        return;
+      }
+      if (error?.code === 'OWNER_HISTORY_ERASURE_FAILED') {
+        sendError(response, 409, error.code, error.message);
         return;
       }
       if (

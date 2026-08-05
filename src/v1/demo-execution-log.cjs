@@ -54,7 +54,12 @@ const ENTRY_KEYS = Object.freeze([
   'workspaceId',
   'workspaceArchiveReceiptSha256',
   'workspaceInactiveDays',
-  'artifactReferenceCount'
+  'artifactReferenceCount',
+  'targetSessionCount',
+  'targetArtifactCount',
+  'erasedSessionCount',
+  'erasedArtifactCount',
+  'auditRecordsRetained'
 ]);
 
 class ExecutionLogIntegrityError extends Error {
@@ -139,7 +144,11 @@ function validateReceiptFields(record) {
     'inputBytes',
     'generatedArtifactCount',
     'workspaceInactiveDays',
-    'artifactReferenceCount'
+    'artifactReferenceCount',
+    'targetSessionCount',
+    'targetArtifactCount',
+    'erasedSessionCount',
+    'erasedArtifactCount'
   ]) {
     if (
       record[key] !== undefined &&
@@ -184,6 +193,12 @@ function validateReceiptFields(record) {
   }
   if (record.executionAttempted !== undefined && typeof record.executionAttempted !== 'boolean') {
     throw new TypeError('entry.executionAttempted must be a boolean when present.');
+  }
+  if (
+    record.auditRecordsRetained !== undefined &&
+    typeof record.auditRecordsRetained !== 'boolean'
+  ) {
+    throw new TypeError('entry.auditRecordsRetained must be a boolean when present.');
   }
   if (record.resourceAccountingMode !== undefined) {
     requireNonEmptyString(record.resourceAccountingMode, 'entry.resourceAccountingMode');

@@ -23,6 +23,33 @@ function sha256(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function storageRefFromReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object') {
+    throw new TypeError('receipt must be an object.');
+  }
+  const contentSha256 = requireString(receipt.contentSha256, 'receipt.contentSha256');
+  if (!SHA256_PATTERN.test(contentSha256)) {
+    throw new TypeError('receipt.contentSha256 must be a SHA-256 digest.');
+  }
+  if (
+    receipt.backend !== 'hypha.LocalFilesystemExecutionArtifactStore' ||
+    !Number.isSafeInteger(receipt.sizeBytes) ||
+    receipt.sizeBytes < 0
+  ) {
+    throw new TypeError('receipt does not describe a governed local Analysis Artifact.');
+  }
+  return {
+    ref: {
+      storeId: requireString(receipt.storeId, 'receipt.storeId'),
+      objectKey: requireString(receipt.objectKey, 'receipt.objectKey'),
+      ...(receipt.versionId ? { versionId: receipt.versionId } : {}),
+      ...(receipt.etag ? { etag: receipt.etag } : {})
+    },
+    contentSha256,
+    sizeBytes: receipt.sizeBytes
+  };
+}
+
 async function collectContent(content) {
   const chunks = [];
   for await (const chunk of content.stream) {
@@ -125,19 +152,7 @@ function createExecutionArtifactRepository(options = {}) {
     },
 
     async readAnalysisArtifact(receipt) {
-      if (!receipt || typeof receipt !== 'object') {
-        throw new TypeError('receipt must be an object.');
-      }
-      const ref = {
-        storeId: requireString(receipt.storeId, 'receipt.storeId'),
-        objectKey: requireString(receipt.objectKey, 'receipt.objectKey'),
-        ...(receipt.versionId ? { versionId: receipt.versionId } : {}),
-        ...(receipt.etag ? { etag: receipt.etag } : {})
-      };
-      const expectedContentHash = requireString(
-        receipt.contentSha256,
-        'receipt.contentSha256'
-      );
+      const { ref, contentSha256: expectedContentHash } = storageRefFromReceipt(receipt);
       try {
         const stored = await store.get({ ref, expectedContentHash: `sha256:${expectedContentHash}` });
         const bytes = await collectContent(stored);
@@ -151,6 +166,40 @@ function createExecutionArtifactRepository(options = {}) {
         throw new ExecutionArtifactRepositoryError(
           typeof error?.code === 'string' ? error.code : 'ARTIFACT_READ_FAILED',
           'Analysis Artifact could not be read or verified.',
+          { cause: error }
+        );
+      }
+    },
+
+    async deleteAnalysisArtifact(receipt) {
+      const { ref, contentSha256, sizeBytes } = storageRefFromReceipt(receipt);
+      try {
+        const metadata = await store.head(ref);
+        if (metadata === null) {
+          return Object.freeze({ status: 'already_absent', contentSha256, sizeBytes });
+        }
+        if (
+          metadata.contentHash !== `sha256:${contentSha256}` ||
+          metadata.sizeBytes !== sizeBytes
+        ) {
+          throw new ExecutionArtifactRepositoryError(
+            'ARTIFACT_DELETE_VERIFY_FAILED',
+            'Analysis Artifact deletion receipt does not match stored metadata.'
+          );
+        }
+        await store.delete(ref);
+        if ((await store.head(ref)) !== null) {
+          throw new ExecutionArtifactRepositoryError(
+            'ARTIFACT_DELETE_VERIFY_FAILED',
+            'Analysis Artifact remained readable after deletion.'
+          );
+        }
+        return Object.freeze({ status: 'deleted', contentSha256, sizeBytes });
+      } catch (error) {
+        if (error instanceof ExecutionArtifactRepositoryError) throw error;
+        throw new ExecutionArtifactRepositoryError(
+          typeof error?.code === 'string' ? error.code : 'ARTIFACT_DELETE_FAILED',
+          'Analysis Artifact could not be deleted or verified.',
           { cause: error }
         );
       }

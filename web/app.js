@@ -3,7 +3,7 @@ const v1Presentation = globalThis.LexPilotV1Presentation;
 if (!v1Presentation) throw new Error('V1 presentation module failed to load.');
 const elements = {
   characterCount: $('#character-count'), composer: $('#composer'), consent: $('#privacy-consent'),
-  conversation: $('#conversation'), deleteSession: $('#delete-session'), domainLabel: $('#domain-label'),
+  conversation: $('#conversation'), deleteSession: $('#delete-session'), eraseHistory: $('#erase-history'), domainLabel: $('#domain-label'),
   factsList: $('#facts-list'), historyList: $('#history-list'), input: $('#message-input'),
   newSession: $('#new-session'), pageTitle: $('#page-title'), privacyAccept: $('#privacy-accept'),
   privacyModal: $('#privacy-modal'), policyVersion: $('#policy-version'), refreshHistory: $('#refresh-history'),
@@ -1169,6 +1169,24 @@ elements.privacyAccept.addEventListener('click', () => { if (!elements.consent.c
 elements.newSession.addEventListener('click', () => resetConversation(state.mode));
 elements.refreshHistory.addEventListener('click', () => loadHistory().catch((error) => toast(error.message)));
 elements.deleteSession.addEventListener('click', async () => { if (!state.activeSessionId || !window.confirm('确认物理删除当前本地会话？此操作无法撤销。')) return; try { await api(`/api/sessions/${state.activeSessionId}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true }) }); toast('会话已删除'); resetConversation(state.mode); await loadHistory(); } catch (error) { toast(error.message); } });
+elements.eraseHistory.addEventListener('click', async () => {
+  const confirmationPhrase = window.prompt('此操作会物理删除当前账号的全部本地会话和关联分析产物，且无法撤销。请输入 DELETE MY HISTORY 继续：');
+  if (confirmationPhrase !== 'DELETE MY HISTORY') {
+    if (confirmationPhrase !== null) toast('确认短语不匹配，未清除任何历史');
+    return;
+  }
+  try {
+    const result = await api('/api/account/history', {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmed: true, confirmationPhrase })
+    });
+    toast(`已清除 ${result.erasedSessionCount} 个会话和 ${result.erasedArtifactCount} 个分析产物`);
+    resetConversation(state.mode);
+    await loadHistory();
+  } catch (error) {
+    toast(error.message);
+  }
+});
 document.querySelectorAll('.mode-tab').forEach((tab) => tab.addEventListener('click', () => resetConversation(tab.dataset.mode)));
 document.querySelectorAll('[data-sample]').forEach((button) => button.addEventListener('click', () => { showMode(button.dataset.mode); if (button.dataset.language) elements.sandboxLanguage.value = button.dataset.language; elements.input.value = button.dataset.sample; elements.characterCount.textContent = String(elements.input.value.length); elements.input.focus(); }));
 elements.confirmAccept.addEventListener('click', () => state.pendingSandboxPlanId ? confirmSandboxExecution(true) : confirmExecution(true));

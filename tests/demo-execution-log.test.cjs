@@ -116,6 +116,38 @@ test('drops undeclared entry fields so user text never reaches the log', () => {
   });
 });
 
+test('records aggregate owner-erasure counts without owner or session detail lists', () => {
+  withTemporaryLog((filePath) => {
+    const log = createDemoExecutionLog({ filePath });
+    const record = log.append(entry({
+      sessionId: 'owner-erasure',
+      runId: undefined,
+      sql: undefined,
+      operationType: 'owner_history_erasure_completed',
+      targetSessionCount: 3,
+      targetArtifactCount: 2,
+      erasedSessionCount: 3,
+      erasedArtifactCount: 2,
+      auditRecordsRetained: true,
+      ownerId: 'private-owner',
+      erasedSessionIds: ['private-session']
+    }));
+    assert.equal(record.erasedSessionCount, 3);
+    assert.equal(record.auditRecordsRetained, true);
+    const raw = fs.readFileSync(filePath, 'utf8');
+    assert.equal(raw.includes('private-owner'), false);
+    assert.equal(raw.includes('private-session'), false);
+    assert.throws(
+      () => log.append(entry({ erasedArtifactCount: -1 })),
+      /non-negative safe integer/
+    );
+    assert.throws(
+      () => log.append(entry({ auditRecordsRetained: 'yes' })),
+      /must be a boolean/
+    );
+  });
+});
+
 test('records only hashed Sandbox inputs and structured lifecycle receipts', () => {
   withTemporaryLog((filePath) => {
     const log = createDemoExecutionLog({ filePath });

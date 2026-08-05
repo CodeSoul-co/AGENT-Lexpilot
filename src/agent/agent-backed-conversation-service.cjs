@@ -261,6 +261,15 @@ class AgentBackedConversationService {
     return result;
   }
 
+  async eraseOwnerHistory(confirmation) {
+    if (typeof this.service.eraseOwnerHistory !== 'function') {
+      throw new TypeError('service must expose eraseOwnerHistory(confirmation).');
+    }
+    const result = await this.service.eraseOwnerHistory(confirmation);
+    if (result?.success === true) this.resultCache.clear();
+    return result;
+  }
+
   async confirmV1Execution(sessionId, confirmation) {
     if (typeof this.service.confirmV1Execution !== 'function') {
       throw new TypeError('service must expose confirmV1Execution(sessionId, confirmation).');

@@ -139,6 +139,32 @@ test('enforces owner isolation and physically deletes the encrypted file', () =>
   });
 });
 
+test('owner history erasure physically removes every encrypted session file', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'legal-owner-erasure-test-'));
+  try {
+    const encryptionKey = crypto.randomBytes(32);
+    let sequence = 0;
+    const service = new LegalSelfCheckConversationService({
+      store: new EncryptedFileLegalSessionStore({ directory, encryptionKey }),
+      ownerId: 'owner-a',
+      idFactory: () => `owner-session-${++sequence}`,
+      autoCleanup: false
+    });
+    for (const userText of ['朋友欠款。', '老板辞退我。']) {
+      service.start({ userText, privacyConsent: true, privacyPolicyVersion: PRIVACY_POLICY_VERSION });
+    }
+    assert.equal(fs.readdirSync(directory).length, 2);
+    const result = await service.eraseOwnerHistory({
+      confirmed: true,
+      confirmationPhrase: 'DELETE MY HISTORY'
+    });
+    assert.equal(result.erasedSessionCount, 2);
+    assert.equal(fs.readdirSync(directory).length, 0);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('fails closed when the key is wrong or encrypted content is tampered with', () => {
   withTemporaryDirectory((directory) => {
     const encryptionKey = crypto.randomBytes(32);

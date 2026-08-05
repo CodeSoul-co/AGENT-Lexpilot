@@ -83,3 +83,29 @@ test('rejects altered content and duplicate immutable object keys', async () => 
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('physically deletes a verified Artifact and treats a repeated delete as idempotent', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lexpilot-artifact-delete-'));
+  const repository = createExecutionArtifactRepository({
+    rootPath: directory,
+    projectRoot: path.resolve(__dirname, '..')
+  });
+  try {
+    const receipt = await repository.storeAnalysisArtifact({
+      sessionId: 'session-delete',
+      runId: 'run-delete',
+      artifact: artifact()
+    });
+    assert.deepEqual(await repository.deleteAnalysisArtifact(receipt), {
+      status: 'deleted',
+      contentSha256: receipt.contentSha256,
+      sizeBytes: receipt.sizeBytes
+    });
+    assert.equal((await repository.stats()).objects, 0);
+    await assert.rejects(repository.readAnalysisArtifact(receipt));
+    assert.equal((await repository.deleteAnalysisArtifact(receipt)).status, 'already_absent');
+  } finally {
+    await repository.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

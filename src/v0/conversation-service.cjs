@@ -46,6 +46,8 @@ const { InMemoryLegalSessionStore } = require('./session-store.cjs');
 // Long-running processes re-run the retention sweep at most once per day
 // on session entry points (startup sweep still runs in the constructor).
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const OWNER_HISTORY_ERASURE_PHRASE = 'DELETE MY HISTORY';
+const OWNER_ERASURE_AUDIT_SESSION_ID = 'owner-erasure';
 const {
   TASK_TYPES,
   TASK_TYPE_LABELS,
@@ -1417,6 +1419,116 @@ class LegalSelfCheckConversationService {
     return session ? historyDetail(session) : null;
   }
 
+  async eraseOwnerHistory(confirmation = {}) {
+    if (
+      confirmation?.confirmed !== true ||
+      confirmation?.confirmationPhrase !== OWNER_HISTORY_ERASURE_PHRASE
+    ) {
+      return {
+        status: 'confirmation_required',
+        success: false,
+        erasedSessionCount: 0,
+        erasedArtifactCount: 0,
+        auditRecordsRetained: true,
+        error: {
+          code: 'OWNER_HISTORY_ERASURE_CONFIRMATION_REQUIRED',
+          message: `清除全部历史必须输入确认短语 ${OWNER_HISTORY_ERASURE_PHRASE}。`
+        }
+      };
+    }
+
+    const sessions = this.store.list(this.ownerId);
+    const artifacts = new Map();
+    for (const session of sessions) {
+      const storage = session?.v1?.artifact?.storage;
+      if (storage) artifacts.set(`${storage.storeId}\0${storage.objectKey}`, storage);
+    }
+    if (
+      artifacts.size > 0 &&
+      (!this.artifactRepository ||
+        typeof this.artifactRepository.readAnalysisArtifact !== 'function' ||
+        typeof this.artifactRepository.deleteAnalysisArtifact !== 'function')
+    ) {
+      const error = new Error('存在持久化分析产物，但当前运行时未配置受治理的删除能力。');
+      error.code = 'OWNER_HISTORY_ERASURE_UNAVAILABLE';
+      throw error;
+    }
+
+    const appendErasureAudit = (entry) => {
+      if (!this.executionLog) return null;
+      return this.executionLog.append({
+        actorId: this.auditActorId,
+        sessionId: OWNER_ERASURE_AUDIT_SESSION_ID,
+        operationType: entry.operationType,
+        status: entry.status,
+        targetSessionCount: sessions.length,
+        targetArtifactCount: artifacts.size,
+        erasedSessionCount: entry.erasedSessionCount,
+        erasedArtifactCount: entry.erasedArtifactCount,
+        auditRecordsRetained: true,
+        ...(entry.errorCode ? { errorCode: entry.errorCode } : {})
+      });
+    };
+
+    appendErasureAudit({
+      operationType: 'owner_history_erasure_requested',
+      status: 'pending',
+      erasedSessionCount: 0,
+      erasedArtifactCount: 0
+    });
+
+    let erasedArtifactCount = 0;
+    let erasedSessionCount = 0;
+    try {
+      for (const receipt of artifacts.values()) {
+        await this.artifactRepository.readAnalysisArtifact(receipt);
+      }
+      for (const receipt of artifacts.values()) {
+        const result = await this.artifactRepository.deleteAnalysisArtifact(receipt);
+        if (!['deleted', 'already_absent'].includes(result?.status)) {
+          throw new Error('Artifact Repository returned an invalid deletion receipt.');
+        }
+        erasedArtifactCount += 1;
+      }
+      for (const session of sessions) {
+        if (!this.store.delete(session.id, this.ownerId)) {
+          throw new Error('Session Store did not confirm physical deletion.');
+        }
+        erasedSessionCount += 1;
+      }
+    } catch (cause) {
+      const error = new Error('当前账号历史未能全部清除；请保留运行目录并重试。', { cause });
+      error.code = 'OWNER_HISTORY_ERASURE_FAILED';
+      try {
+        appendErasureAudit({
+          operationType: 'owner_history_erasure_failed',
+          status: 'partial_failure',
+          erasedSessionCount,
+          erasedArtifactCount,
+          errorCode: error.code
+        });
+      } catch {
+        // Preserve the erasure failure as the primary error; integrity checks still expose log failure.
+      }
+      throw error;
+    }
+
+    const completion = appendErasureAudit({
+      operationType: 'owner_history_erasure_completed',
+      status: 'completed',
+      erasedSessionCount,
+      erasedArtifactCount
+    });
+    return Object.freeze({
+      status: 'completed',
+      success: true,
+      erasedSessionCount,
+      erasedArtifactCount,
+      auditRecordsRetained: true,
+      erasureReceiptRecorded: completion !== null
+    });
+  }
+
   async readV1Artifact(sessionId, artifactId) {
     this.maybeCleanupInactiveSessions();
     const session = this.store.get(sessionId, this.ownerId);
@@ -1844,4 +1956,8 @@ class LegalSelfCheckConversationService {
   }
 }
 
-module.exports = { TERMINAL_STATUSES, LegalSelfCheckConversationService };
+module.exports = {
+  OWNER_HISTORY_ERASURE_PHRASE,
+  TERMINAL_STATUSES,
+  LegalSelfCheckConversationService
+};

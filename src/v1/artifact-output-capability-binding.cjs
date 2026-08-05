@@ -239,7 +239,7 @@ function validateRepositoryDescriptor(repository, store, role) {
   }
   if (
     role === 'analysis' &&
-    ['storeAnalysisArtifact', 'readAnalysisArtifact', 'health', 'stats', 'close'].some(
+    ['storeAnalysisArtifact', 'readAnalysisArtifact', 'deleteAnalysisArtifact', 'health', 'stats', 'close'].some(
       (method) => typeof repository[method] !== 'function'
     )
   ) {
@@ -315,6 +315,66 @@ function assertStorageReceipt(receipt, artifact, store, bindingRef, artifactProf
   });
 }
 
+function assertGovernedStoredReceipt(receipt, definition) {
+  const value = requireObject(receipt, 'storageReceipt', 'ARTIFACT_OUTPUT_RECEIPT_DRIFT');
+  const allowedKeys = new Set([
+    ...STORAGE_RECEIPT_KEYS,
+    'artifactOutputBindingRef',
+    'artifactProfileRef',
+    'outputContractRef'
+  ]);
+  const requiredKeys = [
+    ...REQUIRED_STORAGE_RECEIPT_KEYS,
+    'artifactOutputBindingRef',
+    'artifactProfileRef',
+    'outputContractRef'
+  ];
+  if (
+    Object.keys(value).some((key) => !allowedKeys.has(key)) ||
+    requiredKeys.some((key) => !Object.hasOwn(value, key))
+  ) {
+    fail('ARTIFACT_OUTPUT_RECEIPT_DRIFT', 'Stored Artifact receipt contains undeclared or missing fields.');
+  }
+  const bindingRef = requireExactKeys(
+    value.artifactOutputBindingRef,
+    ['id', 'version', 'manifestCanonicalSha256'],
+    'storageReceipt.artifactOutputBindingRef',
+    'ARTIFACT_OUTPUT_RECEIPT_DRIFT'
+  );
+  const artifactProfileRef = requireExactKeys(
+    value.artifactProfileRef,
+    ['id', 'version'],
+    'storageReceipt.artifactProfileRef',
+    'ARTIFACT_OUTPUT_RECEIPT_DRIFT'
+  );
+  const outputContractRef = requireExactKeys(
+    value.outputContractRef,
+    ['id', 'version'],
+    'storageReceipt.outputContractRef',
+    'ARTIFACT_OUTPUT_RECEIPT_DRIFT'
+  );
+  if (
+    value.storeId !== definition.store.storeId ||
+    value.backend !== definition.store.backend ||
+    !/^analysis\/[0-9a-f]{64}\.md$/.test(value.objectKey) ||
+    (value.versionId !== undefined &&
+      (typeof value.versionId !== 'string' || value.versionId.length === 0)) ||
+    typeof value.etag !== 'string' ||
+    value.etag.length === 0 ||
+    !CONTENT_SHA256_PATTERN.test(value.contentSha256) ||
+    !Number.isSafeInteger(value.sizeBytes) ||
+    value.sizeBytes < 0 ||
+    bindingRef.id !== definition.bindingRef.id ||
+    bindingRef.version !== definition.bindingRef.version ||
+    bindingRef.manifestCanonicalSha256 !== definition.bindingRef.manifestCanonicalSha256 ||
+    !sameReference(artifactProfileRef, definition.artifactProfileRef) ||
+    !sameReference(outputContractRef, definition.outputContractRef)
+  ) {
+    fail('ARTIFACT_OUTPUT_RECEIPT_DRIFT', 'Stored Artifact receipt does not match the active output binding.');
+  }
+  return value;
+}
+
 function createBoundAnalysisRepository(repository, definition) {
   const descriptor = definition.descriptor;
   return Object.freeze({
@@ -348,7 +408,15 @@ function createBoundAnalysisRepository(repository, definition) {
       );
     },
     readAnalysisArtifact(receipt) {
-      return repository.readAnalysisArtifact(receipt);
+      return repository.readAnalysisArtifact(assertGovernedStoredReceipt(receipt, definition));
+    },
+    async deleteAnalysisArtifact(receipt) {
+      const governedReceipt = assertGovernedStoredReceipt(receipt, definition);
+      try {
+        return await repository.deleteAnalysisArtifact(governedReceipt);
+      } catch (error) {
+        fail('ARTIFACT_OUTPUT_DELETE_FAILED', 'Bound Analysis Artifact could not be deleted.', error);
+      }
     },
     health() {
       return repository.health();

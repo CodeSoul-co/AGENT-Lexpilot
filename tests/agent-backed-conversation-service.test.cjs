@@ -60,6 +60,30 @@ test('V1 web conversation uses the same Agent but cannot execute before confirma
   assert.doesNotMatch(result.assistantMessage, /\bV[01]\b/);
 });
 
+test('clears all process-local Agent results after owner history erasure', async () => {
+  const service = new AgentBackedConversationService({
+    service: {
+      start() {},
+      describeCapabilityBinding() { return null; },
+      async eraseOwnerHistory() {
+        return { status: 'completed', success: true, erasedSessionCount: 2 };
+      }
+    },
+    agent: {
+      describe() { return { capabilitySnapshotRef: null }; },
+      async run() {}
+    }
+  });
+  service.resultCache.set('session-a', { assistantMessage: 'a' });
+  service.resultCache.set('session-b', { assistantMessage: 'b' });
+  const result = await service.eraseOwnerHistory({
+    confirmed: true,
+    confirmationPhrase: 'DELETE MY HISTORY'
+  });
+  assert.equal(result.success, true);
+  assert.equal(service.resultCache.size, 0);
+});
+
 test('keeps persisted archived Workspace state authoritative over the Agent result cache', () => {
   const businessService = {
     start() {},

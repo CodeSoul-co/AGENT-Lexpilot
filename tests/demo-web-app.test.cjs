@@ -623,6 +623,50 @@ test('runs start, history, detail, and confirmed deletion through the web API', 
   });
 });
 
+test('requires an exact phrase and owner-bound body to erase all account history', async () => {
+  await withServer(async (baseUrl) => {
+    for (const userText of ['老板辞退我。', '公司拖欠工资。']) {
+      const started = await jsonRequest(`${baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          userText,
+          privacyConsent: true,
+          privacyPolicyVersion: PRIVACY_POLICY_VERSION
+        })
+      });
+      assert.equal(started.response.status, 200);
+    }
+
+    const forgedOwner = await jsonRequest(`${baseUrl}/api/account/history`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        confirmed: true,
+        confirmationPhrase: 'DELETE MY HISTORY',
+        ownerId: 'another-owner'
+      })
+    });
+    assert.equal(forgedOwner.response.status, 400);
+    assert.equal(forgedOwner.body.error.code, 'OWNER_HISTORY_ERASURE_CONFIRMATION_REQUIRED');
+
+    const erased = await jsonRequest(`${baseUrl}/api/account/history`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ confirmed: true, confirmationPhrase: 'DELETE MY HISTORY' })
+    });
+    assert.equal(erased.response.status, 200);
+    assert.equal(erased.body.status, 'completed');
+    assert.equal(erased.body.erasedSessionCount, 2);
+    assert.equal(erased.body.auditRecordsRetained, true);
+    assert.equal(Object.hasOwn(erased.body, 'ownerId'), false);
+    assert.equal(Object.hasOwn(erased.body, 'sessionIds'), false);
+
+    const history = await jsonRequest(`${baseUrl}/api/sessions`);
+    assert.deepEqual(history.body.sessions, []);
+  });
+});
+
 test('supports a clarification answer without accepting undeclared request fields', async () => {
   await withServer(async (baseUrl) => {
     const started = await jsonRequest(`${baseUrl}/api/sessions`, {
