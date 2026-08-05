@@ -12,6 +12,7 @@ function printUsage() {
       'Usage:',
       '  npm run manage:execution-log -- archive',
       '  npm run manage:execution-log -- verify <archiveId>',
+      '  npm run manage:execution-log -- find-deletion <deletionOperationId>',
       '  npm run manage:execution-log -- delete-source <archiveId> DELETE_VERIFIED_EXECUTION_LOG_SOURCE',
       '  npm run manage:execution-log -- restore <archiveId>'
     ].join('\n') + '\n'
@@ -23,6 +24,7 @@ function main(argv = process.argv.slice(2)) {
   const validCommand =
     (command === 'archive' && argv.length === 1) ||
     (command === 'verify' && argv.length === 2) ||
+    (command === 'find-deletion' && argv.length === 2) ||
     (command === 'delete-source' && argv.length === 3) ||
     (command === 'restore' && argv.length === 2);
   if (!validCommand) {
@@ -42,12 +44,21 @@ function main(argv = process.argv.slice(2)) {
     process.env.LEGAL_V1_EXECUTION_LOG_ARCHIVE_DIR?.trim() ||
       path.join(path.dirname(filePath), 'v1-execution-log-archives')
   );
-  const lifecycle = createExecutionLogLifecycle({ filePath, archiveDirectory });
+  const lifecycle = createExecutionLogLifecycle({
+    filePath,
+    archiveDirectory,
+    deletionAuditRecoveryDirectory: path.join(
+      path.dirname(filePath),
+      'deletion-audit-recovery'
+    )
+  });
   let result;
   if (command === 'archive') {
     result = lifecycle.archive();
   } else if (command === 'verify') {
     result = lifecycle.verifyArchive(archiveId);
+  } else if (command === 'find-deletion') {
+    result = lifecycle.findDeletionAudit(archiveId);
   } else if (command === 'delete-source') {
     result = lifecycle.deleteSource({ archiveId, confirmation });
   } else {

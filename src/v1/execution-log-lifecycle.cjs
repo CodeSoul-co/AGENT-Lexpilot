@@ -1,6 +1,13 @@
 const { createHash, randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  createDataDeletionAuditRecoveryStore
+} = require('./data-deletion-audit-recovery-store.cjs');
+const {
+  DATA_DELETION_PHASES,
+  validateDataDeletionAuditRecord
+} = require('./data-deletion-audit-receipt.cjs');
 const { createDemoExecutionLog } = require('./demo-execution-log.cjs');
 
 const ARCHIVE_SCHEMA_VERSION = 1;
@@ -8,6 +15,8 @@ const ARCHIVED_LOG_FILE_NAME = 'execution-log.jsonl';
 const ARCHIVE_MANIFEST_FILE_NAME = 'manifest.json';
 const DELETE_SOURCE_CONFIRMATION = 'DELETE_VERIFIED_EXECUTION_LOG_SOURCE';
 const ARCHIVE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const DELETION_OPERATION_ID_PATTERN = /^lexpilot-deletion\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DELETION_AUDIT_LOOKUP_CONTRACT_VERSION = 'lexpilot.data-deletion-audit-lookup.v1';
 const VERIFIED_LOG_STATUSES = new Set(['verified', 'verified_with_legacy_anchor']);
 
 class ExecutionLogLifecycleError extends Error {
@@ -29,6 +38,13 @@ function sha256(value) {
 function requireSafeArchiveId(value) {
   if (typeof value !== 'string' || !ARCHIVE_ID_PATTERN.test(value)) {
     fail('ARCHIVE_ID_INVALID', 'archiveId must be a safe non-empty identifier.');
+  }
+  return value;
+}
+
+function requireDeletionOperationId(value) {
+  if (typeof value !== 'string' || !DELETION_OPERATION_ID_PATTERN.test(value)) {
+    throw new TypeError('deletionOperationId must be a safe LexPilot deletion identifier.');
   }
   return value;
 }
@@ -121,8 +137,42 @@ function createExecutionLogLifecycle(options = {}) {
   }
   const filePath = path.resolve(options.filePath);
   const archiveDirectory = path.resolve(options.archiveDirectory);
+  const deletionAuditRecoveryDirectory = path.resolve(
+    options.deletionAuditRecoveryDirectory ??
+      path.join(path.dirname(filePath), 'deletion-audit-recovery')
+  );
+  const deletionAuditRecoveryStore =
+    options.deletionAuditRecoveryStore ??
+    createDataDeletionAuditRecoveryStore({ directory: deletionAuditRecoveryDirectory });
+  if (!deletionAuditRecoveryStore || typeof deletionAuditRecoveryStore.list !== 'function') {
+    throw new TypeError('deletionAuditRecoveryStore must expose list().');
+  }
   const clock = options.clock ?? (() => new Date().toISOString());
   const idFactory = options.idFactory ?? randomUUID;
+
+  function assertNoPendingDeletionAuditRecovery() {
+    let pending;
+    try {
+      pending = deletionAuditRecoveryStore.list();
+    } catch {
+      fail(
+        'DELETION_AUDIT_RECOVERY_UNVERIFIED',
+        'Deletion audit recovery state could not be verified; execution log maintenance is blocked.'
+      );
+    }
+    if (!Array.isArray(pending)) {
+      fail(
+        'DELETION_AUDIT_RECOVERY_UNVERIFIED',
+        'Deletion audit recovery state could not be verified; execution log maintenance is blocked.'
+      );
+    }
+    if (pending.length > 0) {
+      fail(
+        'PENDING_DELETION_AUDIT_RECOVERY',
+        'Pending deletion audit outcomes must be reconciled before execution log maintenance.'
+      );
+    }
+  }
 
   function archivePaths(archiveId, root = archiveDirectory) {
     requireSafeArchiveId(archiveId);
@@ -160,8 +210,109 @@ function createExecutionLogLifecycle(options = {}) {
     return inspectArchivePaths(archiveId, archivePaths(archiveId));
   }
 
+  function listArchiveIds() {
+    if (!fs.existsSync(archiveDirectory)) return [];
+    requireDirectory(archiveDirectory, 'ARCHIVE_DIRECTORY_INVALID');
+    const archiveIds = [];
+    for (const entry of fs.readdirSync(archiveDirectory, { withFileTypes: true })) {
+      if (/^\.[A-Za-z0-9][A-Za-z0-9._-]*\.[0-9a-f-]+\.tmp$/.test(entry.name)) continue;
+      if (!entry.isDirectory() || !ARCHIVE_ID_PATTERN.test(entry.name)) {
+        fail(
+          'ARCHIVE_DIRECTORY_INVALID',
+          'Execution log archive directory contains an unsafe entry.'
+        );
+      }
+      archiveIds.push(entry.name);
+    }
+    return archiveIds.sort();
+  }
+
+  function safeLookupRecord(record) {
+    try {
+      validateDataDeletionAuditRecord(record);
+    } catch {
+      fail(
+        'DELETION_AUDIT_LOOKUP_INTEGRITY_FAILED',
+        'Deletion audit lookup encountered an invalid audit record.'
+      );
+    }
+    if (
+      record.schemaVersion !== 1 ||
+      !Number.isSafeInteger(record.sequence) ||
+      record.sequence < 1 ||
+      typeof record.entryId !== 'string' ||
+      record.entryId.length === 0 ||
+      typeof record.loggedAt !== 'string' ||
+      !Number.isFinite(Date.parse(record.loggedAt)) ||
+      typeof record.entryHash !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(record.entryHash)
+    ) {
+      fail(
+        'DELETION_AUDIT_LOOKUP_INTEGRITY_FAILED',
+        'Deletion audit lookup requires an immutable hash-chain record.'
+      );
+    }
+    return Object.freeze({
+      phase: record.deletionPhase,
+      status: record.status,
+      scope: record.deletionScope,
+      targetSessionCount: record.targetSessionCount,
+      targetArtifactCount: record.targetArtifactCount,
+      deletedSessionCount: record.deletedSessionCount,
+      deletedArtifactCount: record.deletedArtifactCount,
+      deletionFailureCount: record.deletionFailureCount,
+      ...(record.errorCode === undefined ? {} : { errorCode: record.errorCode }),
+      loggedAt: record.loggedAt,
+      logEntryRef: Object.freeze({
+        schemaVersion: record.schemaVersion,
+        entryId: record.entryId,
+        sequence: record.sequence,
+        entryHash: `sha256:${record.entryHash}`
+      })
+    });
+  }
+
+  function findRecordsInVerifiedLog(logFilePath, operationId) {
+    const log = createDemoExecutionLog({ filePath: logFilePath });
+    let records;
+    try {
+      records = Object.values(DATA_DELETION_PHASES)
+        .map((phase) => log.findDeletionAuditRecord({ operationId, phase }))
+        .filter((record) => record !== null)
+        .map(safeLookupRecord)
+        .sort((left, right) => left.logEntryRef.sequence - right.logEntryRef.sequence);
+    } catch (error) {
+      if (error instanceof ExecutionLogLifecycleError) throw error;
+      fail(
+        'DELETION_AUDIT_LOOKUP_INTEGRITY_FAILED',
+        'Deletion audit lookup failed integrity validation.'
+      );
+    }
+    const requested = records.filter((record) => record.phase === DATA_DELETION_PHASES.REQUESTED);
+    const outcomes = records.filter((record) => record.phase !== DATA_DELETION_PHASES.REQUESTED);
+    if (requested.length > 1 || outcomes.length > 1 || (outcomes.length === 1 && requested.length !== 1)) {
+      fail(
+        'DELETION_AUDIT_LOOKUP_INTEGRITY_FAILED',
+        'Deletion audit lookup found an incomplete or conflicting operation history.'
+      );
+    }
+    return Object.freeze(records);
+  }
+
+  function createLookupSource({ sourceType, archiveId, logFilePath, integrity }, operationId) {
+    const records = findRecordsInVerifiedLog(logFilePath, operationId);
+    if (records.length === 0) return null;
+    return Object.freeze({
+      sourceType,
+      ...(archiveId === undefined ? {} : { archiveId }),
+      integrityStatus: integrity.status,
+      records
+    });
+  }
+
   return Object.freeze({
     archive() {
+      assertNoPendingDeletionAuditRecovery();
       requireRegularFile(filePath, 'SOURCE_LOG_NOT_FOUND');
       let integrity;
       try {
@@ -221,6 +372,7 @@ function createExecutionLogLifecycle(options = {}) {
           { encoding: 'utf8', flag: 'wx', mode: 0o600 }
         );
         inspectArchivePaths(archiveId, temporaryPaths);
+        assertNoPendingDeletionAuditRecovery();
         fs.renameSync(temporaryPaths.directory, finalPaths.directory);
       } finally {
         if (fs.existsSync(temporaryPaths.directory)) {
@@ -274,6 +426,7 @@ function createExecutionLogLifecycle(options = {}) {
       if (!compareIntegrity(sourceIntegrity, archived.manifest)) {
         fail('SOURCE_LOG_CHANGED', 'Source execution log no longer matches the selected archive.');
       }
+      assertNoPendingDeletionAuditRecovery();
       fs.unlinkSync(filePath);
       return Object.freeze({ status: 'deleted', archiveId, sourceDeleted: true });
     },
@@ -319,6 +472,48 @@ function createExecutionLogLifecycle(options = {}) {
         recordCount: archived.manifest.recordCount,
         headHash: archived.manifest.headHash
       });
+    },
+
+    findDeletionAudit(operationId) {
+      requireDeletionOperationId(operationId);
+      assertNoPendingDeletionAuditRecovery();
+      const sources = [];
+      if (fs.existsSync(filePath)) {
+        requireRegularFile(filePath, 'SOURCE_LOG_INVALID');
+        let integrity;
+        try {
+          integrity = createDemoExecutionLog({ filePath }).verifyIntegrity();
+        } catch {
+          fail('SOURCE_LOG_INTEGRITY_FAILED', 'Source execution log hash chain is invalid.');
+        }
+        if (integrity.status !== 'empty' && !VERIFIED_LOG_STATUSES.has(integrity.status)) {
+          fail('SOURCE_LOG_NOT_VERIFIED', 'Deletion audit lookup requires a verified source log.');
+        }
+        const liveSource = createLookupSource(
+          { sourceType: 'live', logFilePath: filePath, integrity },
+          operationId
+        );
+        if (liveSource !== null) sources.push(liveSource);
+      }
+      for (const archiveId of listArchiveIds()) {
+        const archived = inspectArchiveAt(archiveId);
+        const archiveSource = createLookupSource(
+          {
+            sourceType: 'archive',
+            archiveId,
+            logFilePath: archived.locations.logFilePath,
+            integrity: archived.integrity
+          },
+          operationId
+        );
+        if (archiveSource !== null) sources.push(archiveSource);
+      }
+      return Object.freeze({
+        contractVersion: DELETION_AUDIT_LOOKUP_CONTRACT_VERSION,
+        operationId,
+        status: sources.length === 0 ? 'not_found' : 'found',
+        sources: Object.freeze(sources)
+      });
     }
   });
 }
@@ -327,6 +522,7 @@ module.exports = {
   ARCHIVE_MANIFEST_FILE_NAME,
   ARCHIVE_SCHEMA_VERSION,
   ARCHIVED_LOG_FILE_NAME,
+  DELETION_AUDIT_LOOKUP_CONTRACT_VERSION,
   DELETE_SOURCE_CONFIRMATION,
   ExecutionLogLifecycleError,
   createExecutionLogLifecycle
