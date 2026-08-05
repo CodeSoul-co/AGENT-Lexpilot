@@ -393,6 +393,8 @@ test('application composes an injected Sandbox runtime without requiring Docker 
       }
     });
     assert.equal(application.sandboxDescriptor.available, true);
+    assert.equal(application.startupRetentionCleanup.status, 'completed');
+    assert.equal(application.startupRetentionCleanup.artifactPendingCount, 0);
     assert.equal(application.sandboxDescriptor.runtime, 'mock-sandbox');
     assert.equal(typeof application.sandboxCoordinator.plan, 'function');
     assert.equal(application.sandboxDescriptor.auditLog, 'append-only-sha256-chain');

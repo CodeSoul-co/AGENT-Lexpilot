@@ -1,4 +1,8 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 const { PRIVACY_POLICY_VERSION } = require('../src/v0/contracts.cjs');
 const { LegalSelfCheckConversationService } = require('../src/v0/conversation-service.cjs');
@@ -8,6 +12,7 @@ const {
   isInactiveBeyond
 } = require('../src/v0/retention-policy.cjs');
 const { InMemoryLegalSessionStore } = require('../src/v0/session-store.cjs');
+const { createExecutionArtifactRepository } = require('../src/v1/execution-artifact-repository.cjs');
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 const NOW = '2026-04-01T00:00:00.000Z';
@@ -16,7 +21,7 @@ function shiftedTimestamp(days, milliseconds = 0) {
   return new Date(Date.parse(NOW) - days * DAY_IN_MILLISECONDS + milliseconds).toISOString();
 }
 
-function seedSession(store, { id, ownerId, updatedAt, createdAt = updatedAt }) {
+function seedSession(store, { id, ownerId, updatedAt, createdAt = updatedAt, v1 }) {
   store.create({
     id,
     ownerId,
@@ -30,7 +35,8 @@ function seedSession(store, { id, ownerId, updatedAt, createdAt = updatedAt }) {
     missingFields: [],
     questions: [],
     trace: [],
-    latestTrace: []
+    latestTrace: [],
+    ...(v1 ? { v1 } : {})
   });
 }
 
@@ -121,4 +127,81 @@ test('does not delete sessions with invalid timestamps and reports partial failu
   assert.equal(service.lastCleanup.failedCount, 1);
   assert.notEqual(store.get('invalid-time', 'owner-a'), null);
   assert.equal(JSON.stringify(service.lastCleanup.trace).includes('invalid-time'), false);
+});
+
+test('retention cleanup deletes a verified Hypha Artifact before its expired Session', async () => {
+  const artifactDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'retention-artifact-'));
+  const repository = createExecutionArtifactRepository({
+    rootPath: artifactDirectory,
+    projectRoot: path.resolve(__dirname, '..')
+  });
+  try {
+    const content = '# Expired analysis\n';
+    const storage = await repository.storeAnalysisArtifact({
+      sessionId: 'expired-with-artifact',
+      runId: 'retention-run',
+      artifact: {
+        artifactId: 'artifact-retention',
+        type: 'analysis-document',
+        mimeType: 'text/markdown; charset=utf-8',
+        content,
+        contentSha256: createHash('sha256').update(content, 'utf8').digest('hex')
+      }
+    });
+    const store = new InMemoryLegalSessionStore();
+    seedSession(store, {
+      id: 'expired-with-artifact',
+      ownerId: 'owner-a',
+      updatedAt: shiftedTimestamp(91),
+      v1: { artifact: { storage } }
+    });
+    const service = new LegalSelfCheckConversationService({
+      store,
+      ownerId: 'maintenance-caller',
+      clock: () => NOW,
+      artifactRepository: repository
+    });
+
+    assert.equal(service.lastCleanup.status, 'partial_failure');
+    assert.equal(service.lastCleanup.artifactPendingCount, 1);
+    assert.notEqual(store.get('expired-with-artifact', 'owner-a'), null);
+    assert.equal((await repository.stats()).objects, 1);
+
+    const result = await service.cleanupInactiveSessionsWithArtifacts();
+    assert.equal(result.status, 'completed');
+    assert.equal(result.artifactDeletedCount, 1);
+    assert.equal(result.deletedCount, 1);
+    assert.equal(store.get('expired-with-artifact', 'owner-a'), null);
+    assert.equal((await repository.stats()).objects, 0);
+  } finally {
+    await repository.close();
+    fs.rmSync(artifactDirectory, { recursive: true, force: true });
+  }
+});
+
+test('retention cleanup preserves an expired Session when Artifact verification fails', async () => {
+  const store = new InMemoryLegalSessionStore();
+  seedSession(store, {
+    id: 'expired-artifact-failure',
+    ownerId: 'owner-a',
+    updatedAt: shiftedTimestamp(91),
+    v1: { artifact: { storage: { storeId: 'store', objectKey: 'analysis/object.md' } } }
+  });
+  let deleteCalls = 0;
+  const service = new LegalSelfCheckConversationService({
+    store,
+    ownerId: 'maintenance-caller',
+    clock: () => NOW,
+    artifactRepository: {
+      async storeAnalysisArtifact() {},
+      async readAnalysisArtifact() { throw new Error('verification failed'); },
+      async deleteAnalysisArtifact() { deleteCalls += 1; }
+    }
+  });
+  const result = await service.cleanupInactiveSessionsWithArtifacts();
+  assert.equal(result.status, 'partial_failure');
+  assert.equal(result.artifactPendingCount, 1);
+  assert.equal(result.deletedCount, 0);
+  assert.equal(deleteCalls, 0);
+  assert.notEqual(store.get('expired-artifact-failure', 'owner-a'), null);
 });

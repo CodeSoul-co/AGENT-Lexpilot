@@ -270,6 +270,11 @@ class AgentBackedConversationService {
     return result;
   }
 
+  maybeCleanupInactiveSessionsAsync() {
+    if (typeof this.service.maybeCleanupInactiveSessionsAsync !== 'function') return null;
+    return this.service.maybeCleanupInactiveSessionsAsync();
+  }
+
   async confirmV1Execution(sessionId, confirmation) {
     if (typeof this.service.confirmV1Execution !== 'function') {
       throw new TypeError('service must expose confirmV1Execution(sessionId, confirmation).');

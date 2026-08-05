@@ -204,6 +204,13 @@ function createDemoWebHandler(options = {}) {
         return;
       }
 
+      if (
+        url.pathname.startsWith('/api/') &&
+        typeof service.maybeCleanupInactiveSessionsAsync === 'function'
+      ) {
+        await service.maybeCleanupInactiveSessionsAsync();
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/health') {
         sendJson(response, 200, {
           status: 'ok',

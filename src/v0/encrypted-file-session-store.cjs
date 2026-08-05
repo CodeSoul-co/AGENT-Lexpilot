@@ -107,24 +107,33 @@ class EncryptedFileLegalSessionStore {
     return this.list(ownerId).length;
   }
 
-  purgeInactive(inactiveBefore) {
+  scanInactive(inactiveBefore) {
     validateTimestamp(inactiveBefore, 'inactiveBefore');
-    if (!fs.existsSync(this.directory)) {
-      return { deletedCount: 0, failedCount: 0 };
-    }
-    let deletedCount = 0;
+    if (!fs.existsSync(this.directory)) return { sessions: [], failedCount: 0 };
+    const sessions = [];
     let failedCount = 0;
     const entries = fs
       .readdirSync(this.directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.session'));
     for (const entry of entries) {
-      const filePath = path.join(this.directory, entry.name);
       try {
-        const session = this.read(filePath);
-        if (isInactiveBeyond(session, inactiveBefore)) {
-          fs.unlinkSync(filePath);
-          deletedCount += 1;
-        }
+        const session = this.read(path.join(this.directory, entry.name));
+        if (isInactiveBeyond(session, inactiveBefore)) sessions.push(clone(session));
+      } catch {
+        failedCount += 1;
+      }
+    }
+    return { sessions, failedCount };
+  }
+
+  purgeInactive(inactiveBefore) {
+    const scanned = this.scanInactive(inactiveBefore);
+    let deletedCount = 0;
+    let failedCount = scanned.failedCount;
+    for (const session of scanned.sessions) {
+      try {
+        if (!this.delete(session.id, session.ownerId)) throw new Error('Session disappeared.');
+        deletedCount += 1;
       } catch {
         failedCount += 1;
       }

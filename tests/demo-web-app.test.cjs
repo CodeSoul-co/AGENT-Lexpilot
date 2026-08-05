@@ -218,6 +218,20 @@ test('exposes a localhost health contract with defensive browser headers', async
   });
 });
 
+test('awaits the daily retention cleanup hook before serving an API response', async () => {
+  const service = createService();
+  let cleanupCalls = 0;
+  service.maybeCleanupInactiveSessionsAsync = async () => {
+    cleanupCalls += 1;
+    return { status: 'completed' };
+  };
+  await withServer(async (baseUrl) => {
+    const health = await jsonRequest(`${baseUrl}/api/health`);
+    assert.equal(health.response.status, 200);
+    assert.equal(cleanupCalls, 1);
+  }, { service });
+});
+
 test('exposes a credential-free data-source admin list and fixed validation action', async () => {
   await withDataSourceAdminServer(async (baseUrl, validationCalls) => {
     const listed = await jsonRequest(`${baseUrl}/api/v1/admin/data-sources`);

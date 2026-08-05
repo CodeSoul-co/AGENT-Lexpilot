@@ -71,16 +71,28 @@ class InMemoryLegalSessionStore {
     return this.list(ownerId).length;
   }
 
-  purgeInactive(inactiveBefore) {
+  scanInactive(inactiveBefore) {
     validateTimestamp(inactiveBefore, 'inactiveBefore');
-    let deletedCount = 0;
+    const sessions = [];
     let failedCount = 0;
-    for (const [sessionId, session] of this.sessions) {
+    for (const session of this.sessions.values()) {
       try {
-        if (isInactiveBeyond(session, inactiveBefore)) {
-          this.sessions.delete(sessionId);
-          deletedCount += 1;
-        }
+        if (isInactiveBeyond(session, inactiveBefore)) sessions.push(clone(session));
+      } catch {
+        failedCount += 1;
+      }
+    }
+    return { sessions, failedCount };
+  }
+
+  purgeInactive(inactiveBefore) {
+    const scanned = this.scanInactive(inactiveBefore);
+    let deletedCount = 0;
+    let failedCount = scanned.failedCount;
+    for (const session of scanned.sessions) {
+      try {
+        if (!this.delete(session.id, session.ownerId)) throw new Error('Session disappeared.');
+        deletedCount += 1;
       } catch {
         failedCount += 1;
       }

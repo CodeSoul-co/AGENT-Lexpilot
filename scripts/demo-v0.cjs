@@ -122,7 +122,7 @@ async function run(command, args) {
       return;
     }
     case 'cleanup':
-      printJson(service.cleanupInactiveSessions());
+      printJson(await service.cleanupInactiveSessionsWithArtifacts());
       return;
   }
 }

@@ -327,6 +327,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     artifactRepository,
     capabilitySnapshot
   });
+  const startupRetentionCleanup = await local.service.cleanupInactiveSessionsWithArtifacts();
   const inference = createAgentInferenceProvider({ environment, projectRoot });
   const agent = await createLegalComplianceAgent({
     projectRoot,
@@ -365,6 +366,7 @@ async function createLocalLegalAgentApplication(options = {}) {
     workspaceExecutionBinding: workspaceExecutionProfile.receipt,
     executionLogFilePath,
     artifactDirectory,
+    startupRetentionCleanup,
     async close() {
       await sandboxArtifactRepository?.close?.();
       await rawArtifactRepository.close?.();

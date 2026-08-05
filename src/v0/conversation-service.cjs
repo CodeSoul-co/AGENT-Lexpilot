@@ -252,6 +252,7 @@ class LegalSelfCheckConversationService {
     }
     this.executionLog = options.executionLog ?? null;
     this.artifactRepository = options.artifactRepository ?? null;
+    this.retentionCleanupPromise = null;
     this.artifactOutputBindingRef = this.artifactRepository?.describe?.().artifactOutputBindingRef ?? null;
     if (
       this.executionLog !== null &&
@@ -296,6 +297,19 @@ class LegalSelfCheckConversationService {
     this.lastWorkspaceArchive = this.archiveInactiveQueryWorkspaces();
     this.lastCleanup = this.cleanupInactiveSessions();
     this.lastCleanupAt = this.clock();
+  }
+
+  async maybeCleanupInactiveSessionsAsync() {
+    if (!this.autoCleanup) return this.lastCleanup;
+    const now = Date.parse(this.clock());
+    if (
+      this.lastCleanupAt &&
+      Number.isFinite(now) &&
+      now - Date.parse(this.lastCleanupAt) < CLEANUP_INTERVAL_MS
+    ) {
+      return this.retentionCleanupPromise ?? this.lastCleanup;
+    }
+    return this.cleanupInactiveSessionsWithArtifacts();
   }
 
   recognizeTask(redactedText) {
@@ -363,23 +377,153 @@ class LegalSelfCheckConversationService {
 
   cleanupInactiveSessions() {
     const inactiveBefore = calculateInactiveBefore(this.clock(), this.retentionDays);
-    const result = this.store.purgeInactive(inactiveBefore);
-    const status = result.failedCount === 0 ? 'completed' : 'partial_failure';
+    if (typeof this.store.scanInactive !== 'function') {
+      const legacy = this.store.purgeInactive(inactiveBefore);
+      const status = legacy.failedCount === 0 ? 'completed' : 'partial_failure';
+      return {
+        status,
+        retentionDays: this.retentionDays,
+        inactiveBefore,
+        deletedCount: legacy.deletedCount,
+        artifactDeletedCount: 0,
+        artifactPendingCount: 0,
+        failedCount: legacy.failedCount,
+        trace: [
+          safeEvent('v0.session.retention.cleaned', {
+            status,
+            retentionDays: this.retentionDays,
+            deletedCount: legacy.deletedCount,
+            artifactDeletedCount: 0,
+            artifactPendingCount: 0,
+            failedCount: legacy.failedCount
+          })
+        ]
+      };
+    }
+    const scanned = this.store.scanInactive(inactiveBefore);
+    let deletedCount = 0;
+    let artifactPendingCount = 0;
+    let failedCount = scanned.failedCount;
+    for (const session of scanned.sessions) {
+      if (session?.v1?.artifact?.storage) {
+        artifactPendingCount += 1;
+        failedCount += 1;
+        continue;
+      }
+      try {
+        if (!this.store.delete(session.id, session.ownerId)) throw new Error('Session disappeared.');
+        deletedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+    const status = failedCount === 0 ? 'completed' : 'partial_failure';
     return {
       status,
       retentionDays: this.retentionDays,
       inactiveBefore,
-      deletedCount: result.deletedCount,
-      failedCount: result.failedCount,
+      deletedCount,
+      artifactDeletedCount: 0,
+      artifactPendingCount,
+      failedCount,
       trace: [
         safeEvent('v0.session.retention.cleaned', {
           status,
           retentionDays: this.retentionDays,
-          deletedCount: result.deletedCount,
-          failedCount: result.failedCount
+          deletedCount,
+          artifactDeletedCount: 0,
+          artifactPendingCount,
+          failedCount
         })
       ]
     };
+  }
+
+  cleanupInactiveSessionsWithArtifacts() {
+    if (this.retentionCleanupPromise) return this.retentionCleanupPromise;
+    this.retentionCleanupPromise = (async () => {
+      const inactiveBefore = calculateInactiveBefore(this.clock(), this.retentionDays);
+      if (typeof this.store.scanInactive !== 'function') {
+        const result = this.cleanupInactiveSessions();
+        this.lastCleanup = result;
+        this.lastCleanupAt = this.clock();
+        return result;
+      }
+      const scanned = this.store.scanInactive(inactiveBefore);
+      const artifacts = new Map();
+      const artifactKeyBySessionId = new Map();
+      for (const session of scanned.sessions) {
+        const receipt = session?.v1?.artifact?.storage;
+        if (!receipt) continue;
+        const key = `${receipt.storeId}\0${receipt.objectKey}`;
+        artifacts.set(key, receipt);
+        artifactKeyBySessionId.set(session.id, key);
+      }
+
+      const deletedArtifactKeys = new Set();
+      let artifactDeletedCount = 0;
+      let artifactFailedCount = 0;
+      const deletionAvailable =
+        this.artifactRepository &&
+        typeof this.artifactRepository.readAnalysisArtifact === 'function' &&
+        typeof this.artifactRepository.deleteAnalysisArtifact === 'function';
+      for (const [key, receipt] of artifacts) {
+        try {
+          if (!deletionAvailable) throw new Error('Artifact deletion is unavailable.');
+          await this.artifactRepository.readAnalysisArtifact(receipt);
+          const deletion = await this.artifactRepository.deleteAnalysisArtifact(receipt);
+          if (!['deleted', 'already_absent'].includes(deletion?.status)) {
+            throw new Error('Artifact deletion receipt is invalid.');
+          }
+          deletedArtifactKeys.add(key);
+          artifactDeletedCount += 1;
+        } catch {
+          artifactFailedCount += 1;
+        }
+      }
+
+      let deletedCount = 0;
+      let failedCount = scanned.failedCount;
+      for (const session of scanned.sessions) {
+        const artifactKey = artifactKeyBySessionId.get(session.id);
+        if (artifactKey && !deletedArtifactKeys.has(artifactKey)) {
+          failedCount += 1;
+          continue;
+        }
+        try {
+          if (!this.store.delete(session.id, session.ownerId)) throw new Error('Session disappeared.');
+          deletedCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+      }
+      const status = failedCount === 0 && artifactFailedCount === 0 ? 'completed' : 'partial_failure';
+      const result = {
+        status,
+        retentionDays: this.retentionDays,
+        inactiveBefore,
+        deletedCount,
+        artifactDeletedCount,
+        artifactPendingCount: artifactFailedCount,
+        failedCount,
+        trace: [
+          safeEvent('v0.session.retention.cleaned', {
+            status,
+            retentionDays: this.retentionDays,
+            deletedCount,
+            artifactDeletedCount,
+            artifactPendingCount: artifactFailedCount,
+            failedCount
+          })
+        ]
+      };
+      this.lastCleanup = result;
+      this.lastCleanupAt = this.clock();
+      return result;
+    })().finally(() => {
+      this.retentionCleanupPromise = null;
+    });
+    return this.retentionCleanupPromise;
   }
 
   start(input) {

@@ -84,6 +84,27 @@ test('clears all process-local Agent results after owner history erasure', async
   assert.equal(service.resultCache.size, 0);
 });
 
+test('forwards the awaited retention cleanup hook to the owner-bound service', async () => {
+  let calls = 0;
+  const service = new AgentBackedConversationService({
+    service: {
+      start() {},
+      describeCapabilityBinding() { return null; },
+      async maybeCleanupInactiveSessionsAsync() {
+        calls += 1;
+        return { status: 'completed', artifactDeletedCount: 1 };
+      }
+    },
+    agent: {
+      describe() { return { capabilitySnapshotRef: null }; },
+      async run() {}
+    }
+  });
+  const result = await service.maybeCleanupInactiveSessionsAsync();
+  assert.equal(result.artifactDeletedCount, 1);
+  assert.equal(calls, 1);
+});
+
 test('keeps persisted archived Workspace state authoritative over the Agent result cache', () => {
   const businessService = {
     start() {},
