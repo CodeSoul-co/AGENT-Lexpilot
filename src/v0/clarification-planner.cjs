@@ -176,7 +176,10 @@ function extractFacts(domain, text, context = {}) {
         ]),
         noticeOrPayStatus: extractNoticeOrPayStatus(text, context),
         medicalPeriodStatus: firstCategory(text, [
-          ['not_ended', /医疗期(?:还没|没有|未)(?:届满|结束)|休养时间(?:还没|没有|未)结束/],
+          [
+            'not_ended',
+            /医疗期(?:还没有|还没|没有|未)(?:届满|结束)|休养时间(?:还没有|还没|没有|未)结束/
+          ],
           ['ended', /医疗期(?:已经|已)?(?:届满|结束)|休养时间(?:已经|已)?结束/]
         ]),
         workArrangementOutcome: firstCategory(text, [
@@ -326,6 +329,7 @@ function safeTraceEvent(type, data) {
 function analyzeInformationReadiness(preparedInput, options = {}) {
   const clarificationRound = options.clarificationRound ?? 0;
   const existingKnownFacts = normalizeExistingKnownFacts(options.existingKnownFacts);
+  const existingLegalDomain = options.existingLegalDomain;
   const latestAnswerText =
     typeof options.latestAnswerText === 'string' ? options.latestAnswerText.trim() : '';
   const pendingFields = Array.isArray(options.pendingFields)
@@ -342,7 +346,9 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
     !Number.isInteger(clarificationRound) ||
     clarificationRound < 0 ||
     clarificationRound > 5 ||
-    existingKnownFacts === null
+    existingKnownFacts === null ||
+    (existingLegalDomain !== undefined &&
+      !Object.values(LEGAL_DOMAINS).includes(existingLegalDomain))
   ) {
     return {
       status: 'failed',
@@ -356,13 +362,23 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
     };
   }
 
-  const classification = classifyLegalDomain(preparedInput.redactedText);
+  const classification = existingLegalDomain
+    ? {
+        status: 'classified',
+        domain: existingLegalDomain,
+        confidence: 1,
+        candidates: [existingLegalDomain],
+        matchedSignalCount: 0,
+        source: 'session_locked'
+      }
+    : classifyLegalDomain(preparedInput.redactedText);
   trace.push(
     safeTraceEvent('v0.legal-domain.classified', {
       status: classification.status,
       domain: classification.domain,
       confidence: classification.confidence,
-      candidateCount: classification.candidates.length
+      candidateCount: classification.candidates.length,
+      source: classification.source ?? 'deterministic_signals'
     })
   );
 

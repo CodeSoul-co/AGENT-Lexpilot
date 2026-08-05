@@ -546,6 +546,10 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(page.headers.get('content-type'), /text\/html/);
     assert.match(await page.text(), /法律合规审查智能助手/);
     const pageText = await (await fetch(`${baseUrl}/`)).text();
+    assert.match(pageText, /id="landing-page"/);
+    assert.match(pageText, /class="app-shell hidden"[^>]*id="workspace-app"/);
+    assert.match(pageText, /让复杂法律问题，<br>先被准确地说清楚/);
+    assert.match(pageText, /合作机构 · 待补充/);
     assert.match(pageText, />法律自检</);
     assert.match(pageText, />专业数据分析</);
     assert.doesNotMatch(pageText, />\s*V[01]\b/);
@@ -575,6 +579,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /renderInitialSchemaSnapshot/);
     assert.match(scriptText, /初始 Schema 快照/);
     assert.match(scriptText, /Provider 未识别/);
+    assert.match(scriptText, /function enterWorkspace/);
+    assert.match(scriptText, /function addSelfCheckSummary/);
+    assert.match(scriptText, /function addTerminalError/);
     assert.equal(styles.status, 200);
     assert.match(styles.headers.get('content-type'), /text\/css/);
     const stylesheet = await styles.text();
@@ -585,6 +592,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(stylesheet, /\.v1-board\s*\{/);
     assert.match(stylesheet, /\.initial-schema-browser\s*\{/);
     assert.match(stylesheet, /\.mode-switch\s*\{/);
+    assert.match(stylesheet, /\.landing-page\s*\{/);
+    assert.match(stylesheet, /\.landing-hero\s*\{/);
+    assert.match(stylesheet, /\.placeholder-grid\s*\{/);
   });
 });
 

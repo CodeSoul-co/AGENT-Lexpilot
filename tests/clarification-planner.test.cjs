@@ -402,6 +402,31 @@ test('returns an unsupported-domain result without inventing a domain', () => {
   assert.deepEqual(result.questions, []);
 });
 
+test('keeps a previously classified domain authoritative for terse follow-up answers', () => {
+  const prepared = prepareLegalSelfCheckInput({
+    userText: '医疗期还没有结束，仍然做不了原来的工作。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  const result = analyzeInformationReadiness(prepared, {
+    clarificationRound: 3,
+    existingLegalDomain: LEGAL_DOMAINS.LABOR,
+    existingKnownFacts: {
+      employmentDuration: 'mentioned',
+      writtenContractStatus: 'signed',
+      issueType: 'dismissal',
+      dismissalGround: 'medical_or_non_work_injury',
+      noticeOrPayStatus: 'neither'
+    },
+    pendingFields: ['medicalPeriodStatus', 'workArrangementOutcome'],
+    latestAnswerText: '医疗期还没有结束，仍然做不了原来的工作。'
+  });
+
+  assert.notEqual(result.status, 'unsupported_domain');
+  assert.equal(result.legalDomain, LEGAL_DOMAINS.LABOR);
+  assert.equal(result.knownFacts.medicalPeriodStatus, 'not_ended');
+});
+
 test('stops asking questions at the fifth clarification round', () => {
   const prepared = prepareLegalSelfCheckInput({
     userText: '朋友借钱不还。',

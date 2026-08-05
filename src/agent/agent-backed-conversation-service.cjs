@@ -34,13 +34,26 @@ function assistantMessage(result) {
     return 'Agent 需要补充少量事实后才能继续核对。';
   }
   if (result.status === 'completed') {
-    return `Agent 已完成事实分析与固定法规语料比对，生成 ${result.resultCards?.length ?? 0} 张核对卡片。`;
+    return `已完成初步法律自检，并从固定法规语料中生成 ${result.resultCards?.length ?? 0} 张可核验卡片。`;
   }
   if (result.status === 'clarification_limit_reached') {
     return '信息仍不足，本次核对已按安全边界结束。';
   }
   if (result.status === 'information_ready') {
-    return '事实信息已收集完成，本轮核对已经结束。';
+    if (result.lawRetrievalStatus === 'no_match') {
+      return '事实信息已收集完成，但当前法规语料暂未找到可安全展示的匹配条目。';
+    }
+    if (
+      result.lawRetrievalStatus === 'failed' ||
+      result.lawComparisonStatus === 'failed' ||
+      result.resultCardStatus === 'failed'
+    ) {
+      return '事实信息已收集完成，但法规核对环节暂时不可用，请稍后重试。';
+    }
+    return '事实信息已收集完成，当前条件尚不足以生成可核验的结果卡片。';
+  }
+  if (result.status === 'unsupported_domain') {
+    return '当前描述未能稳定归入支持领域，请选择领域并补充争议主体与具体事项。';
   }
   return 'Agent 已完成本轮处理。';
 }

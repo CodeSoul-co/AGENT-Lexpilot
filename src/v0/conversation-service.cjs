@@ -2068,6 +2068,7 @@ class LegalSelfCheckConversationService {
       {
         clarificationRound: session.clarificationRound,
         existingKnownFacts: session.knownFacts,
+        existingLegalDomain: session.legalDomain,
         latestAnswerText:
           session.clarificationRound > 0 ? session.messages.at(-1)?.redactedText : undefined,
         pendingFields: session.missingFields

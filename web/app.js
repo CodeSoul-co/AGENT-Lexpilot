@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const v1Presentation = globalThis.LexPilotV1Presentation;
 if (!v1Presentation) throw new Error('V1 presentation module failed to load.');
 const elements = {
+  landingPage: $('#landing-page'), workspaceApp: $('#workspace-app'), backHome: $('#back-home'),
   characterCount: $('#character-count'), composer: $('#composer'), consent: $('#privacy-consent'),
   conversation: $('#conversation'), deleteSession: $('#delete-session'), eraseHistory: $('#erase-history'), domainLabel: $('#domain-label'),
   factsList: $('#facts-list'), historyList: $('#history-list'), input: $('#message-input'),
@@ -83,6 +84,23 @@ function setBusy(value) {
 
 function scrollBottom() {
   window.requestAnimationFrame(() => { elements.scroll.scrollTop = elements.scroll.scrollHeight; });
+}
+
+function enterWorkspace(mode = 'v0') {
+  elements.landingPage.classList.add('hidden');
+  elements.workspaceApp.classList.remove('hidden');
+  resetConversation(mode);
+  if (!state.consentGranted) elements.privacyModal.classList.remove('hidden');
+  else elements.input.focus();
+}
+
+function returnToLanding() {
+  if (state.busy) return;
+  closeConfirmModal();
+  elements.privacyModal.classList.add('hidden');
+  elements.workspaceApp.classList.add('hidden');
+  elements.landingPage.classList.remove('hidden');
+  elements.landingPage.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function addMessage(role, text, label) {
@@ -270,6 +288,83 @@ function addResultCards(result) {
   }
   elements.conversation.append(stack);
   if (result.disclaimer) elements.conversation.append(node('div', 'disclaimer', result.disclaimer));
+}
+
+function addSelfCheckSummary(result) {
+  const cards = result.resultCards ?? [];
+  const stack = node('div', 'result-stack');
+  const article = node('article', 'result-card self-check-summary');
+  const header = node('div', 'result-card-header');
+  header.append(node('span', '', cards.length ? '初步法律自检结果' : '本次法律自检结果'));
+  const body = node('div', 'result-card-body');
+  const title = cards.length
+    ? `找到 ${cards.length} 条可能相关的法规核对项`
+    : result.lawRetrievalStatus === 'no_match'
+      ? '当前法规语料暂未找到安全匹配'
+      : '当前未能生成可核验的结果卡片';
+  body.append(node('h3', '', title));
+  const summary = cards.length
+    ? '以下内容根据你提供的脱敏事实与固定法规语料生成，用于识别可能相关的规则和仍需确认的条件。'
+    : result.lawRetrievalStatus === 'failed'
+      ? '法规检索环节暂时不可用。本次不会用模型常识补写法条，请稍后重新核对。'
+      : result.lawComparisonStatus === 'failed' || result.resultCardStatus === 'failed'
+        ? '候选法规的核对环节未能完成。本次没有输出未经验证的判断。'
+        : '这不代表不存在相关法律，只表示当前首版语料和事实条件不足以安全展示匹配结果。';
+  body.append(node('p', 'summary-copy', summary));
+  if (cards.length) {
+    const list = node('ul', 'summary-list');
+    for (const card of cards) {
+      list.append(node('li', '', `${card.lawName} ${card.articleNumber} · ${card.findingLabel}`));
+    }
+    body.append(list);
+  }
+  const next = node('div', 'result-next-step');
+  next.append(
+    node('strong', '', '建议下一步'),
+    node(
+      'p',
+      '',
+      cards.length
+        ? '保存合同、通知、工资记录等原始证据；涉及期限、金额或争议处理时，携带完整材料咨询专业人士。'
+        : '可以新建核对并在首次描述中写明争议主体、发生事项、时间和现有证据。'
+    )
+  );
+  body.append(next);
+  article.append(header, body);
+  stack.append(article);
+  elements.conversation.append(stack);
+}
+
+function addTerminalError(result) {
+  const stack = node('div', 'result-stack');
+  const article = node('article', 'result-card incomplete-card terminal-error-card');
+  const header = node('div', 'result-card-header');
+  const unsupported = result.status === 'unsupported_domain';
+  header.append(node('span', '', unsupported ? '暂未识别法律领域' : '本次处理已安全停止'));
+  const body = node('div', 'result-card-body');
+  body.append(
+    node('h3', '', unsupported ? '请补充争议主体和具体事项' : '当前请求未能继续处理'),
+    node('p', 'summary-copy', result.error?.message ?? '请新建任务后重试。')
+  );
+  if (unsupported) {
+    body.append(node('p', 'law-meta', '可直接选择一个首版支持领域并继续描述：'));
+    const choices = node('div', 'domain-choice-list');
+    for (const label of ['劳动用工', '婚姻家庭', '民间借贷', '税务', '知识产权']) {
+      const button = node('button', 'domain-choice', label);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        resetConversation('v0');
+        elements.input.value = `我想咨询${label}问题：`;
+        elements.characterCount.textContent = String(elements.input.value.length);
+        elements.input.focus();
+      });
+      choices.append(button);
+    }
+    body.append(choices);
+  }
+  article.append(header, body);
+  stack.append(article);
+  elements.conversation.append(stack);
 }
 
 function addIncompleteSummary(result) {
@@ -942,7 +1037,9 @@ function renderResult(result) {
   elements.pageTitle.textContent = v1 ? '专业数据分析' : (result.legalDomainLabel ? `${result.legalDomainLabel}自检` : '法律自检会话');
   elements.agentRoute.textContent = taskLabels[result.taskType] ?? '待识别';
   renderStatus(result); renderFacts(result);
-  if (result.agentExecution) {
+  const finalSelfCheck =
+    !v1 && ['completed', 'information_ready'].includes(result.status);
+  if (result.agentExecution && !result.error && !finalSelfCheck) {
     const executionLabel = result.agentExecution.fallbackUsed
       ? '智能分析暂不可用 · 使用本地安全规则'
       : result.agentExecution.providerMode === 'demo'
@@ -951,7 +1048,7 @@ function renderResult(result) {
     addMessage('assistant', result.assistantMessage ?? '智能助手已完成本轮处理。', `智能助手 · ${executionLabel}`);
   }
   if (result.status === 'clarification_limit_reached') addIncompleteSummary(result);
-  else if (result.error) addMessage('assistant', result.error.message, '安全停止');
+  else if (result.error) addTerminalError(result);
   else if (v1) {
     if (result.status === 'awaiting_confirmation') {
       if (result.assistantMessage) addMessage('assistant', result.assistantMessage, '查询计划');
@@ -971,9 +1068,10 @@ function renderResult(result) {
     } else addV1Result(result);
   }
   else if ((result.questions ?? []).length) addQuestions(result.questions);
-  else if ((result.resultCards ?? []).length) addResultCards(result);
-  else if (result.status === 'information_ready' && result.lawRetrievalStatus === 'no_match') addMessage('assistant', '信息已收集完整，但当前最小法规库没有可安全返回的匹配条目。', '暂未匹配');
-  else if (result.status === 'information_ready' && result.resultCardStatus === 'no_match') addMessage('assistant', '信息已收集并完成候选法条核对；当前事实未形成可安全展示的风险卡片。', '核对完成');
+  else if (finalSelfCheck) {
+    addSelfCheckSummary(result);
+    if ((result.resultCards ?? []).length) addResultCards(result);
+  }
   scrollBottom();
 }
 
@@ -1166,6 +1264,10 @@ elements.input.addEventListener('input', () => { elements.characterCount.textCon
 elements.input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
 elements.consent.addEventListener('change', () => { elements.privacyAccept.disabled = !elements.consent.checked || !state.config; });
 elements.privacyAccept.addEventListener('click', () => { if (!elements.consent.checked) return; state.consentGranted = true; elements.privacyModal.classList.add('hidden'); elements.input.focus(); });
+document.querySelectorAll('[data-enter-workspace]').forEach((button) =>
+  button.addEventListener('click', () => enterWorkspace(button.dataset.enterWorkspace))
+);
+elements.backHome.addEventListener('click', returnToLanding);
 elements.newSession.addEventListener('click', () => resetConversation(state.mode));
 elements.refreshHistory.addEventListener('click', () => loadHistory().catch((error) => toast(error.message)));
 elements.deleteSession.addEventListener('click', async () => { if (!state.activeSessionId || !window.confirm('确认物理删除当前本地会话？此操作无法撤销。')) return; try { await api(`/api/sessions/${state.activeSessionId}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true }) }); toast('会话已删除'); resetConversation(state.mode); await loadHistory(); } catch (error) { toast(error.message); } });
