@@ -3,150 +3,136 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    <title>法律合规审查智能助手 - 本地 Demo</title>
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="LexPilot 法律合规智能助手：法律自检、法规检索与专业数据分析。">
+    <title>LexPilot - 法律合规智能助手</title>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/landing.css">
   </head>
   <body>
-    <div class="landing-page" id="landing-page">
-      <header class="landing-nav">
-        <a class="landing-brand" href="#top" aria-label="LexPilot 首页">
-          <span class="landing-brand-mark">L</span>
-          <span><strong>LexPilot</strong><small>法律合规智能助手</small></span>
-        </a>
-        <nav class="landing-links" aria-label="首页导航">
-          <a href="#capabilities">产品能力</a>
-          <a href="#workflow">工作方式</a>
-          <a href="#security">安全与隐私</a>
-          <a href="#about">关于项目</a>
+    <div class="landing-page" id="landing-page" data-nav-tone="dark">
+      <aside class="announcement-bar" id="announcement-bar" aria-label="产品公告">
+        <a id="announcement-link" href="#value"><span id="announcement-text">正在加载产品公告</span><strong id="announcement-label"></strong><span aria-hidden="true">↗</span></a>
+        <button id="announcement-close" type="button" aria-label="关闭公告">×</button>
+      </aside>
+
+      <header class="landing-nav" id="landing-nav" data-tone="dark">
+        <div class="landing-nav-shell">
+          <a class="landing-brand" href="#top" aria-label="LexPilot 首页">
+            <span class="landing-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>LexPilot</strong><small>法律合规智能助手</small></span>
+          </a>
+          <nav class="landing-links" aria-label="首页导航">
+            <a href="#capabilities">产品能力</a>
+            <a href="#scenarios">解决方案</a>
+            <a href="#security">安全性</a>
+            <a href="#resources">资源</a>
+            <a href="#about">关于我们</a>
+          </nav>
+          <div class="landing-nav-actions">
+            <button class="landing-nav-secondary" type="button" data-enter-workspace="v1">专业分析</button>
+            <button class="landing-nav-action" type="button" data-enter-workspace="v0">进入工作台</button>
+          </div>
+          <button class="landing-menu-toggle" id="landing-menu-toggle" type="button" aria-expanded="false" aria-controls="landing-mobile-menu" aria-label="打开导航菜单">
+            <span></span><span></span>
+          </button>
+        </div>
+        <nav class="landing-mobile-menu" id="landing-mobile-menu" aria-label="移动端首页导航" hidden>
+          <a href="#capabilities">产品能力</a><a href="#scenarios">解决方案</a><a href="#security">安全性</a><a href="#resources">资源</a><a href="#about">关于我们</a>
+          <button type="button" data-enter-workspace="v0">进入工作台 <span>→</span></button>
         </nav>
-        <button class="landing-nav-action" type="button" data-enter-workspace="v0">进入工作台</button>
       </header>
 
       <main id="top">
-        <section class="landing-hero">
-          <div class="hero-copy">
-            <p class="landing-kicker">AI FOR LEGAL &amp; COMPLIANCE</p>
-            <h1>让复杂法律问题，<br>先被准确地说清楚。</h1>
-            <p class="hero-lead">LexPilot 将隐私脱敏、事实澄清、固定法规检索与专业数据分析放进同一个受治理工作流，帮助你得到可追溯、可核验的初步自检结果。</p>
-            <div class="hero-actions">
-              <button class="landing-primary" type="button" data-enter-workspace="v0">开始法律自检 <span>→</span></button>
-              <button class="landing-secondary" type="button" data-enter-workspace="v1">进入专业数据分析</button>
-            </div>
-            <p class="hero-boundary">当前为本地 Demo，不替代律师意见；法规范围与数据能力会持续完善。</p>
+        <section class="landing-hero" data-nav-section="dark">
+          <div class="hero-media" id="hero-media" aria-label="首页品牌视觉"></div>
+          <div class="hero-scrim" aria-hidden="true"></div>
+          <div class="hero-copy" data-reveal>
+            <p class="landing-kicker light" id="hero-eyebrow"></p>
+            <h1 id="hero-title"></h1>
+            <p class="hero-lead" id="hero-description"></p>
+            <div class="hero-actions" id="hero-actions"></div>
+            <p class="hero-boundary" id="hero-boundary"></p>
           </div>
-          <div class="hero-product" aria-label="产品流程预览">
-            <div class="product-window-top">
-              <span class="product-brand-dot">L</span>
-              <span>法律自检任务</span>
-              <small>本机安全运行</small>
-            </div>
-            <div class="product-question">
-              <span>01</span>
-              <p>请描述发生了什么。系统会先脱敏，再用少量问题补齐关键事实。</p>
-            </div>
-            <div class="product-answer">公司通知我解除劳动合同，但没有提前书面通知。</div>
-            <div class="product-result-preview">
-              <div><small>初步核对</small><strong>已匹配候选法规与待确认条件</strong></div>
-              <span>可核验</span>
-            </div>
-            <div class="product-flow"><span>隐私脱敏</span><i>→</i><span>领域识别</span><i>→</i><span>法规核对</span></div>
-          </div>
+          <div class="hero-index" aria-hidden="true"><span>LEXPILOT</span><i></i><span>01</span></div>
         </section>
 
-        <section class="landing-proof" aria-label="项目信息占位">
-          <p>面向个人法律自检与专业合规数据任务</p>
-          <div class="proof-placeholders">
-            <span>合作机构 · 待补充</span>
-            <span>落地案例 · 待补充</span>
-            <span>资质与荣誉 · 待补充</span>
-            <span>公开数据指标 · 待补充</span>
+        <section class="partner-band" id="partners" data-nav-section="dark" aria-labelledby="partner-heading">
+          <div class="partner-band-heading" data-reveal>
+            <p class="landing-kicker light">TRUSTED WORK STARTS WITH EVIDENCE</p>
+            <h2 id="partner-heading"></h2>
+            <p id="partner-note"></p>
           </div>
+          <div class="partner-track" id="partner-track" data-reveal></div>
         </section>
 
-        <section class="landing-section" id="capabilities">
-          <div class="section-heading">
-            <p class="landing-kicker">ONE GOVERNED WORKSPACE</p>
-            <h2>两类任务，一个清晰入口</h2>
-            <p>普通用户从事实澄清开始，专业用户从结构化数据任务开始；两条路径共享隐私、安全和审计边界。</p>
+        <section class="value-section" id="value" data-nav-section="light">
+          <div class="value-copy" data-reveal>
+            <p class="landing-kicker" id="value-eyebrow"></p>
+            <h2><span id="value-lead"></span> <em id="value-supporting"></em> <strong id="value-highlight"></strong></h2>
           </div>
-          <div class="capability-grid">
-            <article class="capability-card featured">
-              <span class="card-index">01</span>
-              <p class="card-label">法律自检</p>
-              <h3>把事实补完整，再查看候选法规与风险提示</h3>
-              <p>覆盖劳动用工、婚姻家庭、民间借贷、税务与知识产权五个首版领域，每轮最多追问两个问题。</p>
-              <button type="button" data-enter-workspace="v0">开始自检 <span>→</span></button>
-            </article>
-            <article class="capability-card dark">
-              <span class="card-index">02</span>
-              <p class="card-label">专业数据分析</p>
-              <h3>从自然语言到可审阅、可确认的数据结果</h3>
-              <p>展示受约束查询计划、Schema 校验、结果表格、图表与分析文档；写操作必须经过 Human Review。</p>
-              <button type="button" data-enter-workspace="v1">进入分析 <span>→</span></button>
-            </article>
-          </div>
+          <div class="value-monogram" aria-hidden="true">L</div>
         </section>
 
-        <section class="landing-section workflow-section" id="workflow">
-          <div class="section-heading compact-heading">
-            <p class="landing-kicker">HOW IT WORKS</p>
-            <h2>每一步都有清楚的边界</h2>
+        <section class="capabilities-section" id="capabilities" data-nav-section="light">
+          <div class="section-intro" data-reveal>
+            <p class="landing-kicker">CORE CAPABILITIES</p>
+            <h2>法律团队与个人用户，<br>都需要更清楚的工作路径。</h2>
+            <p>已开放能力直接进入工作台；规划中的能力会明确标注，不用概念代替真实功能。</p>
           </div>
-          <div class="workflow-grid">
-            <article><span>01</span><h3>先行脱敏</h3><p>原始输入先经过确定性隐私处理，再进入后续流程。</p></article>
-            <article><span>02</span><h3>识别与澄清</h3><p>确定任务和法律领域，只询问完成核对所需的关键信息。</p></article>
-            <article><span>03</span><h3>核验与执行</h3><p>法规来自固定语料；数据任务先展示计划，确认后执行。</p></article>
-            <article><span>04</span><h3>返回可查结果</h3><p>展示来源、条件、状态与安全边界，不隐藏失败或回退。</p></article>
-          </div>
+          <div class="capability-list" id="capability-list"></div>
         </section>
 
-        <section class="landing-section domain-section">
-          <div class="section-heading compact-heading">
-            <p class="landing-kicker">SUPPORTED SCOPE</p>
-            <h2>首版支持领域</h2>
+        <section class="scenarios-section" id="scenarios" data-nav-section="dark">
+          <div class="scenario-heading" data-reveal>
+            <p class="landing-kicker light">SOLUTIONS</p>
+            <h2>从一次自检，到一项受治理的专业任务。</h2>
           </div>
-          <div class="domain-list">
-            <span>劳动用工</span><span>婚姻家庭</span><span>民间借贷</span><span>税务</span><span>知识产权</span>
-          </div>
-          <p class="domain-note">未匹配不代表不存在相关法律。更多领域、地区与法规覆盖将在资料完善后逐步补充。</p>
+          <div class="scenario-grid" id="scenario-grid"></div>
         </section>
 
-        <section class="landing-security" id="security">
-          <div>
-            <p class="landing-kicker light">SECURITY BY DESIGN</p>
-            <h2>敏感场景，先把安全边界做清楚。</h2>
-            <p>当前 Demo 仅绑定本机回环地址，会话加密保存，可主动物理删除；技术运行信息与普通用户界面分层展示。</p>
+        <section class="security-section" id="security" data-nav-section="dark">
+          <div class="security-copy" data-reveal>
+            <p class="landing-kicker light" id="security-eyebrow"></p>
+            <h2 id="security-title"></h2>
+            <p id="security-description"></p>
+            <button type="button" data-enter-workspace="v0">查看实际工作边界 <span>→</span></button>
           </div>
-          <div class="security-list">
-            <article><span>✓</span><div><strong>输入先脱敏</strong><small>避免不必要的个人信息进入后续处理</small></div></article>
-            <article><span>✓</span><div><strong>结果可追溯</strong><small>候选法条保留版本、来源与核验信息</small></div></article>
-            <article><span>✓</span><div><strong>数据可删除</strong><small>会话和关联私有产物支持受控物理删除</small></div></article>
-          </div>
+          <div class="security-list" id="security-list" data-reveal></div>
         </section>
 
-        <section class="landing-section about-section" id="about">
-          <div class="section-heading">
-            <p class="landing-kicker">ABOUT LEXPILOT</p>
-            <h2>项目资料将在这里持续完善</h2>
-            <p>以下内容暂不使用虚构信息。等你提供正式资料后，可以直接替换占位内容，不需要重新设计页面结构。</p>
-          </div>
-          <div class="placeholder-grid">
-            <article><span>待补充</span><h3>项目介绍与团队</h3><p>团队背景、项目愿景、研发单位与联系方式。</p></article>
-            <article><span>待补充</span><h3>合作机构与客户案例</h3><p>经授权后展示合作标识、实际应用场景与用户反馈。</p></article>
-            <article><span>待补充</span><h3>资质、测评与合规说明</h3><p>可公开的测评报告、软著、奖项、备案或安全资质。</p></article>
-          </div>
+        <section class="resources-section" id="resources" data-nav-section="light">
+          <header class="resource-heading" data-reveal>
+            <p class="landing-kicker">CASES &amp; RESOURCES</p>
+            <h2 id="resource-heading"></h2>
+            <p id="resource-description"></p>
+          </header>
+          <div class="resource-grid" id="resource-grid"></div>
         </section>
 
-        <section class="landing-cta">
-          <div><p class="landing-kicker light">GET STARTED</p><h2>从一个具体问题开始。</h2></div>
-          <button type="button" data-enter-workspace="v0">进入 LexPilot 工作台 <span>→</span></button>
+        <section class="about-section" id="about" data-nav-section="light">
+          <div class="about-copy" data-reveal>
+            <p class="landing-kicker" id="about-eyebrow"></p>
+            <h2 id="about-title"></h2>
+            <p id="about-description"></p>
+          </div>
+          <dl class="about-fields" id="about-fields" data-reveal></dl>
+        </section>
+
+        <section class="landing-cta" data-nav-section="dark">
+          <div data-reveal>
+            <p class="landing-kicker light" id="cta-eyebrow"></p>
+            <h2 id="cta-title"></h2>
+            <p id="cta-description"></p>
+          </div>
+          <div class="landing-cta-actions" id="cta-actions" data-reveal></div>
         </section>
       </main>
 
       <footer class="landing-footer">
-        <div><strong>LexPilot</strong><span>法律合规智能助手 · 本地 Demo</span></div>
-        <p>非法律意见 · 正式主体、备案及联系信息待补充</p>
+        <div class="landing-footer-brand"><strong>LexPilot</strong><span id="footer-product-line"></span></div>
+        <nav aria-label="页脚导航"><a href="#capabilities">产品能力</a><a href="#security">安全性</a><a href="#about">关于我们</a></nav>
+        <p id="footer-boundary"></p>
       </footer>
     </div>
 
@@ -404,6 +390,7 @@
     </div>
 
     <div class="toast" id="toast" role="status"></div>
+    <script src="/landing-content.js" defer></script>
     <script src="/v1-presentation.js" defer></script>
     <script src="/app.js" defer></script>
   </body>

@@ -538,18 +538,26 @@ test('Sandbox request body has a dedicated bounded upload limit', async () => {
 test('serves the local web shell and its fixed static assets', async () => {
   await withServer(async (baseUrl) => {
     const page = await fetch(`${baseUrl}/`);
+    const landingContentScript = await fetch(`${baseUrl}/landing-content.js`);
     const presentationScript = await fetch(`${baseUrl}/v1-presentation.js`);
     const script = await fetch(`${baseUrl}/app.js`);
     const styles = await fetch(`${baseUrl}/styles.css`);
+    const landingStyles = await fetch(`${baseUrl}/landing.css`);
 
     assert.equal(page.status, 200);
     assert.match(page.headers.get('content-type'), /text\/html/);
-    assert.match(await page.text(), /法律合规审查智能助手/);
+    assert.match(await page.text(), /LexPilot - 法律合规智能助手/);
     const pageText = await (await fetch(`${baseUrl}/`)).text();
     assert.match(pageText, /id="landing-page"/);
     assert.match(pageText, /class="app-shell hidden"[^>]*id="workspace-app"/);
-    assert.match(pageText, /让复杂法律问题，<br>先被准确地说清楚/);
-    assert.match(pageText, /合作机构 · 待补充/);
+    assert.match(pageText, /id="announcement-bar"/);
+    assert.match(pageText, /id="landing-menu-toggle"/);
+    assert.match(pageText, /id="hero-media"/);
+    assert.match(pageText, /id="capability-list"/);
+    assert.match(pageText, /id="scenario-grid"/);
+    assert.match(pageText, /id="resource-grid"/);
+    assert.match(pageText, /src="\/landing-content\.js"/);
+    assert.match(pageText, /href="\/landing\.css"/);
     assert.match(pageText, />法律自检</);
     assert.match(pageText, />专业数据分析</);
     assert.doesNotMatch(pageText, />\s*V[01]\b/);
@@ -560,6 +568,13 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, /id="data-source-admin-modal"/);
     assert.doesNotMatch(pageText, /type="password"/);
     assert.match(pageText, /src="\/v1-presentation\.js"/);
+    assert.equal(landingContentScript.status, 200);
+    assert.match(landingContentScript.headers.get('content-type'), /text\/javascript/);
+    const landingContentText = await landingContentScript.text();
+    assert.match(landingContentText, /LexPilotLandingContent/);
+    assert.match(landingContentText, /type: 'placeholder'/);
+    assert.match(landingContentText, /status: PLACEHOLDER_STATUS/);
+    assert.match(landingContentText, /规划能力 · 待接入/);
     assert.equal(presentationScript.status, 200);
     assert.match(presentationScript.headers.get('content-type'), /text\/javascript/);
     const presentationText = await presentationScript.text();
@@ -582,6 +597,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /function enterWorkspace/);
     assert.match(scriptText, /function addSelfCheckSummary/);
     assert.match(scriptText, /function addTerminalError/);
+    assert.match(scriptText, /function renderLandingContent/);
+    assert.match(scriptText, /function initLandingInteractions/);
+    assert.match(scriptText, /prefers-reduced-motion/);
     assert.equal(styles.status, 200);
     assert.match(styles.headers.get('content-type'), /text\/css/);
     const stylesheet = await styles.text();
@@ -595,6 +613,13 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(stylesheet, /\.landing-page\s*\{/);
     assert.match(stylesheet, /\.landing-hero\s*\{/);
     assert.match(stylesheet, /\.placeholder-grid\s*\{/);
+    assert.equal(landingStyles.status, 200);
+    assert.match(landingStyles.headers.get('content-type'), /text\/css/);
+    const landingStylesheet = await landingStyles.text();
+    assert.match(landingStylesheet, /--landing-black:/);
+    assert.match(landingStylesheet, /\.announcement-bar\s*\{/);
+    assert.match(landingStylesheet, /\.landing-menu-toggle\s*\{/);
+    assert.match(landingStylesheet, /@media \(max-width: 760px\)/);
   });
 });
 

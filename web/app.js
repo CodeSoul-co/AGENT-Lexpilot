@@ -1,8 +1,12 @@
 const $ = (selector) => document.querySelector(selector);
+const landingContent = globalThis.LexPilotLandingContent;
 const v1Presentation = globalThis.LexPilotV1Presentation;
+if (!landingContent) throw new Error('Landing content configuration failed to load.');
 if (!v1Presentation) throw new Error('V1 presentation module failed to load.');
 const elements = {
   landingPage: $('#landing-page'), workspaceApp: $('#workspace-app'), backHome: $('#back-home'),
+  landingNav: $('#landing-nav'), landingMenuToggle: $('#landing-menu-toggle'),
+  landingMobileMenu: $('#landing-mobile-menu'), announcementBar: $('#announcement-bar'),
   characterCount: $('#character-count'), composer: $('#composer'), consent: $('#privacy-consent'),
   conversation: $('#conversation'), deleteSession: $('#delete-session'), eraseHistory: $('#erase-history'), domainLabel: $('#domain-label'),
   factsList: $('#facts-list'), historyList: $('#history-list'), input: $('#message-input'),
@@ -62,6 +66,239 @@ function node(tag, className, text) {
   return value;
 }
 
+function setLandingText(selector, value) {
+  const target = $(selector);
+  if (target) target.textContent = value ?? '';
+}
+
+function isLocalMediaUrl(value, allowDataImage = false) {
+  return (
+    typeof value === 'string' &&
+    (value.startsWith('/') || (allowDataImage && value.startsWith('data:image/')))
+  );
+}
+
+function landingAction(action, className) {
+  const button = node('button', className, action.label);
+  button.type = 'button';
+  button.dataset.enterWorkspace = action.mode;
+  button.append(node('span', '', '→'));
+  return button;
+}
+
+function renderLandingMedia(media) {
+  const container = $('#hero-media');
+  container.replaceChildren();
+  if (media.type === 'video' && isLocalMediaUrl(media.videoUrl)) {
+    const video = node('video', 'hero-media-asset');
+    video.autoplay = true;
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.src = media.videoUrl;
+    if (isLocalMediaUrl(media.posterUrl, true)) video.poster = media.posterUrl;
+    video.setAttribute('aria-label', media.alt);
+    container.append(video);
+    return;
+  }
+  if (media.type === 'image' && isLocalMediaUrl(media.imageUrl, true)) {
+    const image = node('img', 'hero-media-asset');
+    image.src = media.imageUrl;
+    image.alt = media.alt;
+    container.append(image);
+    return;
+  }
+  const placeholder = node('div', 'hero-media-placeholder');
+  const mark = node('div', 'media-placeholder-mark', 'L');
+  const label = node('div', 'media-placeholder-copy');
+  label.append(node('span', '', media.label), node('strong', '', media.status));
+  placeholder.append(mark, label);
+  container.append(placeholder);
+}
+
+function renderLandingContent() {
+  const content = landingContent;
+  elements.announcementBar.classList.toggle('hidden', content.announcement.enabled !== true);
+  setLandingText('#announcement-text', content.announcement.text);
+  setLandingText('#announcement-label', content.announcement.linkLabel);
+  $('#announcement-link').href = content.announcement.href;
+
+  setLandingText('#hero-eyebrow', content.hero.eyebrow);
+  setLandingText('#hero-title', content.hero.title);
+  setLandingText('#hero-description', content.hero.description);
+  setLandingText('#hero-boundary', content.hero.boundary);
+  const heroActions = $('#hero-actions');
+  heroActions.replaceChildren(
+    landingAction(content.hero.primaryAction, 'landing-primary'),
+    landingAction(content.hero.secondaryAction, 'landing-secondary')
+  );
+  renderLandingMedia(content.hero.media);
+
+  setLandingText('#partner-heading', content.partners.heading);
+  setLandingText('#partner-note', content.partners.note);
+  const partnerTrack = $('#partner-track');
+  partnerTrack.replaceChildren();
+  for (const partner of content.partners.items) {
+    const item = node('article', 'partner-placeholder');
+    if (isLocalMediaUrl(partner.logoUrl, true)) {
+      const logo = node('img');
+      logo.src = partner.logoUrl;
+      logo.alt = partner.label;
+      item.append(logo);
+    } else {
+      item.append(node('strong', '', partner.label), node('span', '', partner.status));
+    }
+    partnerTrack.append(item);
+  }
+
+  setLandingText('#value-eyebrow', content.value.eyebrow);
+  setLandingText('#value-lead', content.value.lead);
+  setLandingText('#value-supporting', content.value.supporting);
+  setLandingText('#value-highlight', content.value.highlight);
+
+  const capabilityList = $('#capability-list');
+  capabilityList.replaceChildren();
+  for (const capability of content.capabilities) {
+    const article = node('article', `capability-row ${capability.tone}`);
+    article.dataset.reveal = '';
+    article.tabIndex = 0;
+    const meta = node('div', 'capability-meta');
+    meta.append(node('span', '', capability.index), node('small', '', capability.status));
+    const body = node('div', 'capability-body');
+    body.append(node('h3', '', capability.title), node('p', '', capability.description));
+    if (capability.action) body.append(landingAction(capability.action, 'capability-action'));
+    article.append(meta, body, node('span', 'capability-arrow', '↗'));
+    capabilityList.append(article);
+  }
+
+  const scenarioGrid = $('#scenario-grid');
+  scenarioGrid.replaceChildren();
+  for (const [index, scenario] of content.scenarios.entries()) {
+    const article = node('article', 'scenario-card');
+    article.dataset.reveal = '';
+    article.append(
+      node('span', 'scenario-index', String(index + 1).padStart(2, '0')),
+      node('small', '', scenario.label),
+      node('h3', '', scenario.title),
+      node('p', '', scenario.description),
+      node('strong', '', scenario.status)
+    );
+    scenarioGrid.append(article);
+  }
+
+  setLandingText('#security-eyebrow', content.security.eyebrow);
+  setLandingText('#security-title', content.security.title);
+  setLandingText('#security-description', content.security.description);
+  const securityList = $('#security-list');
+  securityList.replaceChildren();
+  for (const [index, item] of content.security.items.entries()) {
+    const article = node('article');
+    article.append(
+      node('span', '', String(index + 1).padStart(2, '0')),
+      node('strong', '', item.title),
+      node('small', '', item.detail)
+    );
+    securityList.append(article);
+  }
+
+  setLandingText('#resource-heading', content.resources.heading);
+  setLandingText('#resource-description', content.resources.description);
+  const resourceGrid = $('#resource-grid');
+  resourceGrid.replaceChildren();
+  for (const resource of content.resources.items) {
+    const article = node('article', 'resource-card');
+    article.dataset.reveal = '';
+    article.append(
+      node('span', '', resource.type),
+      node('h3', '', resource.title),
+      node('strong', '', resource.status),
+      node('i', '', '↗')
+    );
+    resourceGrid.append(article);
+  }
+
+  setLandingText('#about-eyebrow', content.about.eyebrow);
+  setLandingText('#about-title', content.about.title);
+  setLandingText('#about-description', content.about.description);
+  const aboutFields = $('#about-fields');
+  aboutFields.replaceChildren();
+  for (const field of content.about.fields) {
+    const row = node('div');
+    row.append(node('dt', '', field.label), node('dd', '', field.value));
+    aboutFields.append(row);
+  }
+
+  setLandingText('#cta-eyebrow', content.finalCallToAction.eyebrow);
+  setLandingText('#cta-title', content.finalCallToAction.title);
+  setLandingText('#cta-description', content.finalCallToAction.description);
+  const ctaActions = $('#cta-actions');
+  ctaActions.replaceChildren(
+    landingAction(content.finalCallToAction.primaryAction, 'landing-primary light-action'),
+    landingAction(content.finalCallToAction.secondaryAction, 'landing-secondary light-action')
+  );
+  setLandingText('#footer-product-line', content.footer.productLine);
+  setLandingText('#footer-boundary', content.footer.boundary);
+}
+
+function closeLandingMenu() {
+  elements.landingMenuToggle.setAttribute('aria-expanded', 'false');
+  elements.landingMenuToggle.setAttribute('aria-label', '打开导航菜单');
+  elements.landingMobileMenu.hidden = true;
+}
+
+function initLandingInteractions() {
+  elements.landingMenuToggle.addEventListener('click', () => {
+    const open = elements.landingMenuToggle.getAttribute('aria-expanded') === 'true';
+    elements.landingMenuToggle.setAttribute('aria-expanded', String(!open));
+    elements.landingMenuToggle.setAttribute('aria-label', open ? '打开导航菜单' : '关闭导航菜单');
+    elements.landingMobileMenu.hidden = open;
+  });
+  elements.landingMobileMenu.querySelectorAll('a').forEach((link) =>
+    link.addEventListener('click', closeLandingMenu)
+  );
+  $('#announcement-close').addEventListener('click', () =>
+    elements.announcementBar.classList.add('hidden')
+  );
+
+  const revealTargets = document.querySelectorAll('[data-reveal]');
+  if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    revealTargets.forEach((target) => target.classList.add('is-visible'));
+  } else {
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('is-visible');
+          revealObserver.unobserve(entry.target);
+        }
+      },
+      { root: elements.landingPage, threshold: 0.12, rootMargin: '0px 0px -8% 0px' }
+    );
+    revealTargets.forEach((target) => revealObserver.observe(target));
+  }
+
+  let frameRequested = false;
+  const syncNavTone = () => {
+    frameRequested = false;
+    const navLine = elements.landingNav.getBoundingClientRect().bottom + 2;
+    let tone = 'light';
+    for (const section of document.querySelectorAll('[data-nav-section]')) {
+      const bounds = section.getBoundingClientRect();
+      if (bounds.top <= navLine && bounds.bottom > navLine) {
+        tone = section.dataset.navSection;
+        break;
+      }
+    }
+    elements.landingNav.dataset.tone = tone;
+  };
+  elements.landingPage.addEventListener('scroll', () => {
+    if (frameRequested) return;
+    frameRequested = true;
+    window.requestAnimationFrame(syncNavTone);
+  }, { passive: true });
+  syncNavTone();
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...(options.headers ?? {}) } });
   const body = await response.json();
@@ -87,6 +324,7 @@ function scrollBottom() {
 }
 
 function enterWorkspace(mode = 'v0') {
+  closeLandingMenu();
   elements.landingPage.classList.add('hidden');
   elements.workspaceApp.classList.remove('hidden');
   resetConversation(mode);
@@ -1264,6 +1502,8 @@ elements.input.addEventListener('input', () => { elements.characterCount.textCon
 elements.input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
 elements.consent.addEventListener('change', () => { elements.privacyAccept.disabled = !elements.consent.checked || !state.config; });
 elements.privacyAccept.addEventListener('click', () => { if (!elements.consent.checked) return; state.consentGranted = true; elements.privacyModal.classList.add('hidden'); elements.input.focus(); });
+renderLandingContent();
+initLandingInteractions();
 document.querySelectorAll('[data-enter-workspace]').forEach((button) =>
   button.addEventListener('click', () => enterWorkspace(button.dataset.enterWorkspace))
 );
