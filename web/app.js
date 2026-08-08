@@ -9,17 +9,20 @@ const elements = {
   landingMobileMenu: $('#landing-mobile-menu'), announcementBar: $('#announcement-bar'),
   characterCount: $('#character-count'), composer: $('#composer'), consent: $('#privacy-consent'),
   conversation: $('#conversation'), deleteSession: $('#delete-session'), eraseHistory: $('#erase-history'), domainLabel: $('#domain-label'),
-  factsList: $('#facts-list'), historyList: $('#history-list'), input: $('#message-input'),
+  factsList: $('#facts-list'), needsList: $('#needs-list'), sourceList: $('#source-list'), historyList: $('#history-list'), historySearch: $('#history-search'), input: $('#message-input'),
   newSession: $('#new-session'), pageTitle: $('#page-title'), privacyAccept: $('#privacy-accept'),
   privacyModal: $('#privacy-modal'), policyVersion: $('#policy-version'), refreshHistory: $('#refresh-history'),
   runtime: $('.runtime-status'), runtimeText: $('#runtime-text'), scroll: $('#chat-scroll'),
   send: $('#send-button'), sessionOrb: $('#session-orb'), sessionRound: $('#session-round'),
   sessionStatus: $('#session-status'), toast: $('#toast'), welcome: $('#welcome'),
-  welcomeIcon: $('#welcome-icon'), welcomeEyebrow: $('#welcome-eyebrow'), welcomeTitle: $('#welcome-title'),
-  welcomeCopy: $('#welcome-copy'), scopeBanner: $('#scope-banner'), agentName: $('#agent-name'),
-  agentProvider: $('#agent-provider'), agentRoute: $('#agent-route'),
+  welcomeEyebrow: $('#welcome-eyebrow'), welcomeTitle: $('#welcome-title'),
+  welcomeCopy: $('#welcome-copy'), scopeBanner: $('#scope-banner'),
+  taskPanel: $('#task-panel'), taskPanelToggle: $('#task-panel-toggle'), taskPanelClose: $('#task-panel-close'),
+  historyToggle: $('#history-toggle'), historyClose: $('#history-close'), privacyPolicyDetails: $('#privacy-full-policy'),
   confirmModal: $('#confirm-modal'), confirmExplanation: $('#confirm-explanation'),
   confirmSql: $('#confirm-sql'), confirmAccept: $('#confirm-accept'), confirmCancel: $('#confirm-cancel'),
+  confirmQuery: $('#confirm-query'), confirmRange: $('#confirm-range'), confirmMetrics: $('#confirm-metrics'),
+  confirmSource: $('#confirm-source'), confirmAccess: $('#confirm-access'), confirmOutput: $('#confirm-output'),
   schemaModal: $('#schema-modal'), schemaDescription: $('#schema-description'),
   schemaTableBody: $('#schema-table-body'), openSchema: $('#open-schema'), schemaClose: $('#schema-close'),
   dataSourceAdminModal: $('#data-source-admin-modal'),
@@ -32,7 +35,19 @@ const elements = {
   sandboxFiles: $('#sandbox-files'), sandboxFileSummary: $('#sandbox-file-summary')
 };
 
-const state = { activeSessionId: null, activeStatus: null, config: null, consentGranted: false, busy: false, mode: 'v0', artifacts: [], lastExecutionMs: null, pendingSandboxPlanId: null };
+const state = {
+  activeSessionId: null,
+  activeStatus: null,
+  config: null,
+  consentGranted: false,
+  busy: false,
+  mode: 'v0',
+  artifacts: [],
+  lastExecutionMs: null,
+  pendingSandboxPlanId: null,
+  historyQuery: '',
+  lastSubmittedText: ''
+};
 const accessActions = {
   dataSourceManage: 'data-source:manage',
   executionLogRead: 'execution-log:read',
@@ -64,6 +79,116 @@ function node(tag, className, text) {
   if (className) value.className = className;
   if (text !== undefined) value.textContent = text;
   return value;
+}
+
+const HISTORY_TITLE_STORAGE_KEY = 'lexpilot.historyTitles.v1';
+
+function historyTitles() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(HISTORY_TITLE_STORAGE_KEY) ?? '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHistoryTitle(sessionId, title) {
+  try {
+    const titles = historyTitles();
+    if (title) titles[sessionId] = title;
+    else delete titles[sessionId];
+    window.localStorage.setItem(HISTORY_TITLE_STORAGE_KEY, JSON.stringify(titles));
+  } catch {
+    // Renaming is a local convenience and must never block the legal workflow.
+  }
+}
+
+function customerSafeMessage(message, fallback = '当前任务未能完成，请稍后重试。') {
+  if (typeof message !== 'string' || !message.trim()) return fallback;
+  const technicalPattern = /(agent|provider|runtime|schema|sql|sqlite|postgres|mysql|database|artifact|workspace|docker|\/api\/|[a-z]:\\|\/users\/|error[_ -]?code|stack|exception)/i;
+  return technicalPattern.test(message) ? fallback : message;
+}
+
+function setTaskPanelExpanded(expanded) {
+  elements.workspaceApp.classList.toggle('task-panel-collapsed', !expanded);
+  elements.workspaceApp.classList.toggle('task-panel-open', expanded);
+  elements.taskPanelToggle.setAttribute('aria-expanded', String(expanded));
+}
+
+function markTaskPanelContent(hasContent) {
+  elements.taskPanelToggle.classList.toggle('has-content', hasContent);
+}
+
+function closeMobileHistory() {
+  elements.workspaceApp.classList.remove('history-open');
+}
+
+function customerDataSourceLabel(data) {
+  const value = data?.schema?.displayName ?? data?.schema?.dataSource;
+  if (typeof value !== 'string' || /(demo|演示|schema|sqlite|postgres|mysql)/i.test(value)) return '已授权数据源';
+  return value;
+}
+
+function formatPlanRange(data) {
+  const range = data?.plan?.semanticQuery?.yearRange;
+  if (!Array.isArray(range) || range.length !== 2) return '按当前查询条件';
+  return range[0] === range[1] ? `${range[0]} 年` : `${range[0]}—${range[1]} 年`;
+}
+
+function formatPlanMetrics(data) {
+  const labels = {
+    year: '年份',
+    case_count: '案件数量',
+    employee_win_rate: '胜诉率',
+    median_compensation: '赔偿中位数'
+  };
+  const columns = data?.plan?.expectedOutput?.columns;
+  return Array.isArray(columns) && columns.length
+    ? columns.map((column) => labels[column]).filter(Boolean).join('、') || '按已确认指标分析'
+    : '按已确认指标分析';
+}
+
+function planSummary(data) {
+  const writePlan = data?.plan?.readOnly === false;
+  let title = '按当前条件完成数据分析';
+  if (!writePlan) {
+    try { title = v1Presentation.buildPresentation(data).title; } catch { /* keep customer-safe fallback */ }
+  }
+  return {
+    query: title,
+    range: formatPlanRange(data),
+    metrics: formatPlanMetrics(data),
+    source: customerDataSourceLabel(data),
+    access: writePlan ? '受控变更，需要再次批准' : '只读，不修改原始数据',
+    output: writePlan ? '操作结果与确认记录' : '表格、图表与分析文档'
+  };
+}
+
+function createPlanSummary(data) {
+  const summary = planSummary(data);
+  const list = node('dl', 'plan-summary');
+  for (const [label, value] of [
+    ['查询内容', summary.query],
+    ['数据范围', summary.range],
+    ['分析指标', summary.metrics],
+    ['数据来源', summary.source],
+    ['访问方式', summary.access],
+    ['预期输出', summary.output]
+  ]) {
+    const row = node('div');
+    row.append(node('dt', '', label), node('dd', '', value));
+    list.append(row);
+  }
+  return list;
+}
+
+function createTechnicalDetails(sql, label = '高级技术详情') {
+  const details = node('details', 'technical-details');
+  details.append(node('summary', '', label));
+  const panel = node('div', 'sql-panel');
+  panel.append(node('div', 'sql-toolbar', '技术查询详情'), node('pre', '', sql ?? ''));
+  details.append(panel);
+  return details;
 }
 
 function setLandingText(selector, value) {
@@ -318,7 +443,20 @@ function initLandingInteractions() {
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'content-type': 'application/json', ...(options.headers ?? {}) } });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message ?? '本地服务请求失败。');
+  if (!response.ok) {
+    const fallback = response.status === 403
+      ? '当前操作没有权限。'
+      : response.status === 404
+        ? '当前任务不存在或已经结束。'
+        : response.status === 409
+          ? '任务状态已变化，请刷新后重试。'
+          : response.status === 413
+            ? '提交内容过大，请精简后重试。'
+            : response.status >= 500
+              ? '服务暂时不可用，请稍后重试。'
+              : '请求内容无法处理，请检查后重试。';
+    throw new Error(customerSafeMessage(body.error?.message, fallback));
+  }
   return body;
 }
 
@@ -332,7 +470,8 @@ function setBusy(value) {
   state.busy = value;
   elements.send.disabled = value;
   elements.input.disabled = value;
-  elements.send.firstChild.textContent = value ? 'Agent 处理中 ' : '发送 ';
+  elements.send.firstChild.textContent = value ? '正在分析 ' : '发送 ';
+  elements.composer.classList.toggle('is-busy', value);
 }
 
 function scrollBottom() {
@@ -343,6 +482,8 @@ function enterWorkspace(mode = 'v0') {
   closeLandingMenu();
   elements.landingPage.classList.add('hidden');
   elements.workspaceApp.classList.remove('hidden');
+  setTaskPanelExpanded(false);
+  closeMobileHistory();
   resetConversation(mode);
   if (!state.consentGranted) elements.privacyModal.classList.remove('hidden');
   else elements.input.focus();
@@ -351,6 +492,8 @@ function enterWorkspace(mode = 'v0') {
 function returnToLanding() {
   if (state.busy) return;
   closeConfirmModal();
+  setTaskPanelExpanded(false);
+  closeMobileHistory();
   elements.privacyModal.classList.add('hidden');
   elements.workspaceApp.classList.add('hidden');
   elements.landingPage.classList.remove('hidden');
@@ -373,7 +516,7 @@ function addLoading() {
   row.dataset.loading = 'true';
   row.append(node('div', 'avatar', 'AI'));
   const bubble = node('div', 'bubble loading-bubble');
-  bubble.append(node('span'), node('span'), node('span'));
+  bubble.append(node('strong', 'loading-text', '正在分析'), node('span'), node('span'), node('span'));
   row.append(bubble);
   elements.conversation.append(row);
   scrollBottom();
@@ -386,10 +529,9 @@ function showMode(mode) {
   const v1 = mode === 'v1';
   const sandbox = mode === 'sandbox';
   elements.sandboxControls.classList.toggle('hidden', !sandbox);
-  elements.openSchema.classList.toggle('hidden', !v1);
+  elements.openSchema.classList.add('hidden');
   elements.input.maxLength = sandbox ? 65536 : 5000;
   if (sandbox) {
-    elements.welcomeIcon.textContent = '>_';
     elements.welcomeEyebrow.textContent = '受治理的脚本执行';
     elements.welcomeTitle.textContent = '先审阅计划，再在隔离环境中执行';
     elements.welcomeCopy.textContent = '支持 Python 与 Shell。脚本和所选文件只进入一次性工作区；网络关闭，限制 1 核 CPU、512 MiB 内存和 30 秒执行时间。';
@@ -402,19 +544,15 @@ function showMode(mode) {
     elements.pageTitle.textContent = '脚本沙箱';
     return;
   }
-  elements.welcomeIcon.textContent = v1 ? '∑' : '§';
-  elements.welcomeEyebrow.textContent = v1 ? '专业结构化数据查询' : '法律信息辅助';
-  elements.welcomeTitle.textContent = v1 ? '从自然语言到可核验的数据结果' : '把事情说清楚，先完成一次法律自检';
+  elements.welcomeEyebrow.textContent = v1 ? '专业数据分析' : '法律自检';
+  elements.welcomeTitle.textContent = v1 ? '从一个清楚的数据问题开始' : '把事情说清楚，先完成一次法律自检';
   elements.welcomeCopy.textContent = v1
-    ? '同一个 Agent 会识别数据任务，加载固定演示 Schema，生成只读查询计划，确认执行后返回表格、图表与可下载分析文档。'
-    : '统一 Agent 会先脱敏，再判断所属领域；信息不足时每轮最多追问两个问题。结果只引用本地已核验法条，不构成法律意见。';
+    ? '描述希望分析的范围和指标。开始前可以核对查询内容、数据来源、只读说明和预期输出。'
+    : '描述需要核对的情况。信息会先脱敏；如有必要，我们会继续询问关键事实并展示已经核验的引用来源。';
   elements.artifactsSection.classList.toggle('hidden', !v1);
-  const mayReadLogs = hasAccess(accessActions.executionLogRead);
-  elements.logsSection.classList.toggle('hidden', !v1 || !mayReadLogs);
-  if (v1 && mayReadLogs) refreshV1Panels();
-  elements.scopeBanner.textContent = v1
-    ? '当前使用匿名合成演示案例库，查询计划、汇总表、图表和分析文档均可完整演示。'
-    : '当前法规库为 Demo 最小样本；未匹配不代表不存在相关法律。';
+  elements.logsSection.classList.add('hidden');
+  if (v1 && hasAccess(accessActions.executionLogRead)) refreshV1Panels();
+  elements.scopeBanner.classList.add('hidden');
   elements.input.placeholder = v1
     ? '例如：统计近三年案例库中未签劳动合同案件的胜诉率……'
     : '请描述发生了什么，避免粘贴不必要的敏感信息……';
@@ -432,14 +570,17 @@ function resetConversation(mode = state.mode) {
   elements.welcome.classList.remove('hidden');
   elements.deleteSession.classList.add('hidden');
   elements.sessionStatus.textContent = '等待任务';
-  elements.sessionRound.textContent = mode === 'v1' ? '只读演示数据' : '最多追问 5 轮';
+  elements.sessionRound.textContent = mode === 'v1' ? '请描述分析范围和指标' : '请描述需要处理的问题';
   elements.sessionOrb.className = 'status-orb';
-  elements.domainLabel.textContent = '未识别';
-  elements.agentRoute.textContent = '待识别';
+  elements.domainLabel.textContent = '尚无';
   elements.factsList.replaceChildren();
-  const row = node('div');
-  row.append(node('dt', '', '状态'), node('dd', '', '等待输入'));
+  const row = node('div', 'task-empty');
+  row.append(node('dt', '', '尚无有效信息'), node('dd', '', '开始对话后自动整理'));
   elements.factsList.append(row);
+  elements.needsList.replaceChildren(node('li', 'task-empty', '当前无需补充'));
+  elements.sourceList.replaceChildren(node('li', 'task-empty', '尚无引用来源'));
+  markTaskPanelContent(false);
+  setTaskPanelExpanded(false);
   document.querySelectorAll('.history-item').forEach((item) => item.classList.remove('active'));
   showMode(mode);
   elements.input.focus();
@@ -450,65 +591,103 @@ function renderFacts(result) {
   if (result.taskType === 'professional_data_query' && result.v1) {
     const writePlan = result.v1.plan?.readOnly === false;
     const presentation = writePlan ? null : v1Presentation.buildPresentation(result.v1);
-    elements.domainLabel.textContent = writePlan || !presentation?.isDemo
-      ? '业务案例库'
-      : '演示案例库';
-    const pendingValue = result.status === 'cancelled' ? '已取消' : '待执行';
-    const sourceCount = Number.isSafeInteger(presentation?.counts.sourceCount)
-      ? String(presentation.counts.sourceCount)
-      : pendingValue;
     const matchedCount = Number.isSafeInteger(presentation?.counts.matchedCount)
       ? String(presentation.counts.matchedCount)
-      : pendingValue;
-    const groupCount = Number.isSafeInteger(presentation?.counts.groupCount)
-      ? String(presentation.counts.groupCount)
-      : pendingValue;
+      : result.status === 'cancelled' ? '已取消' : '待执行';
+    elements.domainLabel.textContent = '专业数据分析';
     const entries = writePlan
       ? [
-          ['数据源', result.v1.schema?.dataSource ?? '已配置'],
-          ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
-          ['权限', 'Human Review 写入'],
-          ['事务', result.v1.result?.transactionStatus ?? '待审批'],
+          ['数据来源', customerDataSourceLabel(result.v1)],
+          ['访问方式', '受控变更'],
+          ['确认状态', result.status === 'completed' ? '已批准' : '等待批准'],
           ['影响行数', String(result.v1.result?.affectedRows ?? '待执行')]
         ]
       : [
-          ['数据源', presentation.dataSourceName],
-          ['Schema', result.v1.plan?.schemaVerified ? '已校验' : '未校验'],
-          ['权限', result.v1.safety?.readOnly ? '只读' : '已拒绝'],
-          ...(presentation.isDemo
-            ? [['案例总量', sourceCount], ['本次匹配', matchedCount]]
-            : [['本次匹配', matchedCount], ['汇总年度', groupCount]])
+          ['数据来源', customerDataSourceLabel(result.v1)],
+          ['数据范围', formatPlanRange(result.v1)],
+          ['分析指标', formatPlanMetrics(result.v1)],
+          ['访问方式', result.v1.safety?.readOnly ? '只读' : '未执行'],
+          ['本次匹配', matchedCount]
         ];
     for (const [key, value] of entries) {
-      const row = node('div'); row.append(node('dt', '', key), node('dd', '', value)); elements.factsList.append(row);
+      const row = node('div');
+      row.append(node('dt', '', key), node('dd', '', value));
+      elements.factsList.append(row);
     }
     return;
   }
-  elements.domainLabel.textContent = result.legalDomainLabel ?? '未识别';
-  const facts = Object.entries(result.knownFacts ?? {});
-  const entries = facts.length ? facts.map(([key, value]) => [factLabels[key] ?? key, valueLabels[value] ?? String(value)]) : [['状态', '等待更多信息']];
+  elements.domainLabel.textContent = result.legalDomainLabel ?? '法律自检';
+  const facts = Object.entries(result.knownFacts ?? {}).filter(([key]) => factLabels[key]);
+  const entries = facts.length
+    ? facts.map(([key, value]) => [factLabels[key], valueLabels[value] ?? String(value)])
+    : [['关键信息', '等待更多信息']];
   for (const [key, value] of entries) {
-    const row = node('div'); row.append(node('dt', '', key), node('dd', '', value)); elements.factsList.append(row);
+    const row = node('div');
+    row.append(node('dt', '', key), node('dd', '', value));
+    elements.factsList.append(row);
   }
+}
+
+function renderTaskNeeds(result) {
+  elements.needsList.replaceChildren();
+  const questions = Array.isArray(result.questions) ? result.questions : [];
+  const missing = Array.isArray(result.missingFields)
+    ? result.missingFields.map((field) => factLabels[field]).filter(Boolean)
+    : [];
+  const items = questions.length ? questions : missing.map((field) => `请补充：${field}`);
+  if (!items.length) {
+    elements.needsList.append(node('li', 'task-empty', '当前无需补充'));
+    return false;
+  }
+  for (const item of items) elements.needsList.append(node('li', '', item));
+  return true;
+}
+
+function renderTaskSources(result) {
+  elements.sourceList.replaceChildren();
+  let count = 0;
+  for (const card of result.resultCards ?? []) {
+    const item = node('li');
+    const link = node('a', '', `${card.lawName} ${card.articleNumber}`);
+    link.href = card.officialSource.url;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    item.append(link, node('span', '', '引用来源已核验'));
+    elements.sourceList.append(item);
+    count += 1;
+  }
+  if (result.taskType === 'professional_data_query' && result.v1?.plan) {
+    const item = node('li');
+    item.append(node('strong', '', customerDataSourceLabel(result.v1)), node('span', '', '数据范围已确认'));
+    elements.sourceList.append(item);
+    count += 1;
+  }
+  if (!count) elements.sourceList.append(node('li', 'task-empty', '尚无引用来源'));
+  return count > 0;
 }
 
 function renderStatus(result) {
   const labels = {
     needs_clarification: '需要补充信息', needs_domain_clarification: '需要确认领域', completed: '任务已完成',
-    information_ready: '信息已收集', rejected: '已安全拒绝', unsupported_domain: '暂不支持该领域',
-    clarification_limit_reached: '已到追问上限', failed: '处理失败',
-    awaiting_confirmation: '等待执行确认', cancelled: '已取消执行', archived: '已归档'
+    information_ready: '信息已整理', rejected: '操作未执行', unsupported_domain: '暂不支持该领域',
+    clarification_limit_reached: '需要重新补充', failed: '处理未完成',
+    awaiting_confirmation: '等待你的确认', cancelled: '已取消', archived: '历史任务'
   };
   elements.sessionStatus.textContent = labels[result.status] ?? '处理中';
-  elements.sessionRound.textContent = result.taskType === 'professional_data_query'
-    ? (result.status === 'awaiting_confirmation'
-        ? (result.v1?.plan?.readOnly === false ? '写入计划 · 等待 Human Review' : '只读计划 · 等待确认')
-        : result.status === 'cancelled'
-          ? '已取消 · 未执行'
-          : (result.v1?.plan?.readOnly === false
-              ? '单行事务 · 受治理写入'
-              : (result.v1?.safety?.readOnly ? '固定 Schema · 只读执行' : '未执行')))
-    : `追问轮次 ${result.clarificationRound ?? 0} / 5`;
+  const progressDetails = {
+    needs_clarification: '请回答对话中的补充问题',
+    needs_domain_clarification: '请确认问题所属领域',
+    completed: '结果与来源已经准备完成',
+    information_ready: '关键信息已经整理完成',
+    awaiting_confirmation: '请核对分析内容后确认执行',
+    cancelled: '本次任务未执行',
+    archived: '历史结果仅供查看',
+    failed: '可以重新尝试本次任务',
+    rejected: '操作未执行',
+    unsupported_domain: '可以补充更具体的问题描述',
+    clarification_limit_reached: '请在新对话中一次性补充材料'
+  };
+  elements.sessionRound.textContent = progressDetails[result.status] ?? '正在整理任务信息';
   elements.sessionOrb.className = 'status-orb';
   const orbClass = result.status === 'completed'
     ? 'done'
@@ -522,7 +701,7 @@ function renderStatus(result) {
 
 function addQuestions(questions) {
   const row = node('div', 'message assistant'); row.append(node('div', 'avatar', 'AI'));
-  const bubble = node('div', 'bubble'); bubble.append(node('span', 'message-label', 'AGENT 追问'), document.createTextNode('为了继续核对，请回答：'));
+  const bubble = node('div', 'bubble'); bubble.append(node('span', 'message-label', '需要补充'), document.createTextNode('为了继续核对，请回答：'));
   const list = node('ol', 'question-list'); questions.forEach((question) => list.append(node('li', '', question))); bubble.append(list); row.append(bubble); elements.conversation.append(row);
 }
 
@@ -598,7 +777,7 @@ function addTerminalError(result) {
   const body = node('div', 'result-card-body');
   body.append(
     node('h3', '', unsupported ? '请补充争议主体和具体事项' : '当前请求未能继续处理'),
-    node('p', 'summary-copy', result.error?.message ?? '请新建任务后重试。')
+    node('p', 'summary-copy', customerSafeMessage(result.error?.message, '请检查输入内容，或稍后重新尝试。'))
   );
   if (unsupported) {
     body.append(node('p', 'law-meta', '可直接选择一个首版支持领域并继续描述：'));
@@ -615,10 +794,29 @@ function addTerminalError(result) {
       choices.append(button);
     }
     body.append(choices);
+  } else {
+    const retry = node('button', 'retry-button', '重新尝试');
+    retry.type = 'button';
+    retry.addEventListener('click', () => {
+      if (state.lastSubmittedText) {
+        elements.input.value = state.lastSubmittedText;
+        elements.characterCount.textContent = String(state.lastSubmittedText.length);
+      }
+      elements.input.focus();
+    });
+    body.append(retry);
   }
   article.append(header, body);
   stack.append(article);
   elements.conversation.append(stack);
+}
+
+function addRequestFailure() {
+  const result = {
+    status: 'failed',
+    error: { message: '服务暂时未能完成本次任务，请稍后重新尝试。' }
+  };
+  addTerminalError(result);
 }
 
 function addIncompleteSummary(result) {
@@ -629,7 +827,7 @@ function addIncompleteSummary(result) {
   const body = node('div', 'result-card-body');
   body.append(
     node('h3', '', '仍缺少完成可靠核对所需的信息'),
-    node('p', 'law-meta', `已完成 ${result.clarificationRound ?? 5} 轮信息确认`)
+    node('p', 'law-meta', '关键信息仍不完整，本次没有生成判断')
   );
   const list = node('ul', 'missing-list');
   for (const field of result.missingFields ?? []) {
@@ -650,28 +848,21 @@ function addIncompleteSummary(result) {
 function addV1Result(result) {
   const data = result.v1;
   if (data.status !== 'completed') {
-    addMessage('assistant', data.reason ?? '该数据任务未执行。', '安全边界');
+    addMessage('assistant', customerSafeMessage(data.reason, '该数据任务未执行。'), '安全边界');
     return;
   }
   if (data.plan?.readOnly === false) {
     const board = node('section', 'v1-board');
     const heading = node('div', 'v1-heading');
     const titleWrap = node('div');
-    titleWrap.append(node('span', 'message-label', '受治理写入'), node('h3', '', '数据库写操作已完成'));
-    heading.append(titleWrap, node('span', 'verified-badge', '✓ Human Review 已完成'));
-    const plan = node('div', 'sql-panel');
-    plan.append(node('div', 'sql-toolbar', '写入 SQL · 已审批并提交'), node('pre', '', data.plan.sql));
+    titleWrap.append(node('span', 'message-label', '受控操作'), node('h3', '', '数据变更已完成'));
+    heading.append(titleWrap, node('span', 'verified-badge', '✓ 已确认'));
     const resultCard = node(
       'div',
       'demo-boundary',
-      `事务状态：${data.result.transactionStatus} · 影响行数：${data.result.affectedRows}`
+      `操作已完成 · 影响 ${data.result.affectedRows} 行数据`
     );
-    const receipt = node(
-      'p',
-      'plan-explanation',
-      `治理状态：${data.governanceReceipt?.status ?? 'resolved'} · 事件数：${data.governanceReceipt?.eventCount ?? 0}`
-    );
-    board.append(heading, plan, resultCard, receipt);
+    board.append(heading, createPlanSummary(data), resultCard, createTechnicalDetails(data.plan.sql));
     elements.conversation.append(board);
     return;
   }
@@ -679,8 +870,7 @@ function addV1Result(result) {
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
   const titleWrap = node('div'); titleWrap.append(node('span', 'message-label', '查询计划'), node('h3', '', presentation.title));
-  heading.append(titleWrap, node('span', 'verified-badge', '✓ Schema 已校验'));
-  const plan = node('div', 'sql-panel'); plan.append(node('div', 'sql-toolbar', '只读 SQL 计划 · 已确认执行'), node('pre', '', data.plan.sql));
+  heading.append(titleWrap, node('span', 'verified-badge', '✓ 来源已核验'));
   const tableWrap = node('div', 'table-wrap');
   const table = node('table', 'data-table');
   const thead = node('thead'); const header = node('tr'); presentation.table.columns.forEach((column) => header.append(node('th', '', column.label))); thead.append(header);
@@ -711,8 +901,8 @@ function addV1Result(result) {
   pdf.addEventListener('click', () => exportV1Pdf(data));
   actions.append(download, pdf);
   footer.append(note, actions);
-  const boundary = node('div', 'demo-boundary', presentation.summary);
-  board.append(heading, plan, tableWrap, chart, footer, boundary); elements.conversation.append(board);
+  const boundary = node('div', 'demo-boundary', '本次分析已按确认的数据范围完成，结果不构成法律意见。');
+  board.append(heading, tableWrap, chart, footer, boundary, createTechnicalDetails(data.plan.sql)); elements.conversation.append(board);
   registerArtifact(data.artifact);
 }
 
@@ -727,28 +917,18 @@ function addV1PlanCard(result) {
     : v1Presentation.buildPresentation(data).title;
   const titleWrap = node('div');
   titleWrap.append(
-    node('span', 'message-label', writePlan ? '写入计划' : '查询计划'),
+    node('span', 'message-label', writePlan ? '受控操作' : '分析内容'),
     node('h3', '', planTitle)
   );
-  heading.append(titleWrap, node('span', 'verified-badge', '✓ Schema 已校验'));
-  const toolbarText = writePlan
-    ? '写入 SQL 计划 · 等待 Human Review'
-    : (data.status === 'awaiting_confirmation' ? '只读 SQL 计划 · 等待确认执行' : '只读 SQL 计划 · 未执行');
-  const plan = node('div', 'sql-panel'); plan.append(node('div', 'sql-toolbar', toolbarText), node('pre', '', data.plan.sql));
-  const explanation = node('p', 'plan-explanation', data.plan.explanation ?? '固定演示 Schema 的只读查询计划。');
-  const badges = node('div', 'plan-badges');
-  badges.append(
-    node('span', 'verified-badge', writePlan ? '单行写入' : '只读'),
-    node('span', 'verified-badge', writePlan ? 'Hypha Human Review' : '需人工确认')
-  );
+  heading.append(titleWrap, node('span', 'verified-badge', '等待确认'));
   const boundary = node(
     'div',
     'demo-boundary',
     writePlan
-      ? '该计划会修改一条业务数据。批准后使用单个事务执行；失败、超行或超时均不提交，并且不会自动重试。'
-      : '该计划仅读取固定演示 Schema 的匿名合成数据，确认后才会执行，不会产生任何写操作。'
+      ? '该操作会修改一条授权数据。批准后才会执行；未通过校验时不会提交。'
+      : '该分析仅读取已授权的数据范围，确认后才会执行，不会修改原始数据。'
   );
-  board.append(heading, plan, explanation, badges, boundary); elements.conversation.append(board);
+  board.append(heading, createPlanSummary(data), boundary, createTechnicalDetails(data.plan.sql)); elements.conversation.append(board);
 }
 
 function addSchemaDriftCard(result) {
@@ -757,20 +937,12 @@ function addSchemaDriftCard(result) {
   const board = node('section', 'v1-board');
   const heading = node('div', 'v1-heading');
   const titleWrap = node('div');
-  titleWrap.append(node('span', 'message-label', 'Schema 变化通知'), node('h3', '', '旧查询计划已安全停止'));
-  heading.append(titleWrap, node('span', 'verified-badge', '需重新规划'));
-  const summary = drift.summary ?? {};
-  const detail = node('div', 'demo-boundary', drift.notification ?? '检测到 Schema 变化，旧计划未执行。');
-  const fields = node(
-    'p',
-    'plan-explanation',
-    drift.affectedFields?.length
-      ? `受影响字段：${drift.affectedFields.join('、')}`
-      : `差异摘要：新增字段 ${summary.addedColumns ?? 0}，移除字段 ${summary.removedColumns ?? 0}，变更字段 ${summary.changedColumns ?? 0}`
-  );
-  board.append(heading, detail, fields);
+  titleWrap.append(node('span', 'message-label', '数据更新通知'), node('h3', '', '原分析计划已安全停止'));
+  heading.append(titleWrap, node('span', 'verified-badge', '需要重新确认'));
+  const detail = node('div', 'demo-boundary', '数据结构已更新，原计划没有执行。请基于当前数据重新生成分析内容。');
+  board.append(heading, detail);
   if (result.v1?.replanRequired === true) {
-    const button = node('button', 'primary-button', '基于当前 Schema 重新生成计划');
+    const button = node('button', 'primary-button', '基于当前数据重新生成');
     button.type = 'button';
     button.addEventListener('click', replanExecution);
     board.append(button);
@@ -781,17 +953,27 @@ function addSchemaDriftCard(result) {
 function openConfirmModal(result) {
   const data = result?.v1;
   const writePlan = data?.plan?.readOnly === false;
-  elements.confirmExplanation.textContent = data?.plan?.explanation ?? 'Agent 已生成固定演示 Schema 的只读查询计划，确认后才会执行。';
+  const summary = planSummary(data);
+  elements.confirmExplanation.textContent = writePlan
+    ? '这项操作会改变一条授权数据，请确认内容无误。'
+    : '开始分析前，请确认查询范围与预期输出符合你的需求。';
   elements.confirmSql.textContent = data?.plan?.sql ?? '';
   const toolbar = elements.confirmModal.querySelector('.sql-toolbar');
-  if (toolbar) toolbar.textContent = writePlan ? '写入 SQL 计划 · 等待 Human Review' : '只读 SQL 计划 · 等待确认';
+  if (toolbar) toolbar.textContent = '技术查询详情';
   const title = $('#confirm-title');
-  if (title) title.textContent = writePlan ? '确认批准该数据库写操作？' : '确认执行该查询计划？';
+  if (title) title.textContent = writePlan ? '确认执行这项数据变更？' : '请核对本次分析内容';
+  elements.confirmQuery.textContent = summary.query;
+  elements.confirmRange.textContent = summary.range;
+  elements.confirmMetrics.textContent = summary.metrics;
+  elements.confirmSource.textContent = summary.source;
+  elements.confirmAccess.textContent = summary.access;
+  elements.confirmOutput.textContent = summary.output;
   const note = elements.confirmModal.querySelector('.confirm-note');
   if (note) note.textContent = writePlan
-    ? '这是数据库写操作。批准后将通过 Hypha Human Review 恢复执行；事务失败或影响超过 1 行时不会提交。'
-    : '查询仅读取授权 Schema，确认后才会执行，不会产生任何写操作。';
-  elements.confirmAccept.textContent = writePlan ? '批准并执行写入' : '确认执行';
+    ? '批准后才会执行；未通过安全校验时不会提交。'
+    : '确认后才会开始分析。只读任务不会修改原始数据。';
+  elements.confirmModal.querySelector('.technical-details').open = false;
+  elements.confirmAccept.textContent = writePlan ? '批准并执行' : '确认并开始分析';
   elements.confirmAccept.disabled = false;
   elements.confirmCancel.disabled = false;
   elements.confirmModal.classList.remove('hidden');
@@ -801,13 +983,14 @@ function closeConfirmModal() {
   elements.confirmModal.classList.add('hidden');
   elements.confirmExplanation.textContent = '';
   elements.confirmSql.textContent = '';
+  elements.confirmModal.querySelector('.technical-details').open = false;
 }
 
 async function confirmExecution(confirmed) {
   if (!state.activeSessionId || state.busy) return;
   elements.confirmAccept.disabled = true;
   elements.confirmCancel.disabled = true;
-  addMessage('user', confirmed ? '确认执行查询计划。' : '取消本次查询。');
+  addMessage('user', confirmed ? '确认开始分析。' : '取消本次分析。');
   const startedAt = performance.now();
   try {
     const result = await api(`/api/sessions/${state.activeSessionId}/execution-confirmation`, {
@@ -820,12 +1003,12 @@ async function confirmExecution(confirmed) {
     closeConfirmModal();
     state.activeStatus = result.status;
     renderStatus(result); renderFacts(result);
-    if (result.error) addMessage('assistant', result.error.message, '安全停止');
+    if (result.error) addMessage('assistant', customerSafeMessage(result.error.message), '任务已停止');
     else if (result.status === 'completed' && result.v1?.status === 'completed') {
-      addMessage('assistant', result.assistantMessage ?? '专业数据分析已完成。', '智能助手');
+      addMessage('assistant', customerSafeMessage(result.assistantMessage, '专业数据分析已完成。'), '智能助手');
       addV1Result(result);
     } else if (result.v1?.schemaDrift?.detected) {
-      addMessage('assistant', result.assistantMessage ?? result.v1.schemaDrift.notification, 'Schema 变化');
+      addMessage('assistant', '数据已更新，原分析计划没有执行。', '需要重新确认');
       addSchemaDriftCard(result);
     } else {
       addMessage('assistant', result.assistantMessage ?? '已按你的选择取消本次专业数据分析，查询未执行。', '安全边界');
@@ -834,14 +1017,14 @@ async function confirmExecution(confirmed) {
   } catch (error) {
     elements.confirmAccept.disabled = false;
     elements.confirmCancel.disabled = false;
-    addMessage('assistant', error.message, '请求失败');
+    addRequestFailure();
   } finally { scrollBottom(); }
 }
 
 async function replanExecution() {
   if (!state.activeSessionId || state.busy) return;
   setBusy(true);
-  addMessage('user', '基于当前 Schema 重新生成查询计划。');
+  addMessage('user', '基于当前数据重新生成分析内容。');
   try {
     const result = await api(`/api/sessions/${state.activeSessionId}/schema-replan`, {
       method: 'POST',
@@ -850,16 +1033,16 @@ async function replanExecution() {
     state.activeStatus = result.status;
     renderStatus(result); renderFacts(result);
     if (result.status === 'awaiting_confirmation') {
-      addMessage('assistant', result.assistantMessage ?? '已基于当前 Schema 生成新计划，请重新确认。', '重新规划完成');
+      addMessage('assistant', '已基于当前数据生成新的分析内容，请重新确认。', '已更新');
       addV1PlanCard(result);
       openConfirmModal(result);
     } else {
-      addMessage('assistant', result.assistantMessage ?? result.v1?.reason ?? '重新规划未完成。', '安全停止');
+      addMessage('assistant', '暂时无法重新生成分析内容，请稍后再试。', '任务已停止');
       addSchemaDriftCard(result);
     }
     await loadHistory(); refreshV1Panels();
   } catch (error) {
-    addMessage('assistant', error.message, '请求失败');
+    addRequestFailure();
   } finally {
     setBusy(false); scrollBottom();
   }
@@ -942,8 +1125,6 @@ function renderV1ReportCanvas(data, executionMs) {
     }
     return lines;
   };
-  measure.font = font(15, 'normal', 'Consolas, monospace');
-  const sqlLines = (data.plan?.sql ?? '').split('\n');
   const rowHeight = 44;
   const tableRows = presentation.table.rows.length + 1;
   const chartHeight = 300;
@@ -951,7 +1132,6 @@ function renderV1ReportCanvas(data, executionMs) {
   const disclaimerLines = wrapLines(measure, presentation.disclaimer, contentWidth);
   const height =
     pad + 44 + 30 + 26 * 3 + 24 + // 标题与元信息
-    40 + sqlLines.length * 24 + 48 + // SQL 区块
     40 + tableRows * rowHeight + 32 + // 表格
     40 + chartHeight + 32 + // 图表
     disclaimerLines.length * 24 + pad; // 免责
@@ -968,21 +1148,11 @@ function renderV1ReportCanvas(data, executionMs) {
   ctx.fillStyle = '#4a5d55'; ctx.font = font(15);
   const meta = [
     `数据源：${presentation.sourceDescription}`,
-    `生成时间：${new Date().toLocaleString('zh-CN')} · 执行耗时：${Number.isFinite(executionMs) ? `${executionMs} ms` : '演示执行'}`,
-    `${presentation.summary} · 只读计划已经人工确认`
+    `生成时间：${new Date().toLocaleString('zh-CN')} · 分析耗时：${Number.isFinite(executionMs) ? `${executionMs} ms` : '未记录'}`,
+    `${presentation.summary} · 分析范围已经确认`
   ];
   for (const line of meta) { ctx.fillText(line, pad, y); y += 26; }
   y += 24;
-  // SQL 区块
-  ctx.fillStyle = '#123f31'; ctx.font = font(18, 'bold');
-  ctx.fillText('只读 SQL 计划（Schema 已校验）', pad, y); y += 16;
-  const sqlBoxHeight = sqlLines.length * 24 + 32;
-  ctx.fillStyle = '#0f2c22';
-  ctx.beginPath(); ctx.roundRect(pad, y, contentWidth, sqlBoxHeight, 12); ctx.fill();
-  ctx.fillStyle = '#cde8dc'; ctx.font = font(15, 'normal', 'Consolas, "Courier New", monospace');
-  let sqlY = y + 34;
-  for (const line of sqlLines) { ctx.fillText(line, pad + 24, sqlY); sqlY += 24; }
-  y += sqlBoxHeight + 32;
   // 表格
   ctx.fillStyle = '#123f31'; ctx.font = font(18, 'bold');
   ctx.fillText('查询结果', pad, y); y += 12;
@@ -1285,39 +1455,42 @@ async function openDataSourceAdmin() {
 function renderResult(result) {
   state.activeSessionId = result.sessionId ?? state.activeSessionId;
   state.activeStatus = result.status;
-  elements.deleteSession.classList.toggle('hidden', !state.activeSessionId);
+  elements.deleteSession.classList.add('hidden');
   const v1 = result.taskType === 'professional_data_query';
   showMode(v1 ? 'v1' : 'v0');
   elements.pageTitle.textContent = v1 ? '专业数据分析' : (result.legalDomainLabel ? `${result.legalDomainLabel}自检` : '法律自检会话');
-  elements.agentRoute.textContent = taskLabels[result.taskType] ?? '待识别';
-  renderStatus(result); renderFacts(result);
+  renderStatus(result);
+  renderFacts(result);
+  const hasNeeds = renderTaskNeeds(result);
+  const hasSources = renderTaskSources(result);
+  const hasFacts = Object.keys(result.knownFacts ?? {}).length > 0 || Boolean(result.v1?.plan);
+  markTaskPanelContent(Boolean(state.activeSessionId || hasNeeds || hasSources || hasFacts));
   const finalSelfCheck =
     !v1 && ['completed', 'information_ready'].includes(result.status);
   if (result.agentExecution && !result.error && !finalSelfCheck) {
-    const executionLabel = result.agentExecution.fallbackUsed
-      ? '智能分析暂不可用 · 使用本地安全规则'
-      : result.agentExecution.providerMode === 'demo'
-        ? '本地演示分析'
-        : '智能分析';
-    addMessage('assistant', result.assistantMessage ?? '智能助手已完成本轮处理。', `智能助手 · ${executionLabel}`);
+    addMessage(
+      'assistant',
+      customerSafeMessage(result.assistantMessage, '已完成本轮信息整理。'),
+      '智能助手'
+    );
   }
   if (result.status === 'clarification_limit_reached') addIncompleteSummary(result);
   else if (result.error) addTerminalError(result);
   else if (v1) {
     if (result.status === 'awaiting_confirmation') {
-      if (result.assistantMessage) addMessage('assistant', result.assistantMessage, '查询计划');
+      if (result.assistantMessage) addMessage('assistant', customerSafeMessage(result.assistantMessage), '分析内容');
       addV1PlanCard(result);
       openConfirmModal(result);
     } else if (result.status === 'cancelled') {
       addV1PlanCard(result);
-      addMessage('assistant', result.assistantMessage ?? '已按你的选择取消本次专业数据分析，查询未执行。', '安全边界');
+      addMessage('assistant', result.assistantMessage ?? '已取消本次专业数据分析，任务未执行。', '任务已取消');
     } else if (result.status === 'archived') {
-      addMessage('assistant', '该逻辑查询 Workspace 已因超过 30 天未活动而归档。结果与 Artifact 引用保持只读，继续查询请新建任务。', 'Workspace 归档');
+      addMessage('assistant', '该任务因长期未使用已归档。现有结果仍可查看；继续分析请新建任务。', '历史任务');
       if (result.v1?.result && result.v1?.artifact) {
         addV1Result({ ...result, v1: { ...result.v1, status: 'completed' } });
       }
     } else if (result.v1?.schemaDrift?.detected) {
-      addMessage('assistant', result.assistantMessage ?? result.v1.schemaDrift.notification, 'Schema 变化');
+      addMessage('assistant', '数据已更新，原分析计划未执行。请重新确认分析内容。', '需要重新确认');
       addSchemaDriftCard(result);
     } else addV1Result(result);
   }
@@ -1434,7 +1607,7 @@ async function submitSandboxScript(script) {
     openSandboxConfirmModal(planned, script);
   } catch (error) {
     elements.conversation.querySelector('[data-loading="true"]')?.remove();
-    addMessage('assistant', error.message, '计划创建失败');
+    addRequestFailure();
   } finally {
     setBusy(false);
     scrollBottom();
@@ -1458,7 +1631,7 @@ async function confirmSandboxExecution(confirmed) {
   } catch (error) {
     elements.confirmAccept.disabled = false;
     elements.confirmCancel.disabled = false;
-    addMessage('assistant', error.message, '执行失败');
+    addRequestFailure();
   } finally {
     setBusy(false);
     scrollBottom();
@@ -1467,6 +1640,7 @@ async function confirmSandboxExecution(confirmed) {
 
 async function submitText(text) {
   if (!state.consentGranted) { elements.privacyModal.classList.remove('hidden'); return; }
+  state.lastSubmittedText = text;
   const continuing = state.activeSessionId && canContinue(state.activeStatus);
   if (state.activeSessionId && !continuing) resetConversation(state.mode);
   elements.welcome.classList.add('hidden'); addMessage('user', text); addLoading(); setBusy(true);
@@ -1486,20 +1660,82 @@ async function submitText(text) {
         });
     elements.conversation.querySelector('[data-loading="true"]')?.remove(); renderResult(result); await loadHistory();
   } catch (error) {
-    elements.conversation.querySelector('[data-loading="true"]')?.remove(); addMessage('assistant', error.message, '请求失败');
+    elements.conversation.querySelector('[data-loading="true"]')?.remove(); addRequestFailure();
   } finally { setBusy(false); }
 }
 
 async function loadHistory() {
-  const result = await api('/api/sessions'); elements.historyList.replaceChildren();
-  if (!result.sessions.length) { elements.historyList.append(node('p', 'muted compact', '暂无历史会话')); return; }
-  const v1StatusLabels = { awaiting_confirmation: '等待确认', replanning: '重新规划中', cancelled: '已取消', rejected: '已拒绝', archived: '已归档' };
-  for (const session of result.sessions) {
-    const button = node('button', 'history-item'); button.type = 'button'; button.dataset.sessionId = session.sessionId;
-    if (session.sessionId === state.activeSessionId) button.classList.add('active');
-    const statusLabel = session.taskType === 'professional_data_query' ? v1StatusLabels[session.status] : undefined;
-    button.append(node('strong', '', session.legalDomainLabel ?? taskLabels[session.taskType] ?? '智能任务'), node('span', '', `${session.agentConnected ? '智能分析已运行 · ' : ''}${statusLabel ? `${statusLabel} · ` : ''}${new Date(session.updatedAt).toLocaleString('zh-CN')}`));
-    button.addEventListener('click', () => openHistory(session.sessionId)); elements.historyList.append(button);
+  const result = await api('/api/sessions');
+  const titles = historyTitles();
+  const query = state.historyQuery.trim().toLocaleLowerCase('zh-CN');
+  const sessions = result.sessions.filter((session) => {
+    const defaultTitle = session.legalDomainLabel
+      ? `${session.legalDomainLabel}自检`
+      : taskLabels[session.taskType] ?? '新任务';
+    return !query || `${titles[session.sessionId] ?? defaultTitle} ${taskLabels[session.taskType] ?? ''}`
+      .toLocaleLowerCase('zh-CN')
+      .includes(query);
+  });
+  elements.historyList.replaceChildren();
+  if (!sessions.length) {
+    elements.historyList.append(node('p', 'history-empty', query ? '未找到匹配会话' : '还没有会话记录'));
+    return;
+  }
+  for (const session of sessions) {
+    const defaultTitle = session.legalDomainLabel
+      ? `${session.legalDomainLabel}自检`
+      : taskLabels[session.taskType] ?? '新任务';
+    const title = titles[session.sessionId] ?? defaultTitle;
+    const item = node('article', 'history-item');
+    item.dataset.sessionId = session.sessionId;
+    if (session.sessionId === state.activeSessionId) item.classList.add('active');
+    const open = node('button', 'history-open');
+    open.type = 'button';
+    open.append(
+      node('strong', '', title),
+      node('span', '', `${taskLabels[session.taskType] ?? '法律自检'} · ${new Date(session.updatedAt).toLocaleDateString('zh-CN')}`)
+    );
+    open.addEventListener('click', () => openHistory(session.sessionId));
+    const actions = node('div', 'history-item-actions');
+    const rename = node('button', '', '重命名');
+    rename.type = 'button';
+    rename.setAttribute('aria-label', `重命名${title}`);
+    rename.addEventListener('click', () => renameHistorySession(session.sessionId, title));
+    const remove = node('button', 'danger-text', '删除');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `删除${title}`);
+    remove.addEventListener('click', () => deleteHistorySession(session.sessionId));
+    actions.append(rename, remove);
+    item.append(open, actions);
+    elements.historyList.append(item);
+  }
+}
+
+async function renameHistorySession(sessionId, currentTitle) {
+  const nextTitle = window.prompt('输入新的会话名称：', currentTitle);
+  if (nextTitle === null) return;
+  const normalized = nextTitle.trim().slice(0, 60);
+  if (!normalized) {
+    toast('会话名称不能为空');
+    return;
+  }
+  saveHistoryTitle(sessionId, normalized);
+  await loadHistory();
+}
+
+async function deleteHistorySession(sessionId) {
+  if (!window.confirm('确认删除这条本地会话？删除后无法恢复。')) return;
+  try {
+    await api(`/api/sessions/${sessionId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmed: true })
+    });
+    saveHistoryTitle(sessionId, '');
+    if (sessionId === state.activeSessionId) resetConversation(state.mode);
+    toast('会话已删除');
+    await loadHistory();
+  } catch {
+    toast('暂时无法删除，请稍后重试');
   }
 }
 
@@ -1509,8 +1745,8 @@ async function openHistory(sessionId) {
     const { session } = await api(`/api/sessions/${sessionId}`); elements.welcome.classList.add('hidden'); elements.conversation.replaceChildren(); state.activeSessionId = session.sessionId; state.activeStatus = session.status;
     state.artifacts = []; renderArtifacts(); closeConfirmModal();
     for (const message of session.messages ?? []) addMessage(message.role === 'user' ? 'user' : 'assistant', message.redactedText);
-    renderResult(session); await loadHistory();
-  } catch (error) { toast(error.message); } finally { setBusy(false); }
+    renderResult(session); closeMobileHistory(); await loadHistory();
+  } catch { toast('暂时无法打开该会话，请稍后重试'); } finally { setBusy(false); }
 }
 
 elements.composer.addEventListener('submit', async (event) => { event.preventDefault(); const text = elements.input.value.trim(); if (!text || state.busy) return; elements.input.value = ''; elements.characterCount.textContent = '0'; if (state.mode === 'sandbox') await submitSandboxScript(text); else await submitText(text); });
@@ -1524,8 +1760,22 @@ document.querySelectorAll('[data-enter-workspace]').forEach((button) =>
   button.addEventListener('click', () => enterWorkspace(button.dataset.enterWorkspace))
 );
 elements.backHome.addEventListener('click', returnToLanding);
-elements.newSession.addEventListener('click', () => resetConversation(state.mode));
-elements.refreshHistory.addEventListener('click', () => loadHistory().catch((error) => toast(error.message)));
+elements.newSession.addEventListener('click', () => { resetConversation(state.mode); closeMobileHistory(); });
+elements.refreshHistory.addEventListener('click', () => loadHistory().catch(() => toast('暂时无法刷新会话，请稍后重试')));
+elements.historySearch.addEventListener('input', () => {
+  state.historyQuery = elements.historySearch.value;
+  loadHistory().catch(() => toast('暂时无法搜索会话'));
+});
+elements.taskPanelToggle.addEventListener('click', () => {
+  setTaskPanelExpanded(elements.taskPanelToggle.getAttribute('aria-expanded') !== 'true');
+});
+elements.taskPanelClose.addEventListener('click', () => setTaskPanelExpanded(false));
+elements.historyToggle.addEventListener('click', () => elements.workspaceApp.classList.toggle('history-open'));
+elements.historyClose.addEventListener('click', closeMobileHistory);
+elements.policyVersion.addEventListener('click', (event) => {
+  event.preventDefault();
+  elements.privacyPolicyDetails.classList.toggle('hidden');
+});
 elements.deleteSession.addEventListener('click', async () => { if (!state.activeSessionId || !window.confirm('确认物理删除当前本地会话？此操作无法撤销。')) return; try { await api(`/api/sessions/${state.activeSessionId}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true }) }); toast('会话已删除'); resetConversation(state.mode); await loadHistory(); } catch (error) { toast(error.message); } });
 elements.eraseHistory.addEventListener('click', async () => {
   const confirmationPhrase = window.prompt('此操作会物理删除当前账号的全部本地会话和关联分析产物，且无法撤销。请输入 DELETE MY HISTORY 继续：');
@@ -1541,11 +1791,11 @@ elements.eraseHistory.addEventListener('click', async () => {
     toast(`已清除 ${result.erasedSessionCount} 个会话和 ${result.erasedArtifactCount} 个分析产物`);
     resetConversation(state.mode);
     await loadHistory();
-  } catch (error) {
-    toast(error.message);
+  } catch {
+    toast('暂时无法清除历史，请稍后重试');
   }
 });
-document.querySelectorAll('.mode-tab').forEach((tab) => tab.addEventListener('click', () => resetConversation(tab.dataset.mode)));
+document.querySelectorAll('.mode-switch .mode-tab').forEach((tab) => tab.addEventListener('click', () => resetConversation(tab.dataset.mode)));
 document.querySelectorAll('[data-sample]').forEach((button) => button.addEventListener('click', () => { showMode(button.dataset.mode); if (button.dataset.language) elements.sandboxLanguage.value = button.dataset.language; elements.input.value = button.dataset.sample; elements.characterCount.textContent = String(elements.input.value.length); elements.input.focus(); }));
 elements.confirmAccept.addEventListener('click', () => state.pendingSandboxPlanId ? confirmSandboxExecution(true) : confirmExecution(true));
 elements.confirmCancel.addEventListener('click', () => state.pendingSandboxPlanId ? confirmSandboxExecution(false) : confirmExecution(false));
@@ -1562,26 +1812,19 @@ elements.logFilter.addEventListener('change', () => loadLogs().catch((error) => 
 
 async function initialize() {
   try {
-    const [health, config] = await Promise.all([api('/api/health'), api('/api/config')]); state.config = config;
-    elements.openDataSourceAdmin.classList.toggle(
-      'hidden',
-      !hasAccess(accessActions.dataSourceManage)
-    );
-    document.querySelector('.sandbox-mode-tab')?.classList.toggle(
-      'hidden',
-      !hasAccess(accessActions.humanReviewApprove)
-    );
-    elements.privacyAccept.disabled = !elements.consent.checked; elements.policyVersion.textContent = `隐私政策版本：${config.privacyPolicyVersion}`;
+    const [, config] = await Promise.all([api('/api/health'), api('/api/config')]);
+    state.config = config;
+    elements.openDataSourceAdmin.classList.add('hidden');
+    document.querySelector('.sandbox-mode-tab')?.classList.add('hidden');
+    elements.privacyAccept.disabled = !elements.consent.checked;
     elements.runtime.classList.add('online');
-    const provider = health.agent?.inference?.mode === 'demo'
-      ? '演示推理'
-      : health.agent?.inference?.model ?? 'Provider 未识别';
-    const fallbackNotice = health.agent?.inference?.fallbackMode === 'demo' ? ' · 自动回退' : '';
-    elements.runtimeText.textContent = `Agent 在线 · ${provider}${fallbackNotice} · ${config.access?.role ?? 'user'}`; elements.agentName.textContent = health.agent?.agentId ?? 'Agent 未连接'; elements.agentProvider.textContent = `${provider}${fallbackNotice}`;
+    elements.runtimeText.textContent = '服务正常';
     await loadHistory();
-  } catch (error) { elements.runtime.classList.add('offline'); elements.runtimeText.textContent = '本地服务不可用'; elements.policyVersion.textContent = error.message; }
+  } catch {
+    elements.runtime.classList.add('offline');
+    elements.runtimeText.textContent = '服务暂时不可用';
+  }
 }
 
-document.querySelector('.mode-switch')?.append(document.querySelector('.sandbox-mode-tab'));
 showMode('v0');
 initialize();
