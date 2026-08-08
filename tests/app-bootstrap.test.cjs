@@ -148,7 +148,7 @@ test('runs start, answer, history, show, and delete across separate processes', 
     const showProcess = runDemo(environment, ['show', started.sessionId]);
     assert.equal(showProcess.status, 0, showProcess.stderr);
     const detail = JSON.parse(showProcess.stdout);
-    assert.equal(detail.messageCount, 2);
+    assert.equal(detail.messageCount, 3);
     assert.equal(JSON.stringify(detail).includes('测试甲'), false);
     assert.equal(JSON.stringify(detail).includes('test-user@example.com'), false);
 

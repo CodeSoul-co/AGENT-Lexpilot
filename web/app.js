@@ -69,9 +69,28 @@ const factLabels = {
   allegedAct: '相关行为', authorizationStatus: '授权情况'
 };
 const valueLabels = {
-  mentioned: '已说明', not_signed: '未签订', signed: '已签订', dismissal: '辞退', unknown: '尚不清楚',
-  available: '有证据', unavailable: '暂无证据', agreed: '有约定', unpaid: '未归还', neither: '两者均无',
-  written_notice: '已书面通知', extra_month_pay: '已额外支付一个月工资'
+  mentioned: '已说明', unknown: '尚不清楚',
+  signed: '已签订', not_signed: '未签订',
+  dismissal: '辞退', unpaid_wages: '拖欠工资', social_insurance: '社会保险', overtime: '加班',
+  medical_or_non_work_injury: '患病或非因工受伤', performance: '不能胜任工作',
+  objective_change: '客观情况发生变化', other: '其他原因',
+  written_notice_30_days: '已提前三十天书面通知', extra_month_salary: '已额外支付一个月工资',
+  neither: '均未提供', ended: '已经结束', not_ended: '尚未结束',
+  cannot_original_or_alternative: '无法从事原工作，也未安排合适的新工作',
+  can_original_or_alternative: '仍可从事原工作或合适的新工作',
+  training_or_adjustment_still_unqualified: '培训或调岗后仍不能胜任',
+  no_training_or_adjustment: '未进行培训或调岗', became_qualified: '已经能够胜任',
+  contract_cannot_continue: '劳动合同无法继续履行', contract_can_continue: '劳动合同仍可继续履行',
+  discussed_no_agreement: '协商后未达成一致', not_discussed: '尚未协商', agreement_reached: '已达成一致',
+  married: '已婚', divorced: '已离婚', cohabiting: '共同生活',
+  domestic_violence: '家庭暴力', bigamy: '重婚', marriage_freedom: '婚姻自由',
+  children: '子女事项', property: '财产事项', debt: '债务事项', marriage_status: '婚姻关系',
+  available: '已有证据', none_stated: '尚未说明证据',
+  agreed: '已有约定', not_agreed: '没有约定', unpaid: '尚未归还', partial: '部分归还', paid: '已经归还',
+  individual: '个人', company: '公司', self_employed: '个体经营者',
+  filing: '税务申报', withholding: '代扣代缴', additional_tax: '补缴税款', invoice: '发票事项', general: '一般税务事项',
+  written_work: '文字作品', image: '图片作品', software: '软件', trademark: '商标', patent: '专利',
+  copy: '复制', repost: '转载', sale: '销售', use: '使用', authorized: '已获授权', not_authorized: '未经授权'
 };
 
 function node(tag, className, text) {
@@ -107,6 +126,13 @@ function customerSafeMessage(message, fallback = '当前任务未能完成，请
   if (typeof message !== 'string' || !message.trim()) return fallback;
   const technicalPattern = /(agent|provider|runtime|schema|sql|sqlite|postgres|mysql|database|artifact|workspace|docker|\/api\/|[a-z]:\\|\/users\/|error[_ -]?code|stack|exception)/i;
   return technicalPattern.test(message) ? fallback : message;
+}
+
+function customerFactValue(value) {
+  if (Object.hasOwn(valueLabels, value)) return valueLabels[value];
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  return '已确认';
 }
 
 function setTaskPanelExpanded(expanded) {
@@ -502,9 +528,11 @@ function returnToLanding() {
 
 function addMessage(role, text, label) {
   const row = node('div', `message ${role}`);
-  if (role === 'assistant') row.append(node('div', 'avatar', 'AI'));
+  if (role === 'assistant') row.append(node('div', 'avatar', 'L'));
   const bubble = node('div', 'bubble');
-  if (label) bubble.append(node('span', 'message-label', label));
+  if (label || role === 'assistant') {
+    bubble.append(node('span', 'message-label', label ?? 'LexPilot 法律助手'));
+  }
   bubble.append(document.createTextNode(text));
   row.append(bubble);
   elements.conversation.append(row);
@@ -514,7 +542,7 @@ function addMessage(role, text, label) {
 function addLoading() {
   const row = node('div', 'message assistant');
   row.dataset.loading = 'true';
-  row.append(node('div', 'avatar', 'AI'));
+  row.append(node('div', 'avatar', 'L'));
   const bubble = node('div', 'bubble loading-bubble');
   bubble.append(node('strong', 'loading-text', '正在分析'), node('span'), node('span'), node('span'));
   row.append(bubble);
@@ -619,7 +647,7 @@ function renderFacts(result) {
   elements.domainLabel.textContent = result.legalDomainLabel ?? '法律自检';
   const facts = Object.entries(result.knownFacts ?? {}).filter(([key]) => factLabels[key]);
   const entries = facts.length
-    ? facts.map(([key, value]) => [factLabels[key], valueLabels[value] ?? String(value)])
+    ? facts.map(([key, value]) => [factLabels[key], customerFactValue(value)])
     : [['关键信息', '等待更多信息']];
   for (const [key, value] of entries) {
     const row = node('div');
@@ -636,7 +664,7 @@ function renderTaskNeeds(result) {
     : [];
   const items = questions.length ? questions : missing.map((field) => `请补充：${field}`);
   if (!items.length) {
-    elements.needsList.append(node('li', 'task-empty', '当前无需补充'));
+    elements.needsList.append(node('li', 'task-confirmed', '✓ 信息已确认'));
     return false;
   }
   for (const item of items) elements.needsList.append(node('li', '', item));
@@ -699,43 +727,79 @@ function renderStatus(result) {
   if (orbClass) elements.sessionOrb.classList.add(orbClass);
 }
 
-function addQuestions(questions) {
-  const row = node('div', 'message assistant'); row.append(node('div', 'avatar', 'AI'));
-  const bubble = node('div', 'bubble'); bubble.append(node('span', 'message-label', '需要补充'), document.createTextNode('为了继续核对，请回答：'));
-  const list = node('ol', 'question-list'); questions.forEach((question) => list.append(node('li', '', question))); bubble.append(list); row.append(bubble); elements.conversation.append(row);
-}
-
-function addResultCards(result) {
-  const stack = node('div', 'result-stack');
-  for (const card of result.resultCards ?? []) {
-    const article = node('article', 'result-card');
-    const header = node('div', 'result-card-header'); header.append(node('span', '', card.findingLabel ?? '可能存在不合规风险'));
-    const copy = node('button', 'copy-button', '复制法条'); copy.type = 'button';
-    copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${card.lawName}${card.articleNumber}\n${card.articleText}`); toast('法条已复制'); } catch { toast('请手动选择法条文本'); } });
-    header.append(copy);
-    const body = node('div', 'result-card-body'); body.append(node('h3', '', `${card.lawName} ${card.articleNumber}`));
-    body.append(node('p', 'law-meta', `版本日期：${card.lawVersionDate} · 正文完整性已校验`), node('p', 'law-text', card.articleText));
-    if (card.userExcerpt) body.append(node('p', 'user-excerpt', `脱敏事实片段：${card.userExcerpt}`));
-    const source = node('a', 'source-link', `官方来源：${card.officialSource.authority}`); source.href = card.officialSource.url; source.target = '_blank'; source.rel = 'noreferrer'; body.append(source);
-    article.append(header, body); stack.append(article);
+function questionQuickOptions(question) {
+  if (/签过.*合同|书面合同/.test(question)) return ['已签订', '未签订', '不清楚'];
+  if (/提前三十天|多给一个月工资|代通知金/.test(question)) return ['已书面通知', '已多付一个月工资', '均未提供', '不清楚'];
+  if (/原来的工作|原工作|另行安排|安排的工作/.test(question)) {
+    return ['无法从事原工作，也没有合适的新工作', '仍可从事原工作或合适的新工作', '不清楚'];
   }
-  elements.conversation.append(stack);
-  if (result.disclaimer) elements.conversation.append(node('div', 'disclaimer', result.disclaimer));
+  if (/培训|调岗|胜任/.test(question)) return ['培训或调岗后仍不能胜任', '没有培训或调岗', '已经能够胜任', '不清楚'];
+  if (/医疗期|休养时间是否/.test(question)) return ['已经结束', '尚未结束', '不清楚'];
+  if (/证据|借条|转账记录/.test(question)) return ['有相关证据', '暂时没有', '不清楚'];
+  if (/是否|有没有|能否|可否/.test(question)) return ['是', '否', '不清楚'];
+  return [];
 }
 
-function addSelfCheckSummary(result) {
+function useQuickAnswer(answer) {
+  const current = elements.input.value.trim();
+  elements.input.value = current ? `${current}；${answer}` : answer;
+  elements.characterCount.textContent = String(elements.input.value.length);
+  elements.input.focus();
+}
+
+function addQuestions(questions) {
+  const row = node('div', 'message assistant question-message');
+  row.append(node('div', 'avatar', 'L'));
+  const bubble = node('div', 'bubble question-bubble');
+  bubble.append(
+    node('span', 'message-label', '需要确认的信息'),
+    node('p', 'question-intro', '为了继续核对，请补充以下内容。')
+  );
+  const list = node('div', 'question-list');
+  questions.forEach((question, index) => {
+    const item = node('section', 'question-item');
+    item.append(node('span', 'question-number', `问题 ${index + 1}/${questions.length}`), node('p', '', question));
+    const options = questionQuickOptions(question);
+    if (options.length) {
+      const actions = node('div', 'quick-answer-list');
+      for (const answer of options) {
+        const button = node('button', 'quick-answer', answer);
+        button.type = 'button';
+        button.addEventListener('click', () => useQuickAnswer(answer));
+        actions.append(button);
+      }
+      item.append(actions);
+    }
+    list.append(item);
+  });
+  bubble.append(list);
+  row.append(bubble);
+  elements.conversation.append(row);
+  scrollBottom();
+}
+
+function addSelfCheckResult(result) {
   const cards = result.resultCards ?? [];
-  const stack = node('div', 'result-stack');
-  const article = node('article', 'result-card self-check-summary');
-  const header = node('div', 'result-card-header');
-  header.append(node('span', '', cards.length ? '初步法律自检结果' : '本次法律自检结果'));
-  const body = node('div', 'result-card-body');
+  const panel = node('section', 'self-check-result');
+  const header = node('header', 'self-check-result-header');
+  header.append(
+    node('span', 'result-index', 'SELF-CHECK RESULT'),
+    node('h2', '', '初步自检结果'),
+    node('p', '', cards.length
+      ? '根据已经确认的事实与固定法规语料，整理出以下可能相关的核对依据。'
+      : '本次没有生成未经核验的法规判断。')
+  );
+  panel.append(header);
+
+  const overview = node('div', 'result-overview-grid');
+  const summarySection = node('section', 'result-summary-section');
+  summarySection.append(node('span', 'result-section-label', '01 · 初步自检摘要'));
   const title = cards.length
     ? `找到 ${cards.length} 条可能相关的法规核对项`
     : result.lawRetrievalStatus === 'no_match'
       ? '当前法规语料暂未找到安全匹配'
       : '当前未能生成可核验的结果卡片';
-  body.append(node('h3', '', title));
+  summarySection.append(node('h3', '', title));
   const summary = cards.length
     ? '以下内容根据你提供的脱敏事实与固定法规语料生成，用于识别可能相关的规则和仍需确认的条件。'
     : result.lawRetrievalStatus === 'failed'
@@ -743,29 +807,74 @@ function addSelfCheckSummary(result) {
       : result.lawComparisonStatus === 'failed' || result.resultCardStatus === 'failed'
         ? '候选法规的核对环节未能完成。本次没有输出未经验证的判断。'
         : '这不代表不存在相关法律，只表示当前首版语料和事实条件不足以安全展示匹配结果。';
-  body.append(node('p', 'summary-copy', summary));
-  if (cards.length) {
-    const list = node('ul', 'summary-list');
-    for (const card of cards) {
-      list.append(node('li', '', `${card.lawName} ${card.articleNumber} · ${card.findingLabel}`));
+  summarySection.append(node('p', 'summary-copy', summary));
+
+  const factsSection = node('section', 'result-facts-section');
+  factsSection.append(node('span', 'result-section-label', '02 · 已确认的关键事实'));
+  const factGrid = node('dl', 'result-fact-grid');
+  const facts = Object.entries(result.knownFacts ?? {}).filter(([key]) => factLabels[key]);
+  if (!facts.length) {
+    const row = node('div', 'result-fact-empty');
+    row.append(node('dt', '', '关键信息'), node('dd', '', '尚不足以形成可靠核对'));
+    factGrid.append(row);
+  } else {
+    for (const [key, value] of facts) {
+      const row = node('div');
+      row.append(node('dt', '', factLabels[key]), node('dd', '', customerFactValue(value)));
+      factGrid.append(row);
     }
-    body.append(list);
   }
-  const next = node('div', 'result-next-step');
-  next.append(
-    node('strong', '', '建议下一步'),
-    node(
-      'p',
-      '',
-      cards.length
-        ? '保存合同、通知、工资记录等原始证据；涉及期限、金额或争议处理时，携带完整材料咨询专业人士。'
-        : '可以新建核对并在首次描述中写明争议主体、发生事项、时间和现有证据。'
-    )
+  factsSection.append(factGrid);
+  overview.append(summarySection, factsSection);
+  panel.append(overview);
+
+  const lawsSection = node('section', 'result-laws-section');
+  lawsSection.append(node('span', 'result-section-label', '03 · 可能相关的法规依据'));
+  if (!cards.length) {
+    lawsSection.append(node('p', 'result-law-empty', '当前没有可以安全展示的法规依据。你可以补充争议主体、时间、现有材料和具体事项后重新核对。'));
+  }
+  for (const card of cards) {
+    const law = node('article', 'law-result-card');
+    const lawHeader = node('header', 'law-result-header');
+    const lawTitle = node('div');
+    lawTitle.append(node('span', '', card.findingLabel ?? '可能相关'), node('h3', '', `${card.lawName} ${card.articleNumber}`));
+    const source = node('a', 'source-link', '查看官方来源 ↗');
+    source.href = card.officialSource.url;
+    source.target = '_blank';
+    source.rel = 'noreferrer';
+    lawHeader.append(lawTitle, source);
+    const excerpt = card.articleText.length > 128 ? `${card.articleText.slice(0, 128)}……` : card.articleText;
+    law.append(
+      lawHeader,
+      node('p', 'law-key-excerpt', excerpt),
+      node('div', 'law-match-reason', `匹配原因：你已确认的事实与该条款涉及的适用条件存在对应，因此将其列为可能相关依据；这不是案件结论。`)
+    );
+    const details = node('details', 'law-full-text');
+    details.append(node('summary', '', '查看法条全文'), node('p', '', card.articleText));
+    const copy = node('button', 'copy-button', '复制法规引用');
+    copy.type = 'button';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(`${card.lawName}${card.articleNumber}\n${card.articleText}\n${card.officialSource.url}`);
+        toast('法规引用已复制');
+      } catch {
+        toast('请手动选择法规文本');
+      }
+    });
+    const footer = node('footer', 'law-result-footer');
+    footer.append(node('span', '', `版本日期：${card.lawVersionDate} · 来源已经核验`), copy);
+    law.append(details, footer);
+    lawsSection.append(law);
+  }
+  panel.append(lawsSection);
+
+  const boundary = node('footer', 'result-boundary');
+  boundary.append(
+    node('strong', '', '产品边界说明'),
+    node('p', '', result.disclaimer ?? '本结果仅用于法律信息辅助，不构成违法认定、案件结论或正式法律意见。')
   );
-  body.append(next);
-  article.append(header, body);
-  stack.append(article);
-  elements.conversation.append(stack);
+  panel.append(boundary);
+  elements.conversation.append(panel);
 }
 
 function addTerminalError(result) {
@@ -831,7 +940,7 @@ function addIncompleteSummary(result) {
   );
   const list = node('ul', 'missing-list');
   for (const field of result.missingFields ?? []) {
-    list.append(node('li', '', factLabels[field] ?? field));
+    list.append(node('li', '', factLabels[field] ?? '其他必要信息'));
   }
   if (list.children.length) body.append(list);
   body.append(
@@ -1452,7 +1561,7 @@ async function openDataSourceAdmin() {
   }
 }
 
-function renderResult(result) {
+function renderResult(result, options = {}) {
   state.activeSessionId = result.sessionId ?? state.activeSessionId;
   state.activeStatus = result.status;
   elements.deleteSession.classList.add('hidden');
@@ -1467,7 +1576,8 @@ function renderResult(result) {
   markTaskPanelContent(Boolean(state.activeSessionId || hasNeeds || hasSources || hasFacts));
   const finalSelfCheck =
     !v1 && ['completed', 'information_ready'].includes(result.status);
-  if (result.agentExecution && !result.error && !finalSelfCheck) {
+  const hasQuestions = (result.questions ?? []).length > 0;
+  if (result.agentExecution && !result.error && !finalSelfCheck && !hasQuestions && !options.skipAssistantTurn) {
     addMessage(
       'assistant',
       customerSafeMessage(result.assistantMessage, '已完成本轮信息整理。'),
@@ -1494,10 +1604,9 @@ function renderResult(result) {
       addSchemaDriftCard(result);
     } else addV1Result(result);
   }
-  else if ((result.questions ?? []).length) addQuestions(result.questions);
+  else if (hasQuestions && !options.skipAssistantTurn) addQuestions(result.questions);
   else if (finalSelfCheck) {
-    addSelfCheckSummary(result);
-    if ((result.resultCards ?? []).length) addResultCards(result);
+    addSelfCheckResult(result);
   }
   scrollBottom();
 }
@@ -1744,8 +1853,15 @@ async function openHistory(sessionId) {
   try {
     const { session } = await api(`/api/sessions/${sessionId}`); elements.welcome.classList.add('hidden'); elements.conversation.replaceChildren(); state.activeSessionId = session.sessionId; state.activeStatus = session.status;
     state.artifacts = []; renderArtifacts(); closeConfirmModal();
-    for (const message of session.messages ?? []) addMessage(message.role === 'user' ? 'user' : 'assistant', message.redactedText);
-    renderResult(session); closeMobileHistory(); await loadHistory();
+    for (const message of session.messages ?? []) {
+      addMessage(
+        message.role === 'user' ? 'user' : 'assistant',
+        message.redactedText,
+        message.role === 'assistant' ? '需要确认的信息' : undefined
+      );
+    }
+    const latestTurnAlreadyStored = session.messages?.at(-1)?.role === 'assistant';
+    renderResult(session, { skipAssistantTurn: latestTurnAlreadyStored }); closeMobileHistory(); await loadHistory();
   } catch { toast('暂时无法打开该会话，请稍后重试'); } finally { setBusy(false); }
 }
 

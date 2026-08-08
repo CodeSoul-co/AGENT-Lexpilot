@@ -147,6 +147,27 @@ function publicResult(session) {
   };
 }
 
+function conversationTimeline(session) {
+  if (!Array.isArray(session.timeline)) {
+    session.timeline = session.messages.map((message) => ({ ...message }));
+  }
+  return session.timeline;
+}
+
+function syncPendingAssistantTurn(session, receivedAt) {
+  const timeline = conversationTimeline(session);
+  if (timeline.at(-1)?.role === 'assistant') timeline.pop();
+  if (!Array.isArray(session.questions) || session.questions.length === 0) return;
+  timeline.push({
+    role: 'assistant',
+    redactedText: [
+      '为了继续核对，请确认以下信息：',
+      ...session.questions.map((question, index) => `问题 ${index + 1}：${question}`)
+    ].join('\n'),
+    receivedAt
+  });
+}
+
 function historySummary(session) {
   return {
     sessionId: session.id,
@@ -156,7 +177,7 @@ function historySummary(session) {
     legalDomain: session.legalDomain,
     legalDomainLabel: session.legalDomainLabel,
     clarificationRound: session.clarificationRound,
-    messageCount: session.messages.length,
+    messageCount: conversationTimeline(session).length,
     lawRetrievalStatus: session.lawRetrievalStatus ?? 'not_run',
     lawReferenceCount: session.lawReferences?.length ?? 0,
     lawComparisonStatus: session.lawComparisonStatus ?? 'not_run',
@@ -196,7 +217,7 @@ function historyDetail(session) {
     resultCardError: session.resultCardError,
     error: session.error,
     v1: session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY ? session.v1 : undefined,
-    messages: session.messages.map((message) => ({
+    messages: conversationTimeline(session).map((message) => ({
       role: message.role,
       redactedText: message.redactedText,
       receivedAt: message.receivedAt
@@ -801,6 +822,13 @@ class LegalSelfCheckConversationService {
           receivedAt: now
         }
       ],
+      timeline: [
+        {
+          role: 'user',
+          redactedText: prepared.redactedText,
+          receivedAt: now
+        }
+      ],
       legalDomain: undefined,
       legalDomainLabel: undefined,
       knownFacts: {},
@@ -839,6 +867,7 @@ class LegalSelfCheckConversationService {
 
     const analysis = this.analyze(session);
     this.applyAnalysis(session, analysis);
+    syncPendingAssistantTurn(session, now);
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);
@@ -904,7 +933,13 @@ class LegalSelfCheckConversationService {
     }
 
     const now = this.clock();
+    const timeline = conversationTimeline(session);
     session.messages.push({
+      role: 'user',
+      redactedText: prepared.redactedText,
+      receivedAt: now
+    });
+    timeline.push({
       role: 'user',
       redactedText: prepared.redactedText,
       receivedAt: now
@@ -914,6 +949,7 @@ class LegalSelfCheckConversationService {
 
     const analysis = this.analyze(session);
     this.applyAnalysis(session, analysis);
+    syncPendingAssistantTurn(session, now);
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);
@@ -972,6 +1008,7 @@ class LegalSelfCheckConversationService {
     session.updatedAt = this.clock();
     const analysis = this.analyze(session);
     this.applyAnalysis(session, analysis);
+    syncPendingAssistantTurn(session, session.updatedAt);
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);

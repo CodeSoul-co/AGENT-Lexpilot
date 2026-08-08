@@ -106,7 +106,8 @@ test('persists an updated clarification answer across restart', () => {
     const restartedProcess = createService(directory, encryptionKey);
     const history = restartedProcess.getHistory('session-visible-to-user');
     assert.equal(history.status, 'completed');
-    assert.equal(history.messageCount, 2);
+    assert.equal(history.messageCount, 3);
+    assert.deepEqual(history.messages.map((message) => message.role), ['user', 'assistant', 'user']);
     assert.equal(history.clarificationRound, 1);
     assert.equal(history.lawReferences[0].id, 'cn.civil-code.article-675');
     assert.equal(history.lawComparisons[0].comparisonStatus, 'potential_match');

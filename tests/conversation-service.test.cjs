@@ -484,13 +484,39 @@ test('returns history summaries without message text and sanitized history detai
 
   assert.equal(list.length, 1);
   assert.equal(list[0].sessionId, started.sessionId);
-  assert.equal(list[0].messageCount, 1);
+  assert.equal(list[0].messageCount, detail.messages.length);
   assert.equal(Object.hasOwn(list[0], 'messages'), false);
   assert.equal(detail.messages[0].redactedText.includes('[NAME_1]'), true);
   assert.equal(detail.messages[0].redactedText.includes('[PHONE_1]'), true);
+  assert.equal(detail.messages.at(-1).role, 'assistant');
+  assert.match(detail.messages.at(-1).redactedText, /问题 1/);
   assert.equal(JSON.stringify(detail).includes('张三'), false);
   assert.equal(JSON.stringify(detail).includes('13800138000'), false);
   assert.equal(Object.hasOwn(detail, 'ownerId'), false);
+});
+
+test('persists the complete user and assistant clarification timeline for history replay', () => {
+  const service = createService();
+  const started = service.start({
+    userText: '朋友借钱不还。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  service.answer(started.sessionId, '我有转账记录。');
+  service.answer(started.sessionId, '说好去年年底还款。');
+
+  const detail = service.getHistory(started.sessionId);
+  assert.deepEqual(detail.messages.map((message) => message.role), [
+    'user',
+    'assistant',
+    'user',
+    'assistant',
+    'user'
+  ]);
+  assert.equal(detail.messages.filter((message) => message.role === 'user').length, 3);
+  assert.equal(detail.messages.filter((message) => message.role === 'assistant').length, 2);
+  assert.match(detail.messages[1].redactedText, /为了继续核对/);
+  assert.equal(detail.status, 'completed');
 });
 
 test('adds a candidate labor law reference without generating a legal conclusion', () => {

@@ -613,7 +613,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(scriptText, /elements\.runtimeText\.textContent = '服务正常'/);
     assert.doesNotMatch(scriptText, /Agent 在线|Provider 未识别|隐私政策版本：/);
     assert.match(scriptText, /function enterWorkspace/);
-    assert.match(scriptText, /function addSelfCheckSummary/);
+    assert.match(scriptText, /function addSelfCheckResult/);
+    assert.match(scriptText, /function questionQuickOptions/);
+    assert.match(scriptText, /function customerFactValue/);
     assert.match(scriptText, /function addTerminalError/);
     assert.match(scriptText, /function renderLandingContent/);
     assert.match(scriptText, /function initLandingInteractions/);
@@ -634,6 +636,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(stylesheet, /#workspace-app\.task-panel-open\s*\{/);
     assert.match(stylesheet, /\.confirm-summary\s*\{/);
     assert.match(stylesheet, /\.history-search\s*\{/);
+    assert.match(stylesheet, /\.self-check-result\s*\{/);
+    assert.match(stylesheet, /\.law-full-text\s*\{/);
+    assert.match(stylesheet, /#workspace-app \.user \.bubble\s*\{[^}]*max-width:\s*60%/s);
     assert.match(stylesheet, /@media \(max-width: 760px\)[\s\S]*#workspace-app\.history-open \.sidebar/);
     assert.equal(landingStyles.status, 200);
     assert.match(landingStyles.headers.get('content-type'), /text\/css/);
@@ -764,6 +769,15 @@ test('supports a clarification answer without accepting undeclared request field
       }
     );
     assert.equal(answered.body.status, 'completed');
+
+    const detail = await jsonRequest(`${baseUrl}/api/sessions/${started.body.sessionId}`);
+    assert.deepEqual(detail.body.session.messages.map((message) => message.role), [
+      'user',
+      'assistant',
+      'user'
+    ]);
+    assert.equal(detail.body.session.messages.filter((message) => message.role === 'user').length, 2);
+    assert.match(detail.body.session.messages[1].redactedText, /继续核对|需要确认/);
 
     const invalid = await jsonRequest(`${baseUrl}/api/sessions`, {
       method: 'POST',
