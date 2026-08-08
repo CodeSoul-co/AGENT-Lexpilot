@@ -90,7 +90,7 @@ test('marks conflicting fact values as not supported instead of a potential matc
   });
 
   assert.equal(result.comparisons[0].comparisonStatus, 'not_supported_by_facts');
-  assert.ok(result.comparisons[0].unresolvedElements.includes('fact_not_supporting:repaymentStatus'));
+  assert.ok(result.comparisons[0].unresolvedElements.includes('fact_not_supporting:repayment_status'));
 });
 
 test('does not support Article 676 when no repayment term was agreed', () => {
@@ -109,7 +109,7 @@ test('does not support Article 676 when no repayment term was agreed', () => {
   assert.equal(result.comparisons[0].comparisonStatus, 'not_supported_by_facts');
   assert.ok(
     result.comparisons[0].unresolvedElements.includes(
-      'fact_not_supporting:repaymentTermStatus'
+      'fact_not_supporting:repayment_term_status'
     )
   );
   assert.equal(result.comparisons[0].legalConclusionGenerated, false);
@@ -207,9 +207,9 @@ test('keeps Article 40 insufficient when branch facts are missing or the excerpt
   const missingComparison = missingFacts.comparisons[0];
 
   assert.equal(missingComparison.comparisonStatus, 'insufficient_for_comparison');
-  assert.ok(missingComparison.unresolvedElements.includes('missing_fact:noticeOrPayStatus'));
+  assert.ok(missingComparison.unresolvedElements.includes('missing_fact:notice_or_pay_status'));
   assert.ok(
-    missingComparison.unresolvedElements.includes('missing_fact:performanceRemediationOutcome')
+    missingComparison.unresolvedElements.includes('missing_fact:performance_remediation_outcome')
   );
 
   const missingExcerpt = compareFactsToLaw({

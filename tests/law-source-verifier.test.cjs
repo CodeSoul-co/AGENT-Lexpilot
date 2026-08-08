@@ -39,12 +39,12 @@ test('verifies every pinned article while fetching unique official pages sequent
 
   assert.equal(report.ok, true);
   assert.equal(report.status, 'verified');
-  assert.equal(report.entryCount, 46);
-  assert.equal(report.sourceCount, 4);
-  assert.equal(report.verifiedCount, 46);
-  assert.equal(calls.length, 4);
+  assert.equal(report.entryCount, corpus.entries.length);
+  assert.equal(report.sourceCount, pages.size);
+  assert.equal(report.verifiedCount, corpus.entries.length);
+  assert.equal(calls.length, pages.size);
   assert.equal(maxActiveRequests, 1);
-  assert.equal(report.requestAttemptCount, 4);
+  assert.equal(report.requestAttemptCount, pages.size);
   assert.equal(report.results.every((result) => result.attemptCount === 1), true);
   assert.equal(report.results.every((result) => result.status === 'verified'), true);
   assert.equal(JSON.stringify(report).includes(corpus.entries[0].articleText), false);
@@ -72,7 +72,7 @@ test('retries only an unavailable source and records bounded request attempts', 
 
   assert.equal(report.ok, true);
   assert.equal(callsByUrl.get(retryUrl), 2);
-  assert.equal(report.requestAttemptCount, 5);
+  assert.equal(report.requestAttemptCount, pages.size + 1);
   assert.deepEqual(waits, [25]);
   assert.equal(report.results[0].attemptCount, 2);
   assert.equal(report.results[1].attemptCount, 2);
@@ -152,9 +152,9 @@ test('fails closed for unavailable sources and non-official redirects', async ()
     result.id.startsWith('cn.labor-contract-law.')
   );
   const civilResults = report.results.filter((result) => result.id.startsWith('cn.civil-code.'));
-  assert.equal(laborResults.length, 10);
+  assert.equal(laborResults.length, corpus.entries.filter((entry) => entry.id.startsWith('cn.labor-contract-law.')).length);
   assert.equal(laborResults.every((result) => result.status === 'source_unavailable'), true);
-  assert.equal(civilResults.length, 18);
+  assert.equal(civilResults.length, corpus.entries.filter((entry) => entry.id.startsWith('cn.civil-code.')).length);
   assert.equal(civilResults.every((result) => result.status === 'untrusted_redirect'), true);
   assert.equal(civilResults.every((result) => result.finalHost === 'example.com'), true);
 });

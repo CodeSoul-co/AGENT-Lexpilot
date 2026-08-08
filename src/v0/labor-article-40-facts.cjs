@@ -121,6 +121,19 @@ function assessLaborArticle40Facts(input) {
 
   const conditionalFields = CONDITIONAL_FIELDS[ground] ?? [];
   const requiredFields = ['issueType', ...COMMON_FIELDS, ...conditionalFields];
+  if (
+    ground === LABOR_ARTICLE_40_GROUNDS.MEDICAL_OR_NON_WORK_INJURY &&
+    knownFacts.medicalPeriodStatus === 'not_ended'
+  ) {
+    return {
+      articleId: ARTICLE_ID,
+      status: 'conditions_not_met',
+      comparisonAllowed: false,
+      requiredFields: ['issueType', ...COMMON_FIELDS, 'medicalPeriodStatus'],
+      missingFields: [],
+      legalConclusionGenerated: false
+    };
+  }
   const missingFields = requiredFields.filter(
     (field) => !Object.hasOwn(knownFacts, field) || knownFacts[field] === 'unknown'
   );

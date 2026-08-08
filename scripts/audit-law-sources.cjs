@@ -12,7 +12,7 @@ async function main() {
     fetchImpl: (url) =>
       fetch(url, {
         cache: 'no-store',
-        headers: { 'user-agent': 'legal-compliance-agent/0.1 law-source-audit' },
+        headers: { 'user-agent': 'LexPilot-law-corpus-refresh/1.0' },
         redirect: 'follow',
         signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS)
       })

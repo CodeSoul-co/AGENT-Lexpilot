@@ -139,6 +139,18 @@ function validateService(service) {
   }
 }
 
+function isValidAnswerRequest(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  if (keys.length === 0 || keys.some((key) => !['userText', 'answers'].includes(key))) return false;
+  if (body.userText !== undefined && typeof body.userText !== 'string') return false;
+  if (body.answers !== undefined && !Array.isArray(body.answers)) return false;
+  return (
+    (typeof body.userText === 'string' && body.userText.trim().length > 0) ||
+    (Array.isArray(body.answers) && body.answers.length > 0)
+  );
+}
+
 function requireAccess(response, accessControl, action) {
   try {
     accessControl.assertAllowed(action);
@@ -343,11 +355,15 @@ function createDemoWebHandler(options = {}) {
       if (route?.type === 'answer' && request.method === 'POST') {
         if (!requireAccess(response, accessControl, ACCESS_ACTIONS.SESSION_USE)) return;
         const body = await readJsonBody(request);
-        if (!requireExactKeys(body, ['userText']) || typeof body.userText !== 'string') {
+        if (!isValidAnswerRequest(body)) {
           sendError(response, 400, 'INVALID_REQUEST', '补充回答请求字段无效。');
           return;
         }
-        sendJson(response, 200, await service.answer(route.sessionId, body.userText));
+        sendJson(
+          response,
+          200,
+          await service.answer(route.sessionId, body.answers === undefined ? body.userText : body)
+        );
         return;
       }
 

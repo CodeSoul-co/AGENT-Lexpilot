@@ -93,9 +93,12 @@ test('persists an updated clarification answer across restart', () => {
       '我有转账记录，说好去年年底还款。'
     );
     assert.equal(answered.status, 'completed');
-    assert.equal(answered.lawReferences[0].id, 'cn.civil-code.article-675');
-    assert.equal(answered.lawComparisons[0].comparisonStatus, 'potential_match');
-    assert.equal(answered.resultCards[0].lawReferenceId, 'cn.civil-code.article-675');
+    const reference = answered.lawReferences.find((item) => item.id === 'cn.civil-code.article-675');
+    const comparison = answered.lawComparisons.find((item) => item.lawReferenceId === reference.id);
+    const resultCard = answered.resultCards.find((item) => item.lawReferenceId === reference.id);
+    assert.equal(reference.id, 'cn.civil-code.article-675');
+    assert.equal(comparison.comparisonStatus, 'potential_match');
+    assert.equal(resultCard.lawReferenceId, 'cn.civil-code.article-675');
 
     const encryptedFile = fs.readdirSync(directory)[0];
     const onDisk = fs.readFileSync(path.join(directory, encryptedFile), 'utf8');
@@ -106,12 +109,24 @@ test('persists an updated clarification answer across restart', () => {
     const restartedProcess = createService(directory, encryptionKey);
     const history = restartedProcess.getHistory('session-visible-to-user');
     assert.equal(history.status, 'completed');
-    assert.equal(history.messageCount, 3);
-    assert.deepEqual(history.messages.map((message) => message.role), ['user', 'assistant', 'user']);
+    assert.equal(history.messageCount, 4);
+    assert.deepEqual(history.messages.map((message) => message.role), [
+      'user',
+      'assistant',
+      'user',
+      'assistant'
+    ]);
+    assert.equal(history.messages.at(-1).messageType, 'legal_result');
     assert.equal(history.clarificationRound, 1);
-    assert.equal(history.lawReferences[0].id, 'cn.civil-code.article-675');
-    assert.equal(history.lawComparisons[0].comparisonStatus, 'potential_match');
-    assert.equal(history.resultCards[0].lawReferenceId, 'cn.civil-code.article-675');
+    assert.equal(history.lawReferences.some((item) => item.id === 'cn.civil-code.article-675'), true);
+    assert.equal(
+      history.lawComparisons.find((item) => item.lawReferenceId === 'cn.civil-code.article-675').comparisonStatus,
+      'potential_match'
+    );
+    assert.equal(
+      history.resultCards.some((item) => item.lawReferenceId === 'cn.civil-code.article-675'),
+      true
+    );
   });
 });
 

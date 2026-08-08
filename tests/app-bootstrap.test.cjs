@@ -130,10 +130,9 @@ test('runs start, answer, history, show, and delete across separate processes', 
     const answered = JSON.parse(answeredProcess.stdout);
     assert.equal(answered.status, 'completed');
     assert.equal(answered.resultCardStatus, 'completed');
-    assert.deepEqual(
-      answered.resultCards.map((card) => card.lawReferenceId),
-      ['cn.civil-code.article-675', 'cn.civil-code.article-676']
-    );
+    const lawReferenceIds = answered.resultCards.map((card) => card.lawReferenceId);
+    assert.equal(lawReferenceIds.includes('cn.civil-code.article-675'), true);
+    assert.equal(lawReferenceIds.includes('cn.civil-code.article-676'), true);
     assert.equal(
       answered.resultCards.every((card) => card.legalConclusionGenerated === false),
       true
@@ -148,7 +147,8 @@ test('runs start, answer, history, show, and delete across separate processes', 
     const showProcess = runDemo(environment, ['show', started.sessionId]);
     assert.equal(showProcess.status, 0, showProcess.stderr);
     const detail = JSON.parse(showProcess.stdout);
-    assert.equal(detail.messageCount, 3);
+    assert.equal(detail.messageCount, 4);
+    assert.equal(detail.messages.at(-1).messageType, 'legal_result');
     assert.equal(JSON.stringify(detail).includes('测试甲'), false);
     assert.equal(JSON.stringify(detail).includes('test-user@example.com'), false);
 

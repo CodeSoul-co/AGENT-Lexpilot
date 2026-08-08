@@ -177,6 +177,20 @@ test('asks at most two conditional questions for a signed-contract dismissal', (
   ]);
 });
 
+test('treats an employer-proposed labor-contract termination as a dismissal that needs facts', () => {
+  const prepared = prepareLegalSelfCheckInput({
+    userText: '我在公司工作两年，公司提出解除劳动合同，双方签过书面劳动合同。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  const result = analyzeInformationReadiness(prepared);
+
+  assert.equal(result.status, 'needs_clarification');
+  assert.equal(result.knownFacts.issueType, 'dismissal');
+  assert.deepEqual(result.missingFields, ['dismissalGround', 'noticeOrPayStatus']);
+  assert.equal(result.questions.length, 2);
+});
+
 test('selects only the follow-up facts required by the stated dismissal ground', () => {
   const prepared = prepareLegalSelfCheckInput({
     userText:

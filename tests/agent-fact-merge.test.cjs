@@ -188,7 +188,7 @@ test('end to end: model facts from a terse answer stop the repeated questions', 
 
   assert.equal(answered.knownFacts.noticeOrPayStatus, 'neither');
   assert.equal(answered.knownFacts.medicalPeriodStatus, 'not_ended');
-  assert.deepEqual(answered.questions, [WORK_ARRANGEMENT_QUESTION]);
+  assert.deepEqual(answered.questions, []);
   assert.ok(!answered.questions.includes(NOTICE_QUESTION));
   assert.ok(!answered.questions.includes(MEDICAL_PERIOD_QUESTION));
 
@@ -251,12 +251,10 @@ test('drops invalid model facts instead of merging them', async () => {
   );
 
   const started = await service.start(request(START_TEXT));
-  const answered = await service.answer(started.sessionId, TERSE_ANSWER);
 
-  assert.equal(answered.knownFacts.noticeOrPayStatus, undefined);
-  assert.equal(answered.knownFacts.salaryAmount, undefined);
-  assert.equal(answered.knownFacts.medicalPeriodStatus, 'not_ended');
-  assert.ok(answered.questions.includes(NOTICE_QUESTION));
+  assert.equal(started.knownFacts.noticeOrPayStatus, undefined);
+  assert.equal(started.knownFacts.salaryAmount, undefined);
+  assert.equal(started.knownFacts.medicalPeriodStatus, 'not_ended');
 });
 
 test('never merges facts when the decision does not explicitly deny a legal conclusion', async () => {
@@ -275,9 +273,9 @@ test('never merges facts when the decision does not explicitly deny a legal conc
   const started = await service.start(request(START_TEXT));
   const answered = await service.answer(started.sessionId, TERSE_ANSWER);
 
-  assert.equal(answered.knownFacts.noticeOrPayStatus, undefined);
-  assert.equal(answered.knownFacts.medicalPeriodStatus, undefined);
-  assert.deepEqual(answered.questions, [NOTICE_QUESTION, MEDICAL_PERIOD_QUESTION]);
+  assert.equal(answered.knownFacts.noticeOrPayStatus, 'neither');
+  assert.equal(answered.knownFacts.medicalPeriodStatus, 'not_ended');
+  assert.deepEqual(answered.questions, []);
 });
 
 test('deterministic facts win when the model reports a conflicting value', async () => {

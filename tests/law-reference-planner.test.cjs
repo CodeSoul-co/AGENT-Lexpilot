@@ -1,105 +1,63 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { planLawRetrieval } = require('../src/v0/law-reference-planner.cjs');
+const { loadLawCorpus } = require('../src/v0/law-corpus.cjs');
+const { planLawRetrieval, ROUTING_FIELDS } = require('../src/v0/law-reference-planner.cjs');
 
-test('maps only supported structured facts to law corpus topics', () => {
+test('maps supported structured routing facts to same-domain candidate IDs', () => {
   const cases = [
-    [
-      'labor',
-      { employmentDuration: 'mentioned', writtenContractStatus: 'not_signed' },
-      ['written_contract']
-    ],
-    [
-      'labor',
-      {
-        issueType: 'dismissal',
-        writtenContractStatus: 'signed',
-        dismissalGround: 'performance',
-        noticeOrPayStatus: 'neither',
-        performanceRemediationOutcome: 'no_training_or_adjustment'
-      },
-      ['dismissal_notice_or_pay']
-    ],
-    [
-      'private_lending',
-      { repaymentTermStatus: 'agreed', repaymentStatus: 'unpaid' },
-      ['repayment_term', 'overdue_interest']
-    ],
-    [
-      'private_lending',
-      { repaymentTermStatus: 'not_agreed', repaymentStatus: 'partial' },
-      ['repayment_term']
-    ],
-    [
-      'marriage_family',
-      { relationshipStatus: 'married', disputeType: 'domestic_violence' },
-      ['domestic_violence']
-    ],
-    [
-      'marriage_family',
-      { relationshipStatus: 'married', disputeType: 'bigamy' },
-      ['bigamy']
-    ],
-    [
-      'marriage_family',
-      { relationshipStatus: 'married', disputeType: 'marriage_freedom' },
-      ['marriage_freedom']
-    ],
-    ['taxation', { taxIssueType: 'filing' }, ['tax_declaration']],
-    ['taxation', { taxIssueType: 'withholding' }, ['withholding_declaration']],
-    [
-      'intellectual_property',
-      { rightType: 'patent', allegedAct: 'sale', authorizationStatus: 'not_authorized' },
-      ['patent_implementation']
-    ]
+    ['labor', { issueType: 'contract', writtenContractStatus: 'not_signed' }],
+    ['labor', { issueType: 'dismissal', writtenContractStatus: 'signed' }],
+    ['private_lending', { lendingIssueType: 'repayment_interest' }],
+    ['private_lending', { lendingIssueType: 'guarantee' }],
+    ['marriage_family', { disputeType: 'domestic_violence' }],
+    ['marriage_family', { disputeType: 'property' }],
+    ['taxation', { taxIssueType: 'invoice' }],
+    ['taxation', { taxIssueType: 'filing' }],
+    ['intellectual_property', { rightType: 'patent' }],
+    ['intellectual_property', { rightType: 'trademark' }],
+    ['intellectual_property', { rightType: 'written_work' }]
   ];
-
-  for (const [legalDomain, knownFacts, topics] of cases) {
+  const byId = new Map(loadLawCorpus().entries.map((entry) => [entry.id, entry]));
+  for (const [legalDomain, knownFacts] of cases) {
     const result = planLawRetrieval({ legalDomain, knownFacts });
-    assert.equal(result.eligible, true);
-    assert.deepEqual(result.topics, topics);
+    assert.equal(result.eligible, true, `${legalDomain}:${JSON.stringify(knownFacts)}`);
+    assert.equal(result.classification, 'candidate_path_available');
+    assert.ok(result.candidateIds.length > 0);
+    assert.equal(result.candidateIds.every((id) => byId.get(id)?.legalDomain === legalDomain), true);
   }
 });
 
-test('does not broaden retrieval when facts cannot support a corpus topic', () => {
+test('keeps an unsigned-contract dismissal on the narrow Article 82 path', () => {
+  const result = planLawRetrieval({
+    legalDomain: 'labor',
+    knownFacts: { issueType: 'dismissal', writtenContractStatus: 'not_signed' }
+  });
+  assert.deepEqual(result.candidateIds, ['cn.labor-contract-law.article-82']);
+});
+
+test('classifies missing or unsupported routing facts as corpus uncovered without broad retrieval', () => {
   const cases = [
     ['labor', { writtenContractStatus: 'signed' }],
-    [
-      'labor',
-      { issueType: 'dismissal', writtenContractStatus: 'signed', dismissalGround: 'performance' }
-    ],
-    [
-      'labor',
-      {
-        issueType: 'dismissal',
-        writtenContractStatus: 'signed',
-        dismissalGround: 'other',
-        noticeOrPayStatus: 'neither'
-      }
-    ],
-    [
-      'labor',
-      { issueType: 'unpaid_wages', writtenContractStatus: 'signed' }
-    ],
-    [
-      'private_lending',
-      { repaymentTermStatus: 'agreed', repaymentStatus: 'paid' }
-    ],
-    ['marriage_family', { relationshipStatus: 'married', disputeType: 'property' }],
-    ['taxation', { taxIssueType: 'invoice' }],
-    [
-      'intellectual_property',
-      { rightType: 'trademark', authorizationStatus: 'not_authorized' }
-    ],
-    [
-      'intellectual_property',
-      { rightType: 'patent', allegedAct: 'copy', authorizationStatus: 'not_authorized' }
-    ]
+    ['private_lending', { repaymentStatus: 'paid' }],
+    ['marriage_family', { disputeType: 'unrelated' }],
+    ['taxation', { taxIssueType: 'unrelated' }],
+    ['intellectual_property', { rightType: 'trade_secret' }]
   ];
-
   for (const [legalDomain, knownFacts] of cases) {
     const result = planLawRetrieval({ legalDomain, knownFacts });
     assert.equal(result.eligible, false);
+    assert.equal(result.classification, 'corpus_uncovered');
+    assert.deepEqual(result.candidateIds, []);
     assert.deepEqual(result.topics, []);
   }
+});
+
+test('declares one structured routing field for every supported domain', () => {
+  assert.deepEqual(Object.keys(ROUTING_FIELDS).sort(), [
+    'intellectual_property',
+    'labor',
+    'marriage_family',
+    'private_lending',
+    'taxation'
+  ]);
 });

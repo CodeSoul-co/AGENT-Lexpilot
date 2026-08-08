@@ -17,16 +17,16 @@ function assistantMessage(result) {
     }
     if (result.v1?.status === 'completed') {
       return result.v1?.plan?.readOnly === false
-        ? `受治理数据库写入已完成，事务已提交，影响 ${result.v1.result?.affectedRows ?? 0} 行。`
-        : '专业数据分析已完成 Schema 校验、只读查询计划、演示执行与分析文档生成。';
+        ? `经确认的数据更新已完成，影响 ${result.v1.result?.affectedRows ?? 0} 行。`
+        : '专业数据分析已完成，结果、图表和分析文档已经生成。';
     }
     if (result.v1?.status === 'cancelled') {
       return '已按你的选择取消本次专业数据分析，查询未执行。';
     }
     if (result.v1?.status === 'awaiting_confirmation') {
       return result.v1?.plan?.readOnly === false
-        ? '已创建 Hypha Human Review；请核对 SQL，明确确认后才会执行数据库写入。'
-        : '已生成只读查询计划，确认后才会执行演示分析。';
+        ? '本次请求可能更改数据，请核对影响范围并明确确认。'
+        : '已生成只读分析计划，确认后才会执行。';
     }
     return result.v1?.reason ?? '专业数据分析未执行该请求。';
   }
@@ -108,6 +108,21 @@ class AgentBackedConversationService {
   async runAgent(businessResult) {
     if (!businessResult?.sessionId || businessResult.status === 'failed' || businessResult.status === 'rejected') {
       return businessResult;
+    }
+    if (
+      businessResult.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY &&
+      businessResult.status === 'needs_clarification'
+    ) {
+      const merged = {
+        ...businessResult,
+        assistantMessage: '请补充会影响分析执行的指标或时间范围。'
+      };
+      this.resultCache.set(businessResult.sessionId, {
+        assistantMessage: merged.assistantMessage,
+        pendingQuestions: [...(merged.questions ?? [])],
+        v1: merged.v1
+      });
+      return merged;
     }
     if (businessResult.status === 'awaiting_confirmation') {
       const merged = {

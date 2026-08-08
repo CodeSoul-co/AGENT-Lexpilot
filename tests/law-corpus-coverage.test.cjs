@@ -12,28 +12,29 @@ function corpusWithEntries(entries) {
   return { ...loadLawCorpus(), entries };
 }
 
-test('reports Batch 008 as 46/100 without exposing law text', () => {
+test('reports the verified corpus as 100/100 without exposing law text', () => {
   const corpus = loadLawCorpus();
   const report = auditLawCorpusCoverage(corpus);
   const serialized = JSON.stringify(report);
 
   assert.equal(DEFAULT_TARGET_UNIQUE_ARTICLES, 100);
-  assert.equal(report.ok, false);
-  assert.equal(report.status, 'insufficient_coverage');
-  assert.equal(report.entryCount, 46);
-  assert.equal(report.uniqueArticleCount, 46);
+  assert.equal(report.ok, true);
+  assert.equal(report.status, 'ready');
+  assert.equal(report.entryCount, 100);
+  assert.equal(report.uniqueArticleCount, 100);
   assert.equal(report.duplicateCitationCount, 0);
-  assert.equal(report.missingUniqueArticleCount, 54);
+  assert.equal(report.missingUniqueArticleCount, 0);
   assert.deepEqual(report.missingDomains, []);
-  assert.deepEqual(Object.values(report.domainCounts), [10, 9, 9, 9, 9]);
+  assert.deepEqual(Object.values(report.domainCounts), [22, 20, 18, 19, 21]);
   assert.equal(serialized.includes('articleText'), false);
   assert.equal(serialized.includes(corpus.entries[0].lawName), false);
 });
 
 test('does not count duplicate citations toward the 100-article gate', () => {
   const baseEntries = loadLawCorpus().entries;
+  const duplicateBase = baseEntries.slice(0, 46);
   const entries = Array.from({ length: 100 }, (_, index) => ({
-    ...structuredClone(baseEntries[index % baseEntries.length]),
+    ...structuredClone(duplicateBase[index % duplicateBase.length]),
     id: `duplicate-entry-${index + 1}`
   }));
   const report = auditLawCorpusCoverage(corpusWithEntries(entries));
@@ -106,14 +107,14 @@ test('rejects invalid coverage targets', () => {
   }
 });
 
-test('provides a local command that fails honestly at the current 46/100 coverage', () => {
+test('provides a local command that passes at the current 100/100 coverage', () => {
   const script = path.resolve(__dirname, '..', 'scripts', 'audit-law-coverage.cjs');
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   const report = JSON.parse(result.stdout);
 
-  assert.equal(result.status, 1, result.stderr);
-  assert.equal(report.status, 'insufficient_coverage');
-  assert.equal(report.uniqueArticleCount, 46);
-  assert.equal(report.missingUniqueArticleCount, 54);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(report.status, 'ready');
+  assert.equal(report.uniqueArticleCount, 100);
+  assert.equal(report.missingUniqueArticleCount, 0);
   assert.equal(result.stdout.includes('articleText'), false);
 });

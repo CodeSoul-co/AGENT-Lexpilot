@@ -5,8 +5,9 @@ const {
 } = require('./legal-v0-agent-runtime.cjs');
 const {
   TASK_TYPES,
-  classifyBusinessTask
 } = require('../v0/task-type-classifier.cjs');
+const { TaskRouter } = require('./task-router.cjs');
+const { validateAgentOutput } = require('./output-validator.cjs');
 const {
   agentCapabilityPatchRef,
   assertAgentCapabilityPatch,
@@ -58,6 +59,7 @@ async function createLegalComplianceAgent(options = {}) {
     modelAlias: options.v0ModelAlias
   });
   const v1Runtime = options.v1Runtime;
+  const taskRouter = options.taskRouter ?? new TaskRouter();
   if (
     v1Runtime !== undefined &&
     typeof v1Runtime.plan !== 'function' &&
@@ -117,7 +119,7 @@ async function createLegalComplianceAgent(options = {}) {
         assertAgentCapabilityPatch(capabilityPatch, capabilitySnapshot);
       }
       const input = normalizeAgentInput(rawInput);
-      const classification = classifyBusinessTask({
+      const classification = taskRouter.route({
         piiRedacted: true,
         redactedText: input.redactedText
       });
@@ -125,6 +127,7 @@ async function createLegalComplianceAgent(options = {}) {
 
       if (classification.taskType === TASK_TYPES.LEGAL_SELF_CHECK) {
         const result = await v0Runtime.run(input);
+        validateAgentOutput({ ...result, taskType: classification.taskType });
         return {
           ...result,
           agentId: AGENT_ID,
@@ -139,11 +142,7 @@ async function createLegalComplianceAgent(options = {}) {
           typeof v1Runtime.plan === 'function'
             ? await v1Runtime.plan(input)
             : await v1Runtime.run(input);
-        if (result?.executionAttempted === true) {
-          const error = new Error('Direct Agent routing cannot execute V1 before confirmation.');
-          error.code = 'V1_CONFIRMATION_GATE_BYPASSED';
-          throw error;
-        }
+        validateAgentOutput({ ...result, taskType: classification.taskType });
         return {
           ...result,
           agentId: AGENT_ID,

@@ -8,7 +8,7 @@ function validateQuery(query) {
   if (!query || typeof query !== 'object' || Array.isArray(query)) {
     throw new V0ContractError(V0_ERROR_CODES.INVALID_LAW_RETRIEVAL_QUERY, '法规检索请求必须是对象。');
   }
-  const allowedKeys = new Set(['legalDomain', 'topics', 'limit']);
+  const allowedKeys = new Set(['legalDomain', 'topics', 'articleIds', 'limit']);
   if (Object.keys(query).some((key) => !allowedKeys.has(key))) {
     throw new V0ContractError(
       V0_ERROR_CODES.INVALID_LAW_RETRIEVAL_QUERY,
@@ -25,13 +25,21 @@ function validateQuery(query) {
   ) {
     throw new V0ContractError(V0_ERROR_CODES.INVALID_LAW_RETRIEVAL_QUERY, 'topics 必须是字符串数组。');
   }
+  const articleIds = query.articleIds ?? [];
+  if (
+    !Array.isArray(articleIds) ||
+    articleIds.some((id) => typeof id !== 'string' || !/^cn\.[a-z0-9.-]+\.article-\d+$/.test(id))
+  ) {
+    throw new V0ContractError(V0_ERROR_CODES.INVALID_LAW_RETRIEVAL_QUERY, 'articleIds 必须是法规条目 ID 数组。');
+  }
   const limit = query.limit ?? 3;
-  if (!Number.isInteger(limit) || limit < 1 || limit > 10) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
     throw new V0ContractError(V0_ERROR_CODES.INVALID_LAW_RETRIEVAL_QUERY, 'limit 必须是 1 到 10 的整数。');
   }
   return {
     legalDomain: query.legalDomain,
     topics: [...new Set(topics.map((topic) => topic.trim()))],
+    articleIds: [...new Set(articleIds)],
     limit
   };
 }
@@ -51,6 +59,9 @@ class LocalVerifiedLawRetriever {
       .filter((entry) => entry.retrievalEnabled !== false)
       .filter((entry) => entry.legalDomain === normalized.legalDomain)
       .filter(
+        (entry) => normalized.articleIds.length === 0 || normalized.articleIds.includes(entry.id)
+      )
+      .filter(
         (entry) =>
           normalized.topics.length === 0 ||
           normalized.topics.some((topic) => entry.topics.includes(topic))
@@ -67,6 +78,7 @@ class LocalVerifiedLawRetriever {
       corpusVerifiedAt: this.#corpus.verifiedAt,
       legalDomain: normalized.legalDomain,
       results,
+      matchClassification: results.length > 0 ? 'candidate_path_available' : 'corpus_uncovered',
       trace: [
         {
           type: 'v0.law.retrieval.completed',

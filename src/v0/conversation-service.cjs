@@ -30,8 +30,16 @@ const {
   PRIVACY_AUTHORIZATION_STATUS,
   PRIVACY_POLICY_VERSION
 } = require('./contracts.cjs');
-const { prepareLegalSelfCheckInput } = require('./privacy-gateway.cjs');
+const { PrivacyGuard } = require('../agent/privacy-guard.cjs');
+const { createAuditTrailEvent } = require('../agent/audit-trail.cjs');
 const { analyzeInformationReadiness } = require('./clarification-planner.cjs');
+const { parseStructuredInput } = require('../agent/structured-input-parser.cjs');
+const { buildQuestionContracts } = require('../agent/question-contracts.cjs');
+const { resolveFactUpdates } = require('../agent/confidence-conflict-resolver.cjs');
+const {
+  createConversationMessage,
+  normalizeConversationMessage
+} = require('../agent/conversation-state.cjs');
 const { LocalVerifiedLawRetriever } = require('./law-retriever.cjs');
 const { COMPARISON_METHOD, compareFactsToLaw } = require('./law-comparison-engine.cjs');
 const {
@@ -59,6 +67,7 @@ const {
   TASK_TYPE_CLASSIFICATION_METHOD,
   classifyBusinessTask
 } = require('./task-type-classifier.cjs');
+const { parseProfessionalAnalysisIntent } = require('../v1/analysis-intent-parser.cjs');
 
 const TERMINAL_STATUSES = new Set([
   'completed',
@@ -126,7 +135,9 @@ function publicResult(session) {
     knownFacts: session.knownFacts,
     missingFields: session.missingFields,
     questions: session.questions,
+    questionContracts: session.questionContracts ?? [],
     lawRetrievalStatus: session.lawRetrievalStatus ?? 'not_run',
+    lawMatchClassification: session.lawMatchClassification ?? 'information_insufficient',
     lawReferences: session.lawReferences ?? [],
     lawCorpus: session.lawCorpus,
     lawReferenceDisclaimer:
@@ -151,21 +162,99 @@ function conversationTimeline(session) {
   if (!Array.isArray(session.timeline)) {
     session.timeline = session.messages.map((message) => ({ ...message }));
   }
+  session.timeline = session.timeline.map((message) =>
+    normalizeConversationMessage(message, session.id, randomUUID)
+  );
   return session.timeline;
 }
 
 function syncPendingAssistantTurn(session, receivedAt) {
   const timeline = conversationTimeline(session);
-  if (timeline.at(-1)?.role === 'assistant') timeline.pop();
   if (!Array.isArray(session.questions) || session.questions.length === 0) return;
-  timeline.push({
-    role: 'assistant',
-    redactedText: [
-      '为了继续核对，请确认以下信息：',
-      ...session.questions.map((question, index) => `问题 ${index + 1}：${question}`)
-    ].join('\n'),
-    receivedAt
-  });
+  const content = [
+    '为了继续核对，请确认以下信息：',
+    ...session.questions.map((question, index) => `问题 ${index + 1}：${question}`)
+  ].join('\n');
+  const metadata = {
+    clarificationRound: session.clarificationRound,
+    questionIds: (session.questionContracts ?? []).map((question) => question.questionId),
+    questionContracts: structuredClone(session.questionContracts ?? [])
+  };
+  const sameRoundMessage = timeline.findLast(
+    (message) =>
+      message.role === 'assistant' &&
+      message.messageType === 'clarification' &&
+      message.metadata?.clarificationRound === session.clarificationRound
+  );
+  if (sameRoundMessage) {
+    Object.assign(sameRoundMessage, {
+      content,
+      redactedText: content,
+      metadata
+    });
+    return;
+  }
+  timeline.push(
+    createConversationMessage({
+      id: randomUUID(),
+      sessionId: session.id,
+      role: 'assistant',
+      messageType: 'clarification',
+      createdAt: receivedAt,
+      content,
+      metadata
+    })
+  );
+}
+
+function syncLegalResultTurn(session, createdAt) {
+  if (session.taskType !== TASK_TYPES.LEGAL_SELF_CHECK) return;
+  if (!['completed', 'information_ready', 'clarification_limit_reached'].includes(session.status)) return;
+  const timeline = conversationTimeline(session);
+  if (timeline.some((message) => message.messageType === 'legal_result')) return;
+  const content =
+    session.status === 'clarification_limit_reached'
+      ? '现有信息仍不足，本次核对已按安全边界停止。'
+      : session.resultCards?.length > 0
+        ? `初步自检结果已生成，共整理 ${session.resultCards.length} 条可核验依据。`
+        : session.lawMatchClassification === 'corpus_uncovered'
+          ? '事实已整理完成，但当前语料库尚未覆盖可安全匹配的路径。'
+          : '事实已整理完成，现有条件未生成可核验的法规结果卡。';
+  timeline.push(
+    createConversationMessage({
+      id: randomUUID(),
+      sessionId: session.id,
+      role: 'assistant',
+      messageType: 'legal_result',
+      createdAt,
+      content,
+      metadata: {
+        resultCardCount: session.resultCards?.length ?? 0,
+        lawMatchClassification: session.lawMatchClassification
+      }
+    })
+  );
+}
+
+function appendV1AssistantTurn(session, messageType, content, createdAt, metadata = {}) {
+  const timeline = conversationTimeline(session);
+  const runId = metadata.runId ?? session.v1?.runId;
+  if (
+    timeline.some(
+      (message) => message.messageType === messageType && message.metadata?.runId === runId
+    )
+  ) return;
+  timeline.push(
+    createConversationMessage({
+      id: randomUUID(),
+      sessionId: session.id,
+      role: 'assistant',
+      messageType,
+      createdAt,
+      content,
+      metadata: { ...metadata, runId }
+    })
+  );
 }
 
 function historySummary(session) {
@@ -179,6 +268,7 @@ function historySummary(session) {
     clarificationRound: session.clarificationRound,
     messageCount: conversationTimeline(session).length,
     lawRetrievalStatus: session.lawRetrievalStatus ?? 'not_run',
+    lawMatchClassification: session.lawMatchClassification ?? 'information_insufficient',
     lawReferenceCount: session.lawReferences?.length ?? 0,
     lawComparisonStatus: session.lawComparisonStatus ?? 'not_run',
     lawComparisonCount: session.lawComparisons?.length ?? 0,
@@ -202,6 +292,7 @@ function historyDetail(session) {
     knownFacts: session.knownFacts,
     missingFields: session.missingFields,
     questions: session.questions,
+    questionContracts: session.questionContracts ?? [],
     lawReferences: session.lawReferences ?? [],
     lawCorpus: session.lawCorpus,
     lawReferenceDisclaimer:
@@ -217,11 +308,8 @@ function historyDetail(session) {
     resultCardError: session.resultCardError,
     error: session.error,
     v1: session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY ? session.v1 : undefined,
-    messages: conversationTimeline(session).map((message) => ({
-      role: message.role,
-      redactedText: message.redactedText,
-      receivedAt: message.receivedAt
-    }))
+    factChanges: session.factChanges ?? [],
+    messages: conversationTimeline(session).map((message) => structuredClone(message))
   };
 }
 
@@ -237,6 +325,10 @@ class LegalSelfCheckConversationService {
     this.taskClassifier = options.taskClassifier ?? classifyBusinessTask;
     if (typeof this.taskClassifier !== 'function') {
       throw new TypeError('taskClassifier must be a function.');
+    }
+    this.privacyGuard = options.privacyGuard ?? new PrivacyGuard();
+    if (!this.privacyGuard || typeof this.privacyGuard.prepare !== 'function') {
+      throw new TypeError('privacyGuard must provide prepare(input).');
     }
     this.lawRetriever = options.lawRetriever ?? new LocalVerifiedLawRetriever();
     if (!this.lawRetriever || typeof this.lawRetriever.search !== 'function') {
@@ -755,7 +847,7 @@ class LegalSelfCheckConversationService {
 
   start(input) {
     this.maybeCleanupInactiveSessions();
-    const prepared = prepareLegalSelfCheckInput(input);
+    const prepared = this.privacyGuard.prepare(input);
     if (prepared.status !== 'ready') {
       return { ...prepared };
     }
@@ -790,8 +882,17 @@ class LegalSelfCheckConversationService {
     }
 
     const now = this.clock();
+    const sessionId = this.idFactory();
+    const initialMessage = createConversationMessage({
+      id: randomUUID(),
+      sessionId,
+      role: 'user',
+      messageType: 'user_input',
+      createdAt: now,
+      content: prepared.redactedText
+    });
     const session = {
-      id: this.idFactory(),
+      id: sessionId,
       ownerId: this.ownerId,
       domainPackVersion: V0_DOMAIN_PACK_VERSION,
       ...(this.capabilitySnapshot
@@ -815,25 +916,18 @@ class LegalSelfCheckConversationService {
       clarificationRound: 0,
       createdAt: now,
       updatedAt: now,
-      messages: [
-        {
-          role: 'user',
-          redactedText: prepared.redactedText,
-          receivedAt: now
-        }
-      ],
-      timeline: [
-        {
-          role: 'user',
-          redactedText: prepared.redactedText,
-          receivedAt: now
-        }
-      ],
+      messages: [{ ...initialMessage }],
+      timeline: [{ ...initialMessage }],
       legalDomain: undefined,
       legalDomainLabel: undefined,
       knownFacts: {},
       missingFields: [],
       questions: [],
+      questionContracts: [],
+      factSources: {},
+      factChanges: [],
+      auditTrail: [],
+      requestedOutputFormats: prepared.requestedOutputFormats,
       lawRetrievalStatus: 'not_run',
       lawReferences: [],
       lawCorpus: undefined,
@@ -851,6 +945,10 @@ class LegalSelfCheckConversationService {
 
     if (session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY) {
       if (this.v1Runtime) {
+        const intent = parseProfessionalAnalysisIntent(prepared.redactedText);
+        if (intent.status === 'needs_clarification') {
+          return this.startV1Clarification(session, prepared, taskRecognition, intent);
+        }
         return this.startV1QueryPlan(session, prepared, taskRecognition);
       }
       session.status = 'professional_query_identified';
@@ -871,6 +969,7 @@ class LegalSelfCheckConversationService {
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);
+    syncLegalResultTurn(session, now);
     const sessionEvent = safeEvent('v0.session.created', {
       sessionId: session.id,
       clarificationRound: session.clarificationRound,
@@ -896,7 +995,7 @@ class LegalSelfCheckConversationService {
     return publicResult(session);
   }
 
-  answer(sessionId, userText) {
+  answer(sessionId, answerInput) {
     this.maybeCleanupInactiveSessions();
     const session = this.store.get(sessionId, this.ownerId);
     if (!session) {
@@ -923,8 +1022,42 @@ class LegalSelfCheckConversationService {
       );
     }
 
-    const prepared = prepareLegalSelfCheckInput({
-      userText,
+    const payload = typeof answerInput === 'string' ? { userText: answerInput } : answerInput;
+    let parsedInput;
+    try {
+      const pendingContracts = [...(session.questionContracts ?? [])];
+      const pendingFields = new Set(pendingContracts.map((contract) => contract.fieldName));
+      const inferredFields = Object.entries(session.factSources ?? {})
+        .filter(([, source]) => source?.source === 'model_inference')
+        .map(([field]) => field)
+        .filter((field) => !pendingFields.has(field));
+      pendingContracts.push(
+        ...buildQuestionContracts(inferredFields, inferredFields.map(() => ''))
+      );
+      if (/(?:更正|纠正|改为|修改为|之前说错了)/u.test(payload?.userText ?? '')) {
+        const correctionPendingFields = new Set(
+          pendingContracts.map((contract) => contract.fieldName)
+        );
+        const correctionFields = Object.keys(session.knownFacts ?? {}).filter(
+          (field) => !correctionPendingFields.has(field)
+        );
+        pendingContracts.push(
+          ...buildQuestionContracts(correctionFields, correctionFields.map(() => ''))
+        );
+      }
+      parsedInput = parseStructuredInput(payload, pendingContracts);
+    } catch {
+      return this.sessionError(
+        sessionId,
+        V0_ERROR_CODES.INVALID_USER_TEXT,
+        '补充回答与当前待确认的问题不一致，请重新选择或输入。'
+      );
+    }
+    const displayText =
+      parsedInput.userText ||
+      parsedInput.answers.map((answer) => answer.evidenceSpan).filter(Boolean).join('；');
+    const prepared = this.privacyGuard.prepare({
+      userText: displayText,
       privacyConsent: true,
       privacyPolicyVersion: authorization.policyVersion
     });
@@ -934,18 +1067,45 @@ class LegalSelfCheckConversationService {
 
     const now = this.clock();
     const timeline = conversationTimeline(session);
-    session.messages.push({
+    const userMessage = createConversationMessage({
+      id: randomUUID(),
+      sessionId: session.id,
       role: 'user',
-      redactedText: prepared.redactedText,
-      receivedAt: now
+      messageType: parsedInput.answers.length > 0 ? 'structured_answer' : 'user_input',
+      createdAt: now,
+      content: prepared.redactedText,
+      metadata:
+        parsedInput.answers.length > 0
+          ? {
+              answeredQuestionIds: parsedInput.answers.map((answer) => answer.questionId),
+              unresolvedFields: parsedInput.unresolvedFields
+            }
+          : undefined
     });
-    timeline.push({
-      role: 'user',
-      redactedText: prepared.redactedText,
-      receivedAt: now
+    session.messages.push({ ...userMessage });
+    timeline.push({ ...userMessage });
+    const resolvedFacts = resolveFactUpdates({
+      knownFacts: session.knownFacts,
+      factSources: session.factSources,
+      answers: parsedInput.answers,
+      changedAt: now
     });
+    session.knownFacts = resolvedFacts.knownFacts;
+    session.factSources = resolvedFacts.factSources;
+    (session.factChanges ??= []).push(...resolvedFacts.changes);
+    (session.auditTrail ??= []).push(
+      createAuditTrailEvent('conversation.answers.resolved', {
+        fields: parsedInput.answers.map((answer) => answer.field),
+        unresolvedFields: parsedInput.unresolvedFields,
+        changeCount: resolvedFacts.changes.length
+      }, now)
+    );
     session.clarificationRound += 1;
     session.updatedAt = now;
+
+    if (session.taskType === TASK_TYPES.PROFESSIONAL_DATA_QUERY) {
+      return this.continueV1Clarification(session, prepared);
+    }
 
     const analysis = this.analyze(session);
     this.applyAnalysis(session, analysis);
@@ -953,6 +1113,7 @@ class LegalSelfCheckConversationService {
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);
+    syncLegalResultTurn(session, now);
     const sessionEvent = safeEvent('v0.session.updated', {
       sessionId: session.id,
       clarificationRound: session.clarificationRound,
@@ -1005,6 +1166,14 @@ class LegalSelfCheckConversationService {
     if (additions.length === 0) return null;
 
     session.knownFacts = { ...Object.fromEntries(additions), ...session.knownFacts };
+    session.factSources ??= {};
+    for (const [field] of additions) {
+      session.factSources[field] = {
+        source: 'model_inference',
+        confidence: 0.5,
+        confirmedAt: this.clock()
+      };
+    }
     session.updatedAt = this.clock();
     const analysis = this.analyze(session);
     this.applyAnalysis(session, analysis);
@@ -1012,6 +1181,7 @@ class LegalSelfCheckConversationService {
     const lawRetrieval = this.retrieveLawReferences(session);
     const lawComparison = this.compareLawReferences(session);
     const resultCardBuild = this.buildResultCards(session);
+    syncLegalResultTurn(session, session.updatedAt);
     const mergeEvent = safeEvent('v0.session.supplemental-facts-merged', {
       sessionId: session.id,
       fields: additions.map(([field]) => field),
@@ -1100,6 +1270,61 @@ class LegalSelfCheckConversationService {
     );
   }
 
+  startV1Clarification(session, prepared, taskRecognition, intent) {
+    session.status = 'needs_clarification';
+    session.questions = [...intent.questions];
+    session.questionContracts = intent.questionContracts.map((contract) => ({ ...contract }));
+    session.missingFields = [...intent.missingFields];
+    session.v1 = {
+      status: 'needs_clarification',
+      intent,
+      plan: null,
+      result: null,
+      chart: null,
+      artifact: null
+    };
+    syncPendingAssistantTurn(session, session.updatedAt);
+    const event = safeEvent('v1.analysis.clarification-requested', {
+      sessionId: session.id,
+      missingFields: session.missingFields
+    });
+    session.trace.push(event);
+    session.latestTrace = [...prepared.trace, ...taskRecognition.trace, event];
+    this.store.create(session);
+    return { ...publicResult(session), v1: session.v1 };
+  }
+
+  continueV1Clarification(session, prepared) {
+    const combinedRedactedText = session.messages.map((message) => message.redactedText).join('\n');
+    const intent = parseProfessionalAnalysisIntent(combinedRedactedText);
+    session.v1 = { ...(session.v1 ?? {}), status: intent.status, intent };
+    session.questions = [...intent.questions];
+    session.questionContracts = intent.questionContracts.map((contract) => ({ ...contract }));
+    session.missingFields = [...intent.missingFields];
+    if (intent.status === 'needs_clarification') {
+      syncPendingAssistantTurn(session, session.updatedAt);
+      this.store.save(session, this.ownerId);
+      return { ...publicResult(session), v1: session.v1 };
+    }
+    return this.startV1QueryPlan(
+      session,
+      {
+        ...prepared,
+        redactedText: combinedRedactedText,
+        requestedOutputFormats: session.requestedOutputFormats
+      },
+      {
+        status: 'classified',
+        taskType: session.taskType,
+        taskTypeLabel: session.taskTypeLabel,
+        confidence: session.taskTypeRecognition?.confidence,
+        matchedSignals: session.taskTypeRecognition?.matchedSignals ?? [],
+        classificationMethod: session.taskTypeRecognition?.classificationMethod,
+        trace: []
+      }
+    );
+  }
+
   finishV1QueryPlan(session, prepared, taskRecognition, runId, taskInput, planned) {
     const now = this.clock();
     const taskInputReceipt = createProfessionalQueryTaskReceipt(taskInput);
@@ -1154,7 +1379,17 @@ class LegalSelfCheckConversationService {
     } catch {
       this.failV1ForAuditLog(session, false);
     }
-    this.store.create(session);
+    appendV1AssistantTurn(
+      session,
+      'data_plan',
+      planned.status === 'rejected'
+        ? '当前分析内容无法形成安全的只读计划，请调整数据范围或指标后重试。'
+        : '分析计划已生成，请核对数据范围、指标和预期输出后确认执行。',
+      now,
+      { runId, readOnly: planned.plan?.readOnly !== false }
+    );
+    if (this.store.get(session.id, this.ownerId)) this.store.save(session, this.ownerId);
+    else this.store.create(session);
     return { ...publicResult(session), v1: session.v1 };
   }
 
@@ -1550,6 +1785,20 @@ class LegalSelfCheckConversationService {
     } catch {
       this.failV1ForAuditLog(session, executed.executionAttempted === true);
     }
+    appendV1AssistantTurn(
+      session,
+      'data_result',
+      executed.status === 'completed'
+        ? '专业数据分析已完成，结果、图表和可下载产物已关联到本次任务。'
+        : '本次分析未能完成，请核对分析范围后重试。',
+      this.clock(),
+      {
+        runId: session.v1.runId,
+        status: executed.status,
+        rowCount: executed.result?.rowCount ?? 0,
+        artifactId: executed.artifact?.artifactId
+      }
+    );
     this.store.save(session, this.ownerId);
     return { ...publicResult(session), v1: session.v1 };
   }
@@ -2120,6 +2369,7 @@ class LegalSelfCheckConversationService {
     session.knownFacts = analysis.knownFacts ?? session.knownFacts;
     session.missingFields = analysis.missingFields ?? [];
     session.questions = analysis.questions ?? [];
+    session.questionContracts = analysis.questionContracts ?? [];
     session.error = analysis.error;
   }
 
@@ -2129,6 +2379,7 @@ class LegalSelfCheckConversationService {
       session.lawReferences = [];
       session.lawCorpus = undefined;
       session.lawRetrievalError = undefined;
+      session.lawMatchClassification = 'information_insufficient';
       return { trace: [] };
     }
 
@@ -2141,6 +2392,7 @@ class LegalSelfCheckConversationService {
       session.lawReferences = [];
       session.lawCorpus = undefined;
       session.lawRetrievalError = undefined;
+      session.lawMatchClassification = 'corpus_uncovered';
       return {
         trace: [
           ...plan.trace,
@@ -2158,7 +2410,8 @@ class LegalSelfCheckConversationService {
       const retrieval = this.lawRetriever.search({
         legalDomain: plan.legalDomain,
         topics: plan.topics,
-        limit: 3
+        articleIds: plan.candidateIds,
+        limit: 20
       });
       const validStatus = ['matched', 'no_match'].includes(retrieval?.status);
       const validResults = Array.isArray(retrieval?.results);
@@ -2181,6 +2434,8 @@ class LegalSelfCheckConversationService {
         retrievalMode: retrieval.retrievalMode
       };
       session.lawRetrievalError = undefined;
+      session.lawMatchClassification =
+        retrieval.status === 'matched' ? 'candidate_path_available' : 'corpus_uncovered';
       return { trace: [...plan.trace, ...retrieval.trace] };
     } catch {
       session.lawRetrievalStatus = 'failed';
@@ -2190,6 +2445,7 @@ class LegalSelfCheckConversationService {
         code: V0_ERROR_CODES.LAW_RETRIEVAL_FAILED,
         message: '法规检索不可用，未生成候选法规引用。'
       };
+      session.lawMatchClassification = 'information_insufficient';
       return {
         trace: [
           ...plan.trace,
@@ -2207,6 +2463,7 @@ class LegalSelfCheckConversationService {
       session.lawComparisonStatus = 'no_reference';
       session.lawComparisons = [];
       session.lawComparisonError = undefined;
+      session.lawMatchClassification = 'corpus_uncovered';
       return { trace: [] };
     }
     if (session.lawRetrievalStatus !== 'matched') {
@@ -2289,6 +2546,15 @@ class LegalSelfCheckConversationService {
       session.lawComparisonStatus = 'completed';
       session.lawComparisons = comparison.comparisons;
       session.lawComparisonError = undefined;
+      session.lawMatchClassification = comparison.comparisons.some(
+        (item) => item.comparisonStatus === 'potential_match'
+      )
+        ? 'potential_match'
+        : comparison.comparisons.some(
+              (item) => item.comparisonStatus === 'insufficient_for_comparison'
+            )
+          ? 'information_insufficient'
+          : 'conditions_not_met';
       return {
         trace: [
           safeEvent('v0.law.comparison.completed', {
@@ -2308,6 +2574,7 @@ class LegalSelfCheckConversationService {
         code: V0_ERROR_CODES.LAW_COMPARISON_FAILED,
         message: '事实与法条比对不可用，未生成逐条匹配结果。'
       };
+      session.lawMatchClassification = 'information_insufficient';
       return {
         trace: [
           safeEvent('v0.law.comparison.failed', {

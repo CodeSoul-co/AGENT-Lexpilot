@@ -118,7 +118,7 @@
           "legalDomain": "labor",
           "piiRedacted": true,
           "clarificationRound": 0,
-          "questionCount": 1,
+          "questionCount": 2,
           "legalConclusionGenerated": false,
           "businessTraceTypes": [
             "v0.input.received",
@@ -164,7 +164,7 @@
     "legalDomain": "labor",
     "piiRedacted": true,
     "clarificationRound": 0,
-    "questionCount": 1,
+    "questionCount": 2,
     "legalConclusionGenerated": false,
     "businessTraceTypes": [
       "v0.input.received",

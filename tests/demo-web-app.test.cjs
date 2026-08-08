@@ -676,7 +676,8 @@ test('runs start, history, detail, and confirmed deletion through the web API', 
     const detail = await jsonRequest(
       `${baseUrl}/api/sessions/${started.body.sessionId}`
     );
-    assert.equal(detail.body.session.messages.length, 1);
+    assert.equal(detail.body.session.messages.length, 2);
+    assert.equal(detail.body.session.messages.at(-1).messageType, 'legal_result');
     assert.equal(detail.body.session.resultCards.length, 1);
 
     const unconfirmed = await jsonRequest(
@@ -774,10 +775,12 @@ test('supports a clarification answer without accepting undeclared request field
     assert.deepEqual(detail.body.session.messages.map((message) => message.role), [
       'user',
       'assistant',
-      'user'
+      'user',
+      'assistant'
     ]);
     assert.equal(detail.body.session.messages.filter((message) => message.role === 'user').length, 2);
     assert.match(detail.body.session.messages[1].redactedText, /继续核对|需要确认/);
+    assert.equal(detail.body.session.messages.at(-1).messageType, 'legal_result');
 
     const invalid = await jsonRequest(`${baseUrl}/api/sessions`, {
       method: 'POST',

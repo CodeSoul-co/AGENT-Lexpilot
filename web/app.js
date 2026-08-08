@@ -45,6 +45,7 @@ const state = {
   artifacts: [],
   lastExecutionMs: null,
   pendingSandboxPlanId: null,
+  pendingStructuredAnswers: [],
   historyQuery: '',
   lastSubmittedText: ''
 };
@@ -64,14 +65,14 @@ const factLabels = {
   workArrangementOutcome: '工作安排', performanceRemediationOutcome: '培训或调岗',
   objectiveChangeImpact: '客观变化影响', contractChangeNegotiationOutcome: '合同协商',
   relationshipStatus: '关系状态', disputeType: '争议类型', evidenceStatus: '证据情况',
-  repaymentTermStatus: '还款约定', repaymentStatus: '还款状态', taxpayerType: '涉税主体',
+  lendingIssueType: '借贷事项', repaymentTermStatus: '还款约定', repaymentStatus: '还款状态', taxpayerType: '涉税主体',
   taxIssueType: '税务事项', taxPeriod: '税务期间', rightType: '权利类型',
   allegedAct: '相关行为', authorizationStatus: '授权情况'
 };
 const valueLabels = {
   mentioned: '已说明', unknown: '尚不清楚',
   signed: '已签订', not_signed: '未签订',
-  dismissal: '辞退', unpaid_wages: '拖欠工资', social_insurance: '社会保险', overtime: '加班',
+  contract: '劳动合同', probation: '试用期', dismissal: '辞退', employee_termination: '主动离职', unpaid_wages: '拖欠工资', social_insurance: '社会保险', overtime: '加班',
   medical_or_non_work_injury: '患病或非因工受伤', performance: '不能胜任工作',
   objective_change: '客观情况发生变化', other: '其他原因',
   written_notice_30_days: '已提前三十天书面通知', extra_month_salary: '已额外支付一个月工资',
@@ -87,6 +88,7 @@ const valueLabels = {
   children: '子女事项', property: '财产事项', debt: '债务事项', marriage_status: '婚姻关系',
   available: '已有证据', none_stated: '尚未说明证据',
   agreed: '已有约定', not_agreed: '没有约定', unpaid: '尚未归还', partial: '部分归还', paid: '已经归还',
+  guarantee: '保证责任', limitation: '诉讼时效', repayment_interest: '还款与利息', loan_formation: '借款成立',
   individual: '个人', company: '公司', self_employed: '个体经营者',
   filing: '税务申报', withholding: '代扣代缴', additional_tax: '补缴税款', invoice: '发票事项', general: '一般税务事项',
   written_work: '文字作品', image: '图片作品', software: '软件', trademark: '商标', patent: '专利',
@@ -592,6 +594,7 @@ function resetConversation(mode = state.mode) {
   state.activeStatus = null;
   state.artifacts = [];
   state.pendingSandboxPlanId = null;
+  state.pendingStructuredAnswers = [];
   closeConfirmModal();
   renderArtifacts();
   elements.conversation.replaceChildren();
@@ -740,14 +743,24 @@ function questionQuickOptions(question) {
   return [];
 }
 
-function useQuickAnswer(answer) {
+function useQuickAnswer(answer, contract) {
   const current = elements.input.value.trim();
   elements.input.value = current ? `${current}；${answer}` : answer;
+  if (contract) {
+    state.pendingStructuredAnswers = state.pendingStructuredAnswers.filter(
+      (item) => item.questionId !== contract.questionId
+    );
+    state.pendingStructuredAnswers.push({
+      questionId: contract.questionId,
+      field: contract.fieldName,
+      value: contract.value
+    });
+  }
   elements.characterCount.textContent = String(elements.input.value.length);
   elements.input.focus();
 }
 
-function addQuestions(questions) {
+function addQuestions(questions, questionContracts = []) {
   const row = node('div', 'message assistant question-message');
   row.append(node('div', 'avatar', 'L'));
   const bubble = node('div', 'bubble question-bubble');
@@ -759,13 +772,27 @@ function addQuestions(questions) {
   questions.forEach((question, index) => {
     const item = node('section', 'question-item');
     item.append(node('span', 'question-number', `问题 ${index + 1}/${questions.length}`), node('p', '', question));
-    const options = questionQuickOptions(question);
+    const contract = questionContracts[index];
+    const options = contract?.options?.length
+      ? contract.options.map((option) => ({ label: option.label, value: option.value }))
+      : questionQuickOptions(question).map((label) => ({ label, value: null }));
     if (options.length) {
       const actions = node('div', 'quick-answer-list');
-      for (const answer of options) {
-        const button = node('button', 'quick-answer', answer);
+      for (const option of options) {
+        const button = node('button', 'quick-answer', option.label);
         button.type = 'button';
-        button.addEventListener('click', () => useQuickAnswer(answer));
+        button.addEventListener('click', () =>
+          useQuickAnswer(
+            option.label,
+            option.value === null
+              ? null
+              : {
+                  questionId: contract.questionId,
+                  fieldName: contract.fieldName,
+                  value: option.value
+                }
+          )
+        );
         actions.append(button);
       }
       item.append(actions);
@@ -1562,6 +1589,7 @@ async function openDataSourceAdmin() {
 }
 
 function renderResult(result, options = {}) {
+  state.pendingStructuredAnswers = [];
   state.activeSessionId = result.sessionId ?? state.activeSessionId;
   state.activeStatus = result.status;
   elements.deleteSession.classList.add('hidden');
@@ -1587,7 +1615,9 @@ function renderResult(result, options = {}) {
   if (result.status === 'clarification_limit_reached') addIncompleteSummary(result);
   else if (result.error) addTerminalError(result);
   else if (v1) {
-    if (result.status === 'awaiting_confirmation') {
+    if (hasQuestions && !options.skipAssistantTurn) {
+      addQuestions(result.questions, result.questionContracts ?? []);
+    } else if (result.status === 'awaiting_confirmation') {
       if (result.assistantMessage) addMessage('assistant', customerSafeMessage(result.assistantMessage), '分析内容');
       addV1PlanCard(result);
       openConfirmModal(result);
@@ -1604,7 +1634,9 @@ function renderResult(result, options = {}) {
       addSchemaDriftCard(result);
     } else addV1Result(result);
   }
-  else if (hasQuestions && !options.skipAssistantTurn) addQuestions(result.questions);
+  else if (hasQuestions && !options.skipAssistantTurn) {
+    addQuestions(result.questions, result.questionContracts ?? []);
+  }
   else if (finalSelfCheck) {
     addSelfCheckResult(result);
   }
@@ -1755,7 +1787,15 @@ async function submitText(text) {
   elements.welcome.classList.add('hidden'); addMessage('user', text); addLoading(); setBusy(true);
   try {
     const result = continuing
-      ? await api(`/api/sessions/${state.activeSessionId}/answers`, { method: 'POST', body: JSON.stringify({ userText: text }) })
+      ? await api(`/api/sessions/${state.activeSessionId}/answers`, {
+          method: 'POST',
+          body: JSON.stringify({
+            userText: text,
+            ...(state.pendingStructuredAnswers.length > 0
+              ? { answers: state.pendingStructuredAnswers }
+              : {})
+          })
+        })
       : await api('/api/sessions', {
           method: 'POST',
           body: JSON.stringify({

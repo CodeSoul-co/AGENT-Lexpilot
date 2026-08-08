@@ -3,6 +3,7 @@ const { LEGAL_DOMAINS, DOMAIN_LABELS, classifyLegalDomain } = require('./legal-d
 const {
   assessLaborArticle40Facts
 } = require('./labor-article-40-facts.cjs');
+const { buildQuestionContracts } = require('../agent/question-contracts.cjs');
 
 const PROHIBITED_CLARIFICATION_TERMS = Object.freeze([
   '劳动关系',
@@ -35,7 +36,7 @@ const DOMAIN_REQUIREMENTS = Object.freeze({
   [LEGAL_DOMAINS.LABOR]: [
     { field: 'employmentDuration', question: '您大约工作了多久？' },
     { field: 'writtenContractStatus', question: '双方有没有签过书面合同？' },
-    { field: 'issueType', question: '这次主要是被辞退、工资没发、社保，还是其他工作问题？' }
+    { field: 'issueType', question: '这次主要涉及劳动合同、试用期、辞退、主动离职、工资、加班、社保，还是其他工作问题？' }
   ],
   [LEGAL_DOMAINS.MARRIAGE_FAMILY]: [
     { field: 'relationshipStatus', question: '您现在是已经结婚、已经离婚，还是没有登记但一直一起生活？' },
@@ -163,10 +164,13 @@ function extractFacts(domain, text, context = {}) {
           ]
         ]),
         issueType: firstCategory(text, [
-          ['dismissal', /辞退|开除|解雇|不用来了|不用来|被离职/],
+          ['probation', /试用期|试用工资|试用不合格/],
+          ['dismissal', /解除(?:劳动)?合同|辞退|开除|解雇|不用来了|不用来|被离职/],
+          ['employee_termination', /主动辞职|我辞职|本人离职|提前三十天离职/],
           ['unpaid_wages', /欠薪|拖欠工资|工资没发|未发工资/],
           ['social_insurance', /社保|五险/],
-          ['overtime', /加班/]
+          ['overtime', /加班/],
+          ['contract', /劳动合同|书面合同|无固定期限合同|没签合同|未签合同/]
         ]),
         dismissalGround: firstCategory(text, [
           ['medical_or_non_work_injury', /患病|生病|非因工负伤|不是工伤.{0,4}(?:受伤|负伤)|医疗期|休养/],
@@ -249,6 +253,13 @@ function extractFacts(domain, text, context = {}) {
       });
     case LEGAL_DOMAINS.PRIVATE_LENDING:
       return compactFacts({
+        lendingIssueType: firstCategory(text, [
+          ['guarantee', /保证人|担保人|担保|保证责任/],
+          ['limitation', /诉讼时效|超过三年|过了三年|很多年没要/],
+          ['repayment_interest', /利息|逾期|还款|没还|未还|不还/],
+          ['loan_formation', /借款成立|是否成立|本金|实际交付/],
+          ['repayment_interest', /借款|借钱|借条|转账/]
+        ]),
         evidenceStatus: firstCategory(text, [
           ['none_stated', /没有借条|没借条|没有证据/],
           ['available', /借条|转账记录|聊天记录|借款合同|收据/]
@@ -312,7 +323,10 @@ function laborArticle40ConditionalRequirements(knownFacts) {
     return [];
   }
   const assessment = assessLaborArticle40Facts({ piiRedacted: true, knownFacts });
-  if (assessment.status === 'not_supported_by_declared_ground') return [];
+  if (
+    assessment.status === 'not_supported_by_declared_ground' ||
+    assessment.status === 'conditions_not_met'
+  ) return [];
   return assessment.missingFields
     .filter((field) => Object.hasOwn(LABOR_ARTICLE_40_QUESTIONS, field))
     .map((field) => ({ field, question: LABOR_ARTICLE_40_QUESTIONS[field] }));
@@ -408,6 +422,12 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
       questions: limitReached
         ? []
         : [DOMAIN_CLARIFICATION_QUESTION],
+      questionContracts: limitReached
+        ? []
+        : buildQuestionContracts(
+            [{ field: 'legalDomain', question: DOMAIN_CLARIFICATION_QUESTION }],
+            [DOMAIN_CLARIFICATION_QUESTION]
+          ),
       error: limitReached
         ? { code: V0_ERROR_CODES.INSUFFICIENT_INFORMATION, message: '达到追问上限后仍无法确认领域。' }
         : undefined,
@@ -415,9 +435,11 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
     };
   }
 
+  // Existing confirmed facts win over later heuristic extraction. Explicit current-turn
+  // answers are resolved into existingKnownFacts before this planner is called.
   const knownFacts = {
-    ...existingKnownFacts,
-    ...extractFacts(classification.domain, preparedInput.redactedText, answerContext)
+    ...extractFacts(classification.domain, preparedInput.redactedText, answerContext),
+    ...existingKnownFacts
   };
   const requirements = DOMAIN_REQUIREMENTS[classification.domain];
   const baseMissingFields = requirements.filter(
@@ -450,6 +472,7 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
       missingFields: [],
       clarificationRound,
       questions: [],
+      questionContracts: [],
       trace
     };
   }
@@ -465,6 +488,7 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
       missingFields: missingFields.map((item) => item.field),
       clarificationRound,
       questions: [],
+      questionContracts: [],
       error: {
         code: V0_ERROR_CODES.INSUFFICIENT_INFORMATION,
         message: '达到追问上限后信息仍不完整。'
@@ -473,6 +497,10 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
     };
   }
 
+  const selectedRequirements = missingFields.slice(0, 2);
+  const selectedQuestions = selectedRequirements.map((item) =>
+    contextualQuestion(item, preparedInput.redactedText, answerContext)
+  );
   return {
     status: 'needs_clarification',
     domainPackVersion: V0_DOMAIN_PACK_VERSION,
@@ -483,9 +511,8 @@ function analyzeInformationReadiness(preparedInput, options = {}) {
     knownFacts,
     missingFields: missingFields.map((item) => item.field),
     clarificationRound,
-    questions: missingFields
-      .slice(0, 2)
-      .map((item) => contextualQuestion(item, preparedInput.redactedText, answerContext)),
+    questions: selectedQuestions,
+    questionContracts: buildQuestionContracts(selectedRequirements, selectedQuestions),
     trace
   };
 }

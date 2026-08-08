@@ -151,6 +151,36 @@ test('first V1 submission stores an awaiting_confirmation plan and refuses answe
   }
 });
 
+test('professional analysis asks only for missing metrics and time before planning', () => {
+  const { service, cleanup } = createService();
+  try {
+    const started = service.start(
+      startRequest('请分析案例库中的未签劳动合同案件。')
+    );
+    assert.equal(started.taskType, 'professional_data_query');
+    assert.equal(started.status, 'needs_clarification');
+    assert.deepEqual(started.missingFields, ['analysisMetrics', 'analysisTimeRange']);
+    assert.deepEqual(
+      started.questionContracts.map((question) => question.questionId),
+      ['analysis-metrics', 'analysis-time-range']
+    );
+
+    const planned = service.answer(started.sessionId, '胜诉率和案件数量，近三年。');
+    assert.equal(planned.status, 'awaiting_confirmation');
+    assert.equal(planned.v1.plan.readOnly, true);
+    assert.equal(planned.v1.result, null);
+    const history = service.getHistory(started.sessionId);
+    assert.deepEqual(history.messages.map((message) => message.messageType), [
+      'user_input',
+      'clarification',
+      'user_input',
+      'data_plan'
+    ]);
+  } finally {
+    cleanup();
+  }
+});
+
 test('confirmed execution completes the session and appends an immutable log entry', () => {
   const { service, cleanup } = createService();
   try {

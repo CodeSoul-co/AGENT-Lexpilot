@@ -15,9 +15,12 @@ const DEFAULT_LAW_CORPUS_PATH = path.resolve(
 const SUPPORTED_DOMAINS = new Set(Object.values(LEGAL_DOMAINS));
 const OFFICIAL_SOURCE_HOSTS = new Set([
   'flk.npc.gov.cn',
+  'www.npc.gov.cn',
   'www.samr.gov.cn',
   'tjca.miit.gov.cn',
-  'www.cnipa.gov.cn'
+  'www.cnipa.gov.cn',
+  'www.nsfc.gov.cn',
+  'shanxi.chinatax.gov.cn'
 ]);
 
 function sha256(value) {
@@ -55,6 +58,53 @@ function validateOfficialUrl(value, fieldName) {
   }
 }
 
+function validateStringArray(value, fieldName) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, `${fieldName} 必须是非空数组。`);
+  }
+  value.forEach((item) => requireNonEmptyString(item, `${fieldName}[]`));
+}
+
+function validateMatching(matching) {
+  if (!matching || typeof matching !== 'object' || Array.isArray(matching)) {
+    throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, 'entry.matching 必须是对象。');
+  }
+  const allowed = new Set([
+    'factRequirements',
+    'factExclusions',
+    'safeStopFields',
+    'excerptSignals',
+    'unresolvedElements'
+  ]);
+  if (Object.keys(matching).some((key) => !allowed.has(key))) {
+    throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, 'entry.matching 包含未声明字段。');
+  }
+  for (const field of ['factRequirements', 'factExclusions']) {
+    const rules = matching[field];
+    if (!rules || typeof rules !== 'object' || Array.isArray(rules) || Object.keys(rules).length === 0) {
+      throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, `entry.matching.${field} 必须是非空对象。`);
+    }
+    for (const [factName, values] of Object.entries(rules)) {
+      requireNonEmptyString(factName, `entry.matching.${field} field`);
+      validateStringArray(values, `entry.matching.${field}.${factName}`);
+    }
+  }
+  validateStringArray(matching.safeStopFields, 'entry.matching.safeStopFields');
+  validateStringArray(matching.excerptSignals, 'entry.matching.excerptSignals');
+  validateStringArray(matching.unresolvedElements, 'entry.matching.unresolvedElements');
+  const requirementFields = Object.keys(matching.factRequirements).sort();
+  const stopFields = [...new Set(matching.safeStopFields)].sort();
+  if (JSON.stringify(requirementFields) !== JSON.stringify(stopFields)) {
+    throw new V0ContractError(
+      V0_ERROR_CODES.LAW_CORPUS_INVALID,
+      'entry.matching.safeStopFields 必须完整覆盖结构化事实条件。'
+    );
+  }
+  if (matching.unresolvedElements.some((value) => !/^[a-z][a-z0-9_]*$/.test(value))) {
+    throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, '未解决要素必须使用安全代码。');
+  }
+}
+
 function validateEntry(entry, seenIds) {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, '法规条目必须是对象。');
@@ -71,6 +121,7 @@ function validateEntry(entry, seenIds) {
   }
   validateDate(entry.publicationDate, 'entry.publicationDate');
   validateDate(entry.effectiveDate, 'entry.effectiveDate');
+  validateDate(entry.verifiedAt, 'entry.verifiedAt');
   if (entry.status !== 'effective') {
     throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, 'V0 最小语料只接受已生效条目。');
   }
@@ -78,12 +129,14 @@ function validateEntry(entry, seenIds) {
     throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, 'entry.topics 必须是非空数组。');
   }
   for (const topic of entry.topics) requireNonEmptyString(topic, 'entry.topics[]');
-  if (entry.retrievalEnabled !== undefined && typeof entry.retrievalEnabled !== 'boolean') {
+  if (entry.retrievalEnabled !== true) {
     throw new V0ContractError(
       V0_ERROR_CODES.LAW_CORPUS_INVALID,
       'entry.retrievalEnabled 必须是布尔值。'
     );
   }
+  requireNonEmptyString(entry.selectionReason, 'entry.selectionReason');
+  validateMatching(entry.matching);
   if (sha256(entry.articleText) !== entry.articleTextSha256) {
     throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, `法规正文摘要不匹配：${entry.id}`);
   }
@@ -94,6 +147,14 @@ function validateEntry(entry, seenIds) {
   requireNonEmptyString(entry.source.textAuthority, 'entry.source.textAuthority');
   validateOfficialUrl(entry.source.metadataUrl, 'entry.source.metadataUrl');
   validateOfficialUrl(entry.source.textUrl, 'entry.source.textUrl');
+  if (entry.effectiveUntil !== undefined) validateDate(entry.effectiveUntil, 'entry.effectiveUntil');
+  if (entry.futureVersion !== undefined) {
+    if (!entry.futureVersion || typeof entry.futureVersion !== 'object' || Array.isArray(entry.futureVersion)) {
+      throw new V0ContractError(V0_ERROR_CODES.LAW_CORPUS_INVALID, 'entry.futureVersion 必须是对象。');
+    }
+    validateDate(entry.futureVersion.effectiveDate, 'entry.futureVersion.effectiveDate');
+    validateOfficialUrl(entry.futureVersion.url, 'entry.futureVersion.url');
+  }
 }
 
 function validateLawCorpus(corpus) {

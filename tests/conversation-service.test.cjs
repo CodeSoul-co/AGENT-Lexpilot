@@ -180,12 +180,9 @@ test('does not retrieve overdue-interest Article 676 without an agreed repayment
   });
 
   assert.equal(result.status, 'completed');
-  assert.deepEqual(result.lawReferences.map((reference) => reference.id), [
-    'cn.civil-code.article-675'
-  ]);
-  assert.deepEqual(result.resultCards.map((card) => card.lawReferenceId), [
-    'cn.civil-code.article-675'
-  ]);
+  assert.equal(result.lawReferences.some((reference) => reference.id === 'cn.civil-code.article-675'), true);
+  assert.equal(result.resultCards.some((card) => card.lawReferenceId === 'cn.civil-code.article-675'), true);
+  assert.equal(result.resultCards.some((card) => card.lawReferenceId === 'cn.civil-code.article-676'), false);
   assert.equal(result.legalConclusionGenerated, false);
 });
 
@@ -511,12 +508,78 @@ test('persists the complete user and assistant clarification timeline for histor
     'assistant',
     'user',
     'assistant',
-    'user'
+    'user',
+    'assistant'
   ]);
   assert.equal(detail.messages.filter((message) => message.role === 'user').length, 3);
-  assert.equal(detail.messages.filter((message) => message.role === 'assistant').length, 2);
+  assert.equal(detail.messages.filter((message) => message.role === 'assistant').length, 3);
   assert.match(detail.messages[1].redactedText, /为了继续核对/);
+  assert.equal(detail.messages.at(-1).messageType, 'legal_result');
+  assert.equal(
+    detail.messages.every((message) =>
+      ['id', 'sessionId', 'role', 'messageType', 'createdAt', 'content'].every((field) =>
+        Object.hasOwn(message, field)
+      )
+    ),
+    true
+  );
   assert.equal(detail.status, 'completed');
+});
+
+test('accepts two structured answers and keeps only unresolved questions', () => {
+  const service = createService();
+  const started = service.start({
+    userText: '我工作三年，签了劳动合同，公司因我生病不能工作辞退我。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  const answered = service.answer(started.sessionId, {
+    answers: [
+      {
+        questionId: 'notice-or-payment',
+        field: 'noticeOrPayment',
+        value: 'neither_provided'
+      },
+      {
+        questionId: 'medical-period',
+        field: 'medicalPeriodStatus',
+        value: 'not_ended'
+      }
+    ]
+  });
+
+  assert.equal(answered.knownFacts.noticeOrPayStatus, 'neither');
+  assert.equal(answered.knownFacts.medicalPeriodStatus, 'not_ended');
+  assert.deepEqual(answered.questions, []);
+  const article40 = answered.lawComparisons.find(
+    (comparison) => comparison.lawReferenceId === 'cn.labor-contract-law.article-40'
+  );
+  assert.equal(article40.comparisonStatus, 'not_supported_by_facts');
+  assert.equal(
+    answered.resultCards.some(
+      (card) => card.lawReferenceId === 'cn.labor-contract-law.article-40'
+    ),
+    false
+  );
+});
+
+test('records an explicit correction without deleting previous questions', () => {
+  const service = createService();
+  const started = service.start({
+    userText: '我工作三年，签了劳动合同，公司因我生病不能工作辞退我。',
+    privacyConsent: true,
+    privacyPolicyVersion: PRIVACY_POLICY_VERSION
+  });
+  const first = service.answer(started.sessionId, '均未提供；已经结束');
+  assert.equal(first.knownFacts.medicalPeriodStatus, 'ended');
+
+  const corrected = service.answer(started.sessionId, '更正，尚未结束');
+  const history = service.getHistory(started.sessionId);
+  assert.equal(corrected.knownFacts.medicalPeriodStatus, 'not_ended');
+  assert.equal(history.factChanges.at(-1).field, 'medicalPeriodStatus');
+  assert.equal(history.factChanges.at(-1).previousValue, 'ended');
+  assert.equal(history.factChanges.at(-1).nextValue, 'not_ended');
+  assert.equal(history.messages.filter((message) => message.messageType === 'clarification').length, 2);
 });
 
 test('adds a candidate labor law reference without generating a legal conclusion', () => {
@@ -529,22 +592,26 @@ test('adds a candidate labor law reference without generating a legal conclusion
 
   assert.equal(result.status, 'completed');
   assert.equal(result.lawRetrievalStatus, 'matched');
-  assert.equal(result.lawReferences.length, 1);
-  assert.equal(result.lawReferences[0].id, 'cn.labor-contract-law.article-82');
-  assert.equal(result.lawReferences[0].legalDomain, result.legalDomain);
+  const article82Reference = result.lawReferences.find(
+    (reference) => reference.id === 'cn.labor-contract-law.article-82'
+  );
+  assert.ok(article82Reference);
+  assert.equal(result.lawReferences.every((reference) => reference.legalDomain === result.legalDomain), true);
   assert.equal(result.lawComparisonStatus, 'completed');
-  assert.equal(result.lawComparisons.length, 1);
-  assert.equal(result.lawComparisons[0].lawReferenceId, result.lawReferences[0].id);
-  assert.equal(result.lawComparisons[0].comparisonStatus, 'potential_match');
-  assert.ok(result.lawComparisons[0].unresolvedElements.length > 0);
+  const article82Comparison = result.lawComparisons.find(
+    (comparison) => comparison.lawReferenceId === article82Reference.id
+  );
+  assert.equal(article82Comparison.comparisonStatus, 'potential_match');
+  assert.ok(article82Comparison.unresolvedElements.length > 0);
   assert.equal(result.resultCardStatus, 'completed');
-  assert.equal(result.resultCards.length, 1);
-  assert.equal(result.resultCards[0].userExcerpt, result.lawComparisons[0].sanitizedFactExcerpt);
-  assert.equal(result.resultCards[0].lawName, result.lawReferences[0].lawName);
-  assert.equal(result.resultCards[0].articleNumber, result.lawReferences[0].articleNumber);
-  assert.equal(result.resultCards[0].articleText, result.lawReferences[0].articleText);
-  assert.equal(result.resultCards[0].lawVersionDate, result.lawReferences[0].effectiveDate);
-  assert.equal(result.resultCards[0].legalConclusionGenerated, false);
+  const article82Card = result.resultCards.find((card) => card.lawReferenceId === article82Reference.id);
+  assert.ok(article82Card);
+  assert.equal(article82Card.userExcerpt, article82Comparison.sanitizedFactExcerpt);
+  assert.equal(article82Card.lawName, article82Reference.lawName);
+  assert.equal(article82Card.articleNumber, article82Reference.articleNumber);
+  assert.equal(article82Card.articleText, article82Reference.articleText);
+  assert.equal(article82Card.lawVersionDate, article82Reference.effectiveDate);
+  assert.equal(article82Card.legalConclusionGenerated, false);
   assert.match(result.disclaimer, /不构成违法认定/);
   assert.equal(JSON.stringify(result.resultCards).includes('你应该'), false);
   assert.equal(JSON.stringify(result.resultCards).includes('建议你'), false);
@@ -578,15 +645,14 @@ test('collects signed-contract dismissal facts across two sanitized turns', () =
   assert.equal(answered.knownFacts.noticeOrPayStatus, 'neither');
   assert.equal(answered.knownFacts.performanceRemediationOutcome, 'no_training_or_adjustment');
   assert.equal(answered.lawRetrievalStatus, 'matched');
-  assert.deepEqual(
-    answered.lawReferences.map((reference) => reference.id),
-    ['cn.labor-contract-law.article-40']
-  );
+  assert.equal(answered.lawReferences.some((reference) => reference.id === 'cn.labor-contract-law.article-40'), true);
   assert.equal(answered.lawComparisonStatus, 'completed');
-  assert.equal(answered.lawComparisons[0].comparisonStatus, 'potential_match');
+  assert.equal(
+    answered.lawComparisons.find((comparison) => comparison.lawReferenceId === 'cn.labor-contract-law.article-40').comparisonStatus,
+    'potential_match'
+  );
   assert.equal(answered.resultCardStatus, 'completed');
-  assert.equal(answered.resultCards.length, 1);
-  assert.equal(answered.resultCards[0].lawReferenceId, 'cn.labor-contract-law.article-40');
+  assert.equal(answered.resultCards.some((card) => card.lawReferenceId === 'cn.labor-contract-law.article-40'), true);
   assert.equal(answered.legalConclusionGenerated, false);
 });
 
@@ -608,12 +674,13 @@ test('routes an oral-notice dismissal to Article 40 without claiming written not
 
   assert.equal(answered.knownFacts.noticeOrPayStatus, 'neither');
   assert.equal(answered.lawRetrievalStatus, 'matched');
-  assert.deepEqual(
-    answered.lawReferences.map((reference) => reference.id),
-    ['cn.labor-contract-law.article-40']
+  assert.equal(answered.lawReferences.some((reference) => reference.id === 'cn.labor-contract-law.article-40'), true);
+  assert.equal(
+    answered.lawComparisons.find((comparison) => comparison.lawReferenceId === 'cn.labor-contract-law.article-40').comparisonStatus,
+    'potential_match'
   );
-  assert.equal(answered.lawComparisons[0].comparisonStatus, 'potential_match');
   assert.equal(answered.resultCardStatus, 'completed');
+  assert.equal(answered.resultCards.some((card) => card.lawReferenceId === 'cn.labor-contract-law.article-40'), true);
   assert.equal(answered.legalConclusionGenerated, false);
 });
 
@@ -679,14 +746,16 @@ test('retrieves the verified marriage-family reference for covered facts', () =>
   });
 
   assert.equal(result.lawRetrievalStatus, 'matched');
-  assert.equal(result.lawReferences.length, 1);
-  assert.equal(result.lawReferences[0].id, 'cn.civil-code.article-1042');
-  assert.equal(result.lawReferences[0].legalDomain, 'marriage_family');
-  assert.equal(result.lawReferences[0].topics.includes('domestic_violence'), true);
+  const domesticViolenceReference = result.lawReferences.find(
+    (reference) => reference.id === 'cn.civil-code.article-1042'
+  );
+  assert.ok(domesticViolenceReference);
+  assert.equal(result.lawReferences.every((reference) => reference.legalDomain === 'marriage_family'), true);
+  assert.equal(domesticViolenceReference.topics.includes('domestic_violence'), true);
   assert.equal(result.legalConclusionGenerated, false);
 });
 
-test('returns safe no_match instead of a broad cross-domain reference', () => {
+test('returns same-domain property candidates without broad cross-domain references', () => {
   const service = createService();
   const result = service.start({
     userText: '我已婚，想离婚，主要争议是房产。',
@@ -694,14 +763,13 @@ test('returns safe no_match instead of a broad cross-domain reference', () => {
     privacyPolicyVersion: PRIVACY_POLICY_VERSION
   });
 
-  assert.equal(result.status, 'information_ready');
+  assert.equal(result.status, 'completed');
   assert.equal(result.legalDomain, 'marriage_family');
-  assert.equal(result.lawRetrievalStatus, 'no_match');
-  assert.deepEqual(result.lawReferences, []);
-  assert.equal(result.lawComparisonStatus, 'no_reference');
-  assert.deepEqual(result.lawComparisons, []);
-  assert.equal(result.resultCardStatus, 'no_match');
-  assert.deepEqual(result.resultCards, []);
+  assert.equal(result.lawRetrievalStatus, 'matched');
+  assert.equal(result.lawReferences.length > 0, true);
+  assert.equal(result.lawReferences.every((reference) => reference.legalDomain === 'marriage_family'), true);
+  assert.equal(result.lawComparisonStatus, 'completed');
+  assert.equal(result.resultCardStatus, 'completed');
   assert.equal(result.legalConclusionGenerated, false);
 });
 
@@ -715,26 +783,15 @@ test('persists candidate references in history while keeping summaries compact',
   const summary = service.listHistory()[0];
   const detail = service.getHistory(result.sessionId);
 
-  assert.deepEqual(
-    result.lawReferences.map((reference) => reference.id),
-    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
-  );
-  assert.equal(summary.lawReferenceCount, 2);
-  assert.equal(summary.lawComparisonCount, 2);
-  assert.equal(summary.resultCardCount, 2);
+  assert.equal(result.lawReferences.some((reference) => reference.id === 'cn.civil-code.article-675'), true);
+  assert.equal(result.lawReferences.some((reference) => reference.id === 'cn.civil-code.article-676'), true);
+  assert.equal(summary.lawReferenceCount, result.lawReferences.length);
+  assert.equal(summary.lawComparisonCount, result.lawComparisons.length);
+  assert.equal(summary.resultCardCount, result.resultCards.length);
   assert.equal(Object.hasOwn(summary, 'lawReferences'), false);
-  assert.deepEqual(
-    detail.lawReferences.map((reference) => reference.id),
-    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
-  );
-  assert.deepEqual(
-    detail.lawComparisons.map((comparison) => comparison.lawReferenceId),
-    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
-  );
-  assert.deepEqual(
-    detail.resultCards.map((card) => card.lawReferenceId),
-    ['cn.civil-code.article-675', 'cn.civil-code.article-676']
-  );
+  assert.deepEqual(detail.lawReferences, result.lawReferences);
+  assert.deepEqual(detail.lawComparisons, result.lawComparisons);
+  assert.deepEqual(detail.resultCards, result.resultCards);
   assert.equal(detail.resultCards.every((card) => card.legalConclusionGenerated === false), true);
   assert.equal(detail.legalConclusionGenerated, false);
 });

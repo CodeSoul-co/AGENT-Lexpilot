@@ -32,10 +32,10 @@ test('verifies pinned metadata while requesting each shared law once', async () 
 
   assert.equal(report.ok, true);
   assert.equal(report.status, 'verified');
-  assert.equal(report.entryCount, 46);
-  assert.equal(report.sourceCount, 4);
-  assert.equal(report.verifiedCount, 46);
-  assert.equal(calls.length, 4);
+  assert.equal(report.entryCount, corpus.entries.length);
+  assert.equal(report.sourceCount, metadata.size);
+  assert.equal(report.verifiedCount, corpus.entries.length);
+  assert.equal(calls.length, metadata.size);
   assert.equal(report.results.every((result) => result.status === 'verified'), true);
 });
 
@@ -83,9 +83,9 @@ test('rejects undeclared provider fields and untrusted metadata sources', async 
     result.id.startsWith('cn.labor-contract-law.')
   );
   const civilResults = report.results.filter((result) => result.id.startsWith('cn.civil-code.'));
-  assert.equal(laborResults.length, 10);
+  assert.equal(laborResults.length, corpus.entries.filter((entry) => entry.id.startsWith('cn.labor-contract-law.')).length);
   assert.equal(laborResults.every((result) => result.status === 'invalid_metadata_response'), true);
-  assert.equal(civilResults.length, 18);
+  assert.equal(civilResults.length, corpus.entries.filter((entry) => entry.id.startsWith('cn.civil-code.')).length);
   assert.equal(civilResults.every((result) => result.status === 'untrusted_metadata_source'), true);
   assert.equal(civilResults.every((result) => result.finalHost === 'www.samr.gov.cn'), true);
   assert.equal(JSON.stringify(report).includes('rawHtml'), false);
