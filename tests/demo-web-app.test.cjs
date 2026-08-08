@@ -553,6 +553,7 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, /id="announcement-bar"/);
     assert.match(pageText, /id="landing-menu-toggle"/);
     assert.match(pageText, /id="hero-media"/);
+    assert.match(pageText, /id="value-proof-grid"/);
     assert.match(pageText, /id="capability-list"/);
     assert.match(pageText, /id="scenario-grid"/);
     assert.match(pageText, /id="resource-grid"/);
@@ -560,6 +561,7 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(pageText, /href="\/landing\.css"/);
     assert.match(pageText, />法律自检</);
     assert.match(pageText, />专业数据分析</);
+    assert.doesNotMatch(pageText, /landing-nav-secondary/);
     assert.doesNotMatch(pageText, />\s*V[01]\b/);
     assert.match(pageText, /data-mode="sandbox"/);
     assert.match(pageText, /id="sandbox-language"/);
@@ -574,7 +576,10 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(landingContentText, /LexPilotLandingContent/);
     assert.match(landingContentText, /type: 'placeholder'/);
     assert.match(landingContentText, /status: PLACEHOLDER_STATUS/);
-    assert.match(landingContentText, /规划能力 · 待接入/);
+    assert.equal(landingContentText.match(/index: '0[12]'/g)?.length, 2);
+    assert.match(landingContentText, /supportingCapabilities: \['事实澄清', '隐私脱敏', '限定法规检索'\]/);
+    assert.match(landingContentText, /supportingCapabilities: \['受约束查询', '计划确认', '治理工作流'\]/);
+    assert.doesNotMatch(landingContentText, /title: '(合同分析|法规检索|复杂工作流)'/);
     assert.equal(presentationScript.status, 200);
     assert.match(presentationScript.headers.get('content-type'), /text\/javascript/);
     const presentationText = await presentationScript.text();
@@ -619,6 +624,9 @@ test('serves the local web shell and its fixed static assets', async () => {
     assert.match(landingStylesheet, /--landing-black:/);
     assert.match(landingStylesheet, /\.announcement-bar\s*\{/);
     assert.match(landingStylesheet, /\.landing-menu-toggle\s*\{/);
+    assert.match(landingStylesheet, /\.value-editorial\s*\{/);
+    assert.match(landingStylesheet, /\.capability-card\.light\s*\{/);
+    assert.match(landingStylesheet, /\.capability-card\.dark\s*\{/);
     assert.match(landingStylesheet, /@media \(max-width: 760px\)/);
   });
 });

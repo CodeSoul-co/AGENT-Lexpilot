@@ -30,7 +30,6 @@
             <a href="#about">关于我们</a>
           </nav>
           <div class="landing-nav-actions">
-            <button class="landing-nav-secondary" type="button" data-enter-workspace="v1">专业分析</button>
             <button class="landing-nav-action" type="button" data-enter-workspace="v0">进入工作台</button>
           </div>
           <button class="landing-menu-toggle" id="landing-menu-toggle" type="button" aria-expanded="false" aria-controls="landing-mobile-menu" aria-label="打开导航菜单">
@@ -67,18 +66,30 @@
         </section>
 
         <section class="value-section" id="value" data-nav-section="light">
-          <div class="value-copy" data-reveal>
+          <aside class="value-aside" data-reveal>
             <p class="landing-kicker" id="value-eyebrow"></p>
-            <h2><span id="value-lead"></span> <em id="value-supporting"></em> <strong id="value-highlight"></strong></h2>
+            <span class="value-section-number" id="value-section-number"></span>
+            <p id="value-side-title"></p>
+          </aside>
+          <div class="value-editorial" data-reveal>
+            <h2>
+              <span id="value-lead"></span>
+              <em id="value-supporting"></em>
+              <strong id="value-highlight"></strong>
+            </h2>
+            <div class="value-detail">
+              <span aria-hidden="true"></span>
+              <p id="value-description"></p>
+            </div>
+            <div class="value-proof-grid" id="value-proof-grid"></div>
           </div>
-          <div class="value-monogram" aria-hidden="true">L</div>
         </section>
 
         <section class="capabilities-section" id="capabilities" data-nav-section="light">
           <div class="section-intro" data-reveal>
             <p class="landing-kicker">CORE CAPABILITIES</p>
-            <h2>法律团队与个人用户，<br>都需要更清楚的工作路径。</h2>
-            <p>已开放能力直接进入工作台；规划中的能力会明确标注，不用概念代替真实功能。</p>
+            <h2>两个入口，<br>对应两种真实工作。</h2>
+            <p>法律自检负责澄清问题与核验依据；专业数据分析负责审阅并执行受约束的数据任务。辅助能力只在对应流程中出现。</p>
           </div>
           <div class="capability-list" id="capability-list"></div>
         </section>

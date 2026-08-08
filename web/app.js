@@ -152,22 +152,38 @@ function renderLandingContent() {
   }
 
   setLandingText('#value-eyebrow', content.value.eyebrow);
+  setLandingText('#value-section-number', content.value.sectionNumber);
+  setLandingText('#value-side-title', content.value.sideTitle);
   setLandingText('#value-lead', content.value.lead);
   setLandingText('#value-supporting', content.value.supporting);
   setLandingText('#value-highlight', content.value.highlight);
+  setLandingText('#value-description', content.value.description);
+  const valueProofGrid = $('#value-proof-grid');
+  valueProofGrid.replaceChildren();
+  for (const proofPoint of content.value.proofPoints) {
+    const item = node('article', 'value-proof-card');
+    item.append(
+      node('span', '', proofPoint.label),
+      node('strong', '', proofPoint.value),
+      node('small', '', proofPoint.detail)
+    );
+    valueProofGrid.append(item);
+  }
 
   const capabilityList = $('#capability-list');
   capabilityList.replaceChildren();
   for (const capability of content.capabilities) {
-    const article = node('article', `capability-row ${capability.tone}`);
+    const article = node('article', `capability-card ${capability.tone}`);
     article.dataset.reveal = '';
-    article.tabIndex = 0;
-    const meta = node('div', 'capability-meta');
+    const meta = node('header', 'capability-card-meta');
     meta.append(node('span', '', capability.index), node('small', '', capability.status));
-    const body = node('div', 'capability-body');
+    const body = node('div', 'capability-card-body');
     body.append(node('h3', '', capability.title), node('p', '', capability.description));
-    if (capability.action) body.append(landingAction(capability.action, 'capability-action'));
-    article.append(meta, body, node('span', 'capability-arrow', '↗'));
+    const tags = node('ul', 'capability-tags');
+    for (const label of capability.supportingCapabilities) tags.append(node('li', '', label));
+    const footer = node('footer', 'capability-card-footer');
+    footer.append(landingAction(capability.action, 'capability-action'), node('span', 'capability-arrow', '↗'));
+    article.append(meta, body, tags, footer);
     capabilityList.append(article);
   }
 
